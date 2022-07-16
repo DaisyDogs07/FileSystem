@@ -1,0 +1,7 @@
+{
+  "name": "FileSystem",
+  "version": "v1.0.0",
+  "main": "./build/Release/FileSystem.node",
+  "author": "DaisyDogs07",
+  "license": "ISC"
+}
