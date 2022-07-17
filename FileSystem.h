@@ -140,6 +140,9 @@ class FileSystem {
   int Open(const char* path, int flags, mode_t mode) {
     return OpenAt(AT_FDCWD, path, flags, mode);
   }
+  int Creat(const char* path, mode_t mode) {
+    return OpenAt(AT_FDCWD, path, O_CREAT | O_WRONLY | O_TRUNC, mode);
+  }
   int Close(unsigned int fd) {
     return RemoveFd(fd);
   }

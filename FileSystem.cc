@@ -162,6 +162,28 @@ void FileSystemOpen(const FunctionCallbackInfo<Value>& args) {
     )
   );
 }
+void FileSystemCreat(const FunctionCallbackInfo<Value>& args) {
+  assert(args.Length() == 2);
+  assert(args[0]->IsString());
+  assert(IsNumeric(args[1]));
+  Isolate* isolate = args.GetIsolate();
+  FileSystem* fs = reinterpret_cast<FileSystem*>(
+    args.This()->GetInternalField(0).As<External>()->Value()
+  );
+  int res;
+  THROWIFERR(
+    fs->Creat(
+      *String::Utf8Value(isolate, args[0].As<String>()),
+      Uint32Val(args[1])
+    ), res
+  );
+  args.GetReturnValue().Set(
+    Int32::New(
+      isolate,
+      res
+    )
+  );
+}
 void FileSystemClose(const FunctionCallbackInfo<Value>& args) {
   assert(args.Length() == 1);
   assert(IsNumeric(args[0]));
@@ -1081,6 +1103,7 @@ NODE_MODULE_INIT() {
   DefineFunction(isolate, instTmpl, "Access",     FileSystemAccess,     2, false);
   DefineFunction(isolate, instTmpl, "OpenAt",     FileSystemOpenAt,     4);
   DefineFunction(isolate, instTmpl, "Open",       FileSystemOpen,       3);
+  DefineFunction(isolate, instTmpl, "Creat",      FileSystemCreat,      2);
   DefineFunction(isolate, instTmpl, "Close",      FileSystemClose,      1);
   DefineFunction(isolate, instTmpl, "MkNodAt",    FileSystemMkNodAt,    3);
   DefineFunction(isolate, instTmpl, "MkNod",      FileSystemMkNod,      2);
