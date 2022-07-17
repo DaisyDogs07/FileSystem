@@ -41,9 +41,7 @@ class FileSystem {
   }
 
   int FAccessAt(int dirFd, const char* path, int mode, int flags) {
-    if (mode & ~S_IRWXO)
-      return -EINVAL;
-    if (flags & ~AT_SYMLINK_NOFOLLOW)
+    if (mode & ~S_IRWXO || flags & ~AT_SYMLINK_NOFOLLOW)
       return -EINVAL;
     INode* origCwd = cwd.inode;
     if (dirFd != AT_FDCWD) {
@@ -87,8 +85,10 @@ class FileSystem {
         return -ENOTDIR;
       cwd.inode = fd->inode;
     }
-    if ((flags & (O_CREAT | O_EXCL)) == (O_CREAT | O_EXCL))
+    if (flags & O_CREAT && flags & O_EXCL)
       flags |= O_NOFOLLOW;
+    if (flags & O_WRONLY && flags & O_RDWR)
+      flags &= ~O_RDWR;
     INode* inode;
     INode* parent = NULL;
     int res = GetINode(path, &inode, &parent, !(flags & O_NOFOLLOW));
@@ -98,7 +98,7 @@ class FileSystem {
     if (res == 0) {
       if (flags & O_NOFOLLOW && S_ISLNK(inode->mode))
         return -ELOOP;
-      if ((flags & (O_CREAT | O_EXCL)) == (O_CREAT | O_EXCL))
+      if (flags & O_CREAT && flags & O_EXCL)
         return -EEXIST;
     } else {
       if (flags & O_CREAT && res == -ENOENT) {
@@ -313,14 +313,12 @@ class FileSystem {
       return -EBADF;
     if (!S_ISDIR(fd->inode->mode))
       return -ENOTDIR;
-    if (fd->seekOff >= fd->inode->dentCount) {
-      fd->seekOff = 0;
+    if (fd->seekOff >= fd->inode->dentCount)
       return 0;
-    }
     unsigned int nread = 0;
     char* dirpData = (char*)dirp;
     for (unsigned int j = 0; j != count && fd->seekOff != fd->inode->dentCount; ++j, ++fd->seekOff) {
-      INode::Dent& d = fd->inode->dents[fd->seekOff];
+      INode::Dent d = fd->inode->dents[fd->seekOff];
       size_t nameLen = strlen(d.name);
 #define ALIGN(x, a) (((x) + ((typeof(x))(a) - 1)) & ~((typeof(x))(a) - 1))
       unsigned short reclen = ALIGN(__builtin_offsetof(struct linux_dirent, d_name) + nameLen + 2, sizeof(long));
@@ -731,8 +729,7 @@ class FileSystem {
       return res;
     if (!S_ISDIR(inode->mode))
       return -ENOTDIR;
-    const char* newPath = AbsolutePath(path);
-    cwd = { newPath, inode };
+    cwd = { AbsolutePath(path), inode };
     return 0;
   }
   int GetCwd(char* buf, size_t size) {
