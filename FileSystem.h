@@ -26,8 +26,7 @@ class FileSystem {
     root->dents = new INode::Dent[2];
     root->dents[0] = { ".", root };
     root->dents[1] = { "..", root };
-    root->dentCount = 2;
-    root->nlink = 2;
+    root->dentCount = root->nlink = 2;
     PushINode(root);
     char* rootPath = new char[2];
     rootPath[0] = '/';
