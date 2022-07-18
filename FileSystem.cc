@@ -1068,8 +1068,7 @@ void DefineFunction(
   Local<ObjectTemplate> obj,
   const char (&prop)[N],
   FunctionCallback fn,
-  int argc = 0,
-  bool hasSideEffect = true
+  int argc = 0
 ) {
   Local<FunctionTemplate> funcTmpl = FunctionTemplate::New(
     isolate,
@@ -1078,7 +1077,7 @@ void DefineFunction(
     Local<Signature>(),
     argc,
     ConstructorBehavior::kThrow,
-    hasSideEffect ? SideEffectType::kHasSideEffect : SideEffectType::kHasNoSideEffect
+    SideEffectType::kHasSideEffect
   );
   Local<String> name = String::NewFromUtf8Literal(isolate, prop);
   funcTmpl->SetClassName(name);
@@ -1099,8 +1098,8 @@ NODE_MODULE_INIT() {
   DefineConstants(isolate, FSTmpl);
   Local<ObjectTemplate> instTmpl = FSTmpl->InstanceTemplate();
   instTmpl->SetInternalFieldCount(1);
-  DefineFunction(isolate, instTmpl, "FAccessAt",  FileSystemFAccessAt,  4, false);
-  DefineFunction(isolate, instTmpl, "Access",     FileSystemAccess,     2, false);
+  DefineFunction(isolate, instTmpl, "FAccessAt",  FileSystemFAccessAt,  4);
+  DefineFunction(isolate, instTmpl, "Access",     FileSystemAccess,     2);
   DefineFunction(isolate, instTmpl, "OpenAt",     FileSystemOpenAt,     4);
   DefineFunction(isolate, instTmpl, "Open",       FileSystemOpen,       3);
   DefineFunction(isolate, instTmpl, "Creat",      FileSystemCreat,      2);
@@ -1111,9 +1110,9 @@ NODE_MODULE_INIT() {
   DefineFunction(isolate, instTmpl, "MkDir",      FileSystemMkDir,      2);
   DefineFunction(isolate, instTmpl, "SymlinkAt",  FileSystemSymlinkAt,  3);
   DefineFunction(isolate, instTmpl, "Symlink",    FileSystemSymlink,    2);
-  DefineFunction(isolate, instTmpl, "ReadLinkAt", FileSystemReadLinkAt, 3, false);
-  DefineFunction(isolate, instTmpl, "ReadLink",   FileSystemReadLink,   2, false);
-  DefineFunction(isolate, instTmpl, "GetDents",   FileSystemGetDents,   1, false);
+  DefineFunction(isolate, instTmpl, "ReadLinkAt", FileSystemReadLinkAt, 3);
+  DefineFunction(isolate, instTmpl, "ReadLink",   FileSystemReadLink,   2);
+  DefineFunction(isolate, instTmpl, "GetDents",   FileSystemGetDents,   1);
   DefineFunction(isolate, instTmpl, "LinkAt",     FileSystemLinkAt,     5);
   DefineFunction(isolate, instTmpl, "Link",       FileSystemLink,       2);
   DefineFunction(isolate, instTmpl, "UnlinkAt",   FileSystemUnlinkAt,   3);
@@ -1122,7 +1121,7 @@ NODE_MODULE_INIT() {
   DefineFunction(isolate, instTmpl, "RenameAt",   FileSystemRenameAt,   4);
   DefineFunction(isolate, instTmpl, "Rename",     FileSystemRename,     2);
   DefineFunction(isolate, instTmpl, "LSeek",      FileSystemLSeek,      3);
-  DefineFunction(isolate, instTmpl, "Read",       FileSystemRead,       2);//, false);
+  DefineFunction(isolate, instTmpl, "Read",       FileSystemRead,       2);
   DefineFunction(isolate, instTmpl, "Write",      FileSystemWrite,      2);
   DefineFunction(isolate, instTmpl, "SendFile",   FileSystemSendFile,   4);
   DefineFunction(isolate, instTmpl, "Truncate",   FileSystemTruncate,   2);
@@ -1131,11 +1130,11 @@ NODE_MODULE_INIT() {
   DefineFunction(isolate, instTmpl, "ChMod",      FileSystemChMod,      2);
   DefineFunction(isolate, instTmpl, "FChMod",     FileSystemFChMod,     2);
   DefineFunction(isolate, instTmpl, "ChDir",      FileSystemChDir,      1);
-  DefineFunction(isolate, instTmpl, "GetCwd",     FileSystemGetCwd,     0, false);
-  DefineFunction(isolate, instTmpl, "Stat",       FileSystemStat,       1, false);
-  DefineFunction(isolate, instTmpl, "LStat",      FileSystemLStat,      1, false);
-  DefineFunction(isolate, instTmpl, "FStat",      FileSystemFStat,      1, false);
-  DefineFunction(isolate, instTmpl, "Statx",      FileSystemStatx,      4, false);
+  DefineFunction(isolate, instTmpl, "GetCwd",     FileSystemGetCwd,     0);
+  DefineFunction(isolate, instTmpl, "Stat",       FileSystemStat,       1);
+  DefineFunction(isolate, instTmpl, "LStat",      FileSystemLStat,      1);
+  DefineFunction(isolate, instTmpl, "FStat",      FileSystemFStat,      1);
+  DefineFunction(isolate, instTmpl, "Statx",      FileSystemStatx,      4);
   Local<Function> FSFunc = FSTmpl->GetFunction(context).ToLocalChecked();
   module.As<Object>()->Set(
     context,
