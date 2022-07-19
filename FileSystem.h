@@ -575,11 +575,6 @@ class FileSystem {
     INode* inode = fd->inode;
     if (S_ISDIR(inode->mode))
       return -EISDIR;
-    if (!(fd->flags & O_NOATIME)) {
-      struct timespec ts;
-      clock_gettime(CLOCK_REALTIME, &ts);
-      inode->atime = ts;
-    }
     if (fd->seekOff >= inode->size)
       return 0;
     size_t end = inode->size - fd->seekOff;
@@ -587,6 +582,8 @@ class FileSystem {
       count = end;
     memcpy(buf, inode->data + fd->seekOff, count);
     buf[count] = '\0';
+    if (!(fd->flags & O_NOATIME))
+      clock_gettime(CLOCK_REALTIME, &inode->atime);
     return count;
   }
   ssize_t Write(unsigned int fdNum, const char* buf, size_t count) {
@@ -599,9 +596,6 @@ class FileSystem {
       : fd->seekOff;
     if (seekOff > std::numeric_limits<size_t>::max() - count)
       return -EFBIG;
-    struct timespec ts;
-    clock_gettime(CLOCK_REALTIME, &ts);
-    inode->mtime = inode->ctime = ts;
     if (seekOff + count > inode->size) {
       inode->data = reinterpret_cast<char*>(
         realloc(inode->data, seekOff + count + 1)
@@ -612,6 +606,9 @@ class FileSystem {
       inode->data[inode->size] = '\0';
     }
     memcpy(inode->data + seekOff, buf, count);
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    inode->mtime = inode->ctime = ts;
     return count;
   }
   ssize_t SendFile(unsigned int outFd, unsigned int inFd, off_t* offset, size_t count) {
@@ -631,11 +628,7 @@ class FileSystem {
     INode* inodeOut = fdOut->inode;
     if (fdOut->seekOff > std::numeric_limits<size_t>::max() - count)
       return -EFBIG;
-    struct timespec ts;
-    clock_gettime(CLOCK_REALTIME, &ts);
     // read
-    if (!(fdIn->flags & O_NOATIME))
-      inodeIn->atime = ts;
     if (off >= inodeIn->size)
       return 0;
     size_t end = inodeIn->size - off;
@@ -645,7 +638,6 @@ class FileSystem {
       fdIn->seekOff += count;
     else *offset += count;
     // write
-    inodeOut->mtime = inodeOut->ctime = ts;
     if (fdOut->seekOff + count > inodeOut->size) {
       inodeOut->data = reinterpret_cast<char*>(
         realloc(inodeOut->data, fdOut->seekOff + count + 1)
@@ -656,6 +648,11 @@ class FileSystem {
       inodeOut->data[inodeOut->size] = '\0';
     }
     memcpy(inodeOut->data + fdOut->seekOff, inodeIn->data + off, count);
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    if (!(fdIn->flags & O_NOATIME))
+      inodeIn->atime = ts;
+    inodeOut->mtime = inodeOut->ctime = ts;
     return count;
   }
   int Truncate(const char* path, off_t length) {
@@ -668,9 +665,6 @@ class FileSystem {
       return res;
     if (S_ISDIR(inode->mode))
       return -EISDIR;
-    struct timespec ts;
-    clock_gettime(CLOCK_REALTIME, &ts);
-    inode->ctime = inode->mtime = ts;
     inode->data = reinterpret_cast<char*>(
       realloc(inode->data, length + 1)
     );
@@ -678,6 +672,9 @@ class FileSystem {
       memset(inode->data + inode->size, '\0', length - inode->size);
     inode->size = length;
     inode->data[inode->size] = '\0';
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    inode->ctime = inode->mtime = ts;
     return 0;
   }
   int FTruncate(unsigned int fdNum, off_t length) {
@@ -691,9 +688,6 @@ class FileSystem {
     INode* inode = fd->inode;
     if (S_ISDIR(inode->mode))
       return -EISDIR;
-    struct timespec ts;
-    clock_gettime(CLOCK_REALTIME, &ts);
-    inode->ctime = inode->mtime = ts;
     inode->data = reinterpret_cast<char*>(
       realloc(inode->data, length + 1)
     );
@@ -701,6 +695,9 @@ class FileSystem {
       memset(inode->data + inode->size, '\0', length - inode->size);
     inode->size = length;
     inode->data[length] = '\0';
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    inode->ctime = inode->mtime = ts;
     return 0;
   }
   int FChModAt(int dirFd, const char* path, mode_t mode) {
@@ -717,10 +714,8 @@ class FileSystem {
     cwd.inode = origCwd;
     if (res != 0)
       return res;
-    struct timespec ts;
-    clock_gettime(CLOCK_REALTIME, &ts);
-    inode->ctime = ts;
     inode->mode = (mode & ~S_IFMT) | (inode->mode & S_IFMT);
+    clock_gettime(CLOCK_REALTIME, &inode->ctime);
     return 0;
   }
   int ChMod(const char* path, mode_t mode) {
@@ -730,10 +725,10 @@ class FileSystem {
     Fd* fd;
     if (!(fd = GetFd(fdNum)))
       return -EBADF;
+    fd->inode->mode = (mode & ~S_IFMT) | (fd->inode->mode & S_IFMT);
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
     fd->inode->ctime = ts;
-    fd->inode->mode = (mode & ~S_IFMT) | (fd->inode->mode & S_IFMT);
     return 0;
   }
   int ChDir(const char* path) {
@@ -812,9 +807,8 @@ class FileSystem {
  private:
   struct INode {
     INode() {
-      struct timespec ts;
-      clock_gettime(CLOCK_REALTIME, &ts);
-      btime = ctime = mtime = atime = ts;
+      clock_gettime(CLOCK_REALTIME, &btime);
+      ctime = mtime = atime = btime;
     }
     ~INode() {
       if (data != NULL)
