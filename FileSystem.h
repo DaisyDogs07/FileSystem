@@ -117,6 +117,7 @@ class FileSystem {
         x->nlink = 1;
         PushINode(x);
         parent->PushDent(name, x);
+        parent->ctime = parent->mtime = x->btime;
         inode = x;
       } else return res;
     }
@@ -183,6 +184,7 @@ class FileSystem {
     x->nlink = 1;
     PushINode(x);
     parent->PushDent(name, x);
+    parent->ctime = parent->mtime = x->btime;
     return 0;
   }
   int MkNod(const char* path, mode_t mode, dev_t) {
@@ -226,6 +228,7 @@ class FileSystem {
     PushINode(x);
     parent->PushDent(name, x);
     ++parent->nlink;
+    parent->ctime = parent->mtime = x->btime;
     return 0;
   }
   int MkDir(const char* path, mode_t mode) {
@@ -274,6 +277,7 @@ class FileSystem {
     PushINode(x);
     parent->PushDent(name, x);
     ++oldInode->nsymlink;
+    parent->ctime = parent->mtime = x->btime;
     return 0;
   }
   int Symlink(const char* oldPath, const char* newPath) {
@@ -389,6 +393,7 @@ class FileSystem {
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
     oldInode->ctime = ts;
+    parent->ctime = parent->mtime = ts;
     return 0;
   }
   int Link(const char* oldPath, const char* newPath) {
@@ -429,6 +434,9 @@ class FileSystem {
       RemoveINode(inode->target);
     if (--inode->nlink == 0 && inode->nsymlink == 0)
       RemoveINode(inode);
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    parent->ctime = parent->mtime = ts;
     return 0;
   }
   int RmDir(const char* path) {
@@ -458,6 +466,9 @@ class FileSystem {
     delete name;
     if (--inode->nlink == 0 && inode->nsymlink == 0)
       RemoveINode(inode);
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    parent->ctime = parent->mtime = ts;
     return 0;
   }
   int RenameAt(int oldDirFd, const char* oldPath, int newDirFd, const char* newPath, unsigned int flags) {
@@ -525,6 +536,10 @@ class FileSystem {
     newParent->RemoveDent(newName);
     newParent->PushDent(newName, oldInode);
     oldInode->parent = newParent;
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    oldParent->ctime = oldParent->mtime = ts;
+    newParent->ctime = newParent->mtime = ts;
     return 0;
   }
   int Rename(const char* oldPath, const char* newPath) {
@@ -825,9 +840,6 @@ class FileSystem {
       );
       dents[dentCount++] = { name, inode };
       size += strlen(name) * 2;
-      struct timespec ts;
-      clock_gettime(CLOCK_REALTIME, &ts);
-      ctime = mtime = ts;
     }
     void RemoveDent(const char* name) {
       for (size_t i = 0; i != dentCount; ++i)
@@ -839,9 +851,6 @@ class FileSystem {
             realloc(dents, sizeof(struct Dent) * --dentCount)
           );
           size -= strlen(name) * 2;
-          struct timespec ts;
-          clock_gettime(CLOCK_REALTIME, &ts);
-          ctime = mtime = ts;
           return;
         }
     }
