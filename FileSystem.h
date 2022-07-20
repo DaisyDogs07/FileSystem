@@ -284,7 +284,7 @@ class FileSystem {
     return SymlinkAt(oldPath, AT_FDCWD, newPath);
   }
   int ReadLinkAt(int dirFd, const char* path, char* buf, int bufLen) {
-    if (bufLen < 0)
+    if (bufLen <= 0)
       return -EINVAL;
     INode* origCwd = cwd.inode;
     if (dirFd != AT_FDCWD) {
@@ -306,6 +306,7 @@ class FileSystem {
     if (inode->size < bufLen)
       bufLen = inode->size;
     memcpy(buf, inode->data, bufLen);
+    clock_gettime(CLOCK_REALTIME, &inode->atime);
     return bufLen;
   }
   int ReadLink(const char* path, char* buf, int bufLen) {
