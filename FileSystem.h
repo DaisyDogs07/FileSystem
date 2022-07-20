@@ -604,7 +604,6 @@ class FileSystem {
       if (inode->size < seekOff)
         memset(inode->data + inode->size, '\0', seekOff - inode->size);
       inode->size = seekOff + count;
-      inode->data[inode->size] = '\0';
     }
     memcpy(inode->data + seekOff, buf, count);
     struct timespec ts;
@@ -646,7 +645,6 @@ class FileSystem {
       if (inodeOut->size < fdOut->seekOff)
         memset(inodeOut->data + inodeOut->size, '\0', fdOut->seekOff - inodeOut->size);
       inodeOut->size = fdOut->seekOff + count;
-      inodeOut->data[inodeOut->size] = '\0';
     }
     memcpy(inodeOut->data + fdOut->seekOff, inodeIn->data + off, count);
     struct timespec ts;
@@ -672,7 +670,6 @@ class FileSystem {
     if (inode->size < length)
       memset(inode->data + inode->size, '\0', length - inode->size);
     inode->size = length;
-    inode->data[inode->size] = '\0';
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
     inode->ctime = inode->mtime = ts;
@@ -695,7 +692,6 @@ class FileSystem {
     if (inode->size < length)
       memset(inode->data + inode->size, '\0', length - inode->size);
     inode->size = length;
-    inode->data[length] = '\0';
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
     inode->ctime = inode->mtime = ts;
