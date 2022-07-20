@@ -342,7 +342,8 @@ class FileSystem {
       dirpData += reclen;
       nread += reclen;
     }
-    clock_gettime(CLOCK_REALTIME, &fd->inode->atime);
+    if (!(fd->flags & O_NOATIME))
+      clock_gettime(CLOCK_REALTIME, &fd->inode->atime);
     return nread;
   }
   int LinkAt(int oldDirFd, const char* oldPath, int newDirFd, const char* newPath, int flags) {
