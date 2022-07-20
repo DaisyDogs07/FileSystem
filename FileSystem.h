@@ -342,6 +342,7 @@ class FileSystem {
       dirpData += reclen;
       nread += reclen;
     }
+    clock_gettime(CLOCK_REALTIME, &inode->atime);
     return nread;
   }
   int LinkAt(int oldDirFd, const char* oldPath, int newDirFd, const char* newPath, int flags) {
@@ -842,7 +843,7 @@ class FileSystem {
             realloc(dents, sizeof(struct Dent) * --dentCount)
           );
           size -= strlen(name) * 2;
-          return;
+          break;
         }
     }
     char* data = NULL;

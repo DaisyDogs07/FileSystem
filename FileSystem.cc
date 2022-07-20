@@ -597,9 +597,10 @@ void FileSystemRead(const FunctionCallbackInfo<Value>& args) {
 }
 
 void FileSystemWrite(const FunctionCallbackInfo<Value>& args) {
-  assert(args.Length() == 2);
+  assert(args.Length() == 3);
   assert(IsNumeric(args[0]));
   assert(IsStrOrBuf(args[1]));
+  assert(IsNumeric(args[2]));
   Isolate* isolate = args.GetIsolate();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     args.This()->GetInternalField(0).As<External>()->Value()
@@ -609,7 +610,7 @@ void FileSystemWrite(const FunctionCallbackInfo<Value>& args) {
     fs->Write(
       Uint32Val(args[0]),
       StringVal(args[1]),
-      StringLen(args[1])
+      Uint64Val(args[2])
     ), res
   );
   args.GetReturnValue().Set(BigInt::New(isolate, res));
@@ -1122,7 +1123,7 @@ NODE_MODULE_INIT() {
   DefineFunction(isolate, instTmpl, "Rename",     FileSystemRename,     2);
   DefineFunction(isolate, instTmpl, "LSeek",      FileSystemLSeek,      3);
   DefineFunction(isolate, instTmpl, "Read",       FileSystemRead,       2);
-  DefineFunction(isolate, instTmpl, "Write",      FileSystemWrite,      2);
+  DefineFunction(isolate, instTmpl, "Write",      FileSystemWrite,      3);
   DefineFunction(isolate, instTmpl, "SendFile",   FileSystemSendFile,   4);
   DefineFunction(isolate, instTmpl, "Truncate",   FileSystemTruncate,   2);
   DefineFunction(isolate, instTmpl, "FTruncate",  FileSystemFTruncate,  2);
