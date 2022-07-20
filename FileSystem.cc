@@ -533,7 +533,7 @@ void FileSystemRenameAt(const FunctionCallbackInfo<Value>& args) {
 void FileSystemRename(const FunctionCallbackInfo<Value>& args) {
   assert(args.Length() == 2);
   assert(args[0]->IsString());
-  assert(args[2]->IsString());
+  assert(args[1]->IsString());
   Isolate* isolate = args.GetIsolate();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     args.This()->GetInternalField(0).As<External>()->Value()
