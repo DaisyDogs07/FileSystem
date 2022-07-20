@@ -331,7 +331,7 @@ class FileSystem {
       if (j == 0 && count < reclen)
         return -EINVAL;
       if (nread > count - reclen)
-        return nread;
+        break;
       struct linux_dirent* dent = (struct linux_dirent*)dirpData;
       dent->d_ino = d.inode->id;
       dent->d_off = fd->seekOff + 1;
