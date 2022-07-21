@@ -22,7 +22,6 @@ class FileSystem {
   FileSystem() {
     INode* root = new INode;
     root->mode = 0755 | S_IFDIR;
-    root->parent = root;
     root->dents = new INode::Dent[2];
     root->dents[0] = { ".", root };
     root->dents[1] = { "..", root };
@@ -31,7 +30,7 @@ class FileSystem {
     char* rootPath = new char[2];
     rootPath[0] = '/';
     rootPath[1] = '\0';
-    cwd = { rootPath, root };
+    cwd = { rootPath, root, root };
   }
   ~FileSystem() {
     for (ino_t i = 0; i != inodeCount; ++i)
@@ -96,14 +95,19 @@ class FileSystem {
     if (parent == NULL)
       return res;
     if (res == 0) {
+      if (flags & O_CREAT) {
+        if (flags & O_EXCL)
+          return -EEXIST;
+        if (S_ISDIR(inode->mode))
+          return -EISDIR;
+      }
       if (flags & O_NOFOLLOW && S_ISLNK(inode->mode))
         return -ELOOP;
-      if (flags & O_CREAT && flags & O_EXCL)
-        return -EEXIST;
     } else {
       if (flags & O_CREAT && res == -ENOENT) {
         if (inodeCount == std::numeric_limits<ino_t>::max())
           return -EDQUOT;
+        flags &= ~O_TRUNC;
         const char* absPath = AbsolutePath(path);
         const char* name = GetName(absPath);
         delete absPath;
@@ -112,7 +116,6 @@ class FileSystem {
           return -ENOSPC;
         }
         INode* x = new INode;
-        x->parent = parent;
         x->mode = mode;
         x->nlink = 1;
         PushINode(x);
@@ -178,7 +181,6 @@ class FileSystem {
       return -ENOSPC;
     }
     INode* x = new INode;
-    x->parent = parent;
     x->mode = (mode & ~S_IFMT) | S_IFREG;
     x->data = new char;
     x->nlink = 1;
@@ -218,7 +220,6 @@ class FileSystem {
       return -ENOSPC;
     }
     INode* x = new INode;
-    x->parent = parent;
     x->mode = (mode & ~S_IFMT) | S_IFDIR;
     x->nlink = 2;
     x->dents = new INode::Dent[2];
@@ -265,7 +266,6 @@ class FileSystem {
       return -ENOSPC;
     }
     INode* x = new INode;
-    x->parent = parent;
     x->mode = 0777 | S_IFLNK;
     x->target = oldInode;
     x->nlink = 1;
@@ -395,8 +395,7 @@ class FileSystem {
     ++oldInode->nlink;
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
-    oldInode->ctime = ts;
-    parent->ctime = parent->mtime = ts;
+    oldInode->ctime = parent->ctime = parent->mtime = ts;
     return 0;
   }
   int Link(const char* oldPath, const char* newPath) {
@@ -435,10 +434,11 @@ class FileSystem {
     if (S_ISLNK(inode->mode) &&
         --inode->target->nsymlink == 0 && inode->target->nlink == 0)
       RemoveINode(inode->target);
-    if (--inode->nlink == 0 && inode->nsymlink == 0)
-      RemoveINode(inode);
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
+    if (--inode->nlink == 0 && inode->nsymlink == 0)
+      RemoveINode(inode);
+    else inode->ctime = ts;
     parent->ctime = parent->mtime = ts;
     return 0;
   }
@@ -467,10 +467,12 @@ class FileSystem {
     delete absPath;
     parent->RemoveDent(name);
     delete name;
-    if (--inode->nlink == 0 && inode->nsymlink == 0)
-      RemoveINode(inode);
+    --parent->nlink;
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
+    if (--inode->nlink == 0 && inode->nsymlink == 0)
+      RemoveINode(inode);
+    else inode->ctime = ts;
     parent->ctime = parent->mtime = ts;
     return 0;
   }
@@ -507,22 +509,26 @@ class FileSystem {
       return res;
     if (newDirFd != AT_FDCWD)
       cwd.inode = newFd->inode;
-    INode* newInode;
+    INode* newInode = NULL;
     INode* newParent = NULL;
     res = GetINode(newPath, &newInode, &newParent);
     cwd.inode = origCwd;
     if (newParent == NULL)
       return res;
+    if (oldInode == newInode)
+      return 0;
     if (S_ISDIR(oldInode->mode)) {
-      if (res >= 0 && !S_ISDIR(newInode->mode))
-        return -ENOTDIR;
+      if (newInode) {
+        if (!S_ISDIR(newInode->mode))
+          return -ENOTDIR;
+        if (newInode->dentCount > 2)
+          return -ENOTEMPTY;
+      }
       if (oldInode == inodes[0] || oldInode == cwd.inode)
         return -EBUSY;
-      if (oldInode->dentCount > 2)
-        return -ENOTEMPTY;
-    } else if (res >= 0 && S_ISDIR(newInode->mode))
+    } else if (newInode && S_ISDIR(newInode->mode))
       return -EISDIR;
-    if (flags & RENAME_NOREPLACE && res >= 0)
+    if (flags & RENAME_NOREPLACE && newInode)
       return -EEXIST;
     const char* newAbs = AbsolutePath(newPath);
     const char* newName = GetName(newAbs);
@@ -536,11 +542,24 @@ class FileSystem {
     delete oldAbs;
     oldParent->RemoveDent(oldName);
     delete oldName;
-    newParent->RemoveDent(newName);
+    if (S_ISDIR(oldInode->mode))
+      --oldParent->nlink;
+    if (newInode)
+      newParent->RemoveDent(newName);
     newParent->PushDent(newName, oldInode);
-    oldInode->parent = newParent;
+    if (S_ISDIR(oldInode->mode))
+      ++newParent->nlink;
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
+    if (newInode) {
+      if (S_ISLNK(newInode->mode) &&
+          --newInode->target->nsymlink == 0 && newInode->target->nlink == 0)
+        RemoveINode(newInode->target);
+      if (--newInode->nlink == 0 && newInode->nsymlink == 0)
+        RemoveINode(newInode);
+      else newInode->ctime = ts;
+    }
+    oldInode->ctime = ts;
     oldParent->ctime = oldParent->mtime = ts;
     newParent->ctime = newParent->mtime = ts;
     return 0;
@@ -666,6 +685,10 @@ class FileSystem {
       return res;
     if (S_ISDIR(inode->mode))
       return -EISDIR;
+    if (!S_ISREG(inode->mode))
+      return -EINVAL;
+    if (!(inode->mode & 0222))
+      return -EACCES;
     inode->data = reinterpret_cast<char*>(
       realloc(inode->data, length + 1)
     );
@@ -683,11 +706,11 @@ class FileSystem {
     Fd* fd;
     if (!(fd = GetFd(fdNum)))
       return -EBADF;
-    if (fd->flags != O_WRONLY && !(fd->flags & (O_WRONLY | O_RDWR)))
-      return -EINVAL;
     INode* inode = fd->inode;
-    if (S_ISDIR(inode->mode))
-      return -EISDIR;
+    if (!S_ISREG(inode->mode) || !(fd->flags & (O_WRONLY | O_RDWR)))
+      return -EINVAL;
+    if (fd->flags & O_APPEND)
+      return -EPERM;
     inode->data = reinterpret_cast<char*>(
       realloc(inode->data, length + 1)
     );
@@ -725,9 +748,7 @@ class FileSystem {
     if (!(fd = GetFd(fdNum)))
       return -EBADF;
     fd->inode->mode = (mode & ~S_IFMT) | (fd->inode->mode & S_IFMT);
-    struct timespec ts;
-    clock_gettime(CLOCK_REALTIME, &ts);
-    fd->inode->ctime = ts;
+    clock_gettime(CLOCK_REALTIME, &fd->inode->ctime);
     return 0;
   }
   int ChDir(const char* path) {
@@ -738,7 +759,7 @@ class FileSystem {
       return res;
     if (!S_ISDIR(inode->mode))
       return -ENOTDIR;
-    cwd = { AbsolutePath(path), inode };
+    cwd = { AbsolutePath(path), inode, parent };
     return 0;
   }
   int GetCwd(char* buf, size_t size) {
@@ -819,7 +840,6 @@ class FileSystem {
       }
     }
     ino_t id;
-    INode* parent;
     INode* target;
     struct Dent {
       const char* name;
@@ -869,6 +889,7 @@ class FileSystem {
     }
     const char* path;
     INode* inode;
+    INode* parent;
   };
   Cwd cwd;
   INode** inodes = {};
@@ -1004,10 +1025,13 @@ class FileSystem {
       return -ENOENT;
     if (pathLen >= PATH_MAX)
       return -ENAMETOOLONG;
-    INode* current = path[0] == '/'
+    bool isAbsolute = path[0] == '/';
+    INode* current = isAbsolute
       ? inodes[0]
       : cwd.inode;
-    INode* currParent = current->parent;
+    INode* currParent = isAbsolute
+      ? inodes[0]
+      : cwd.parent;
     int err = 0;
     char name[NAME_MAX + 1];
     size_t nameLen = 0;
