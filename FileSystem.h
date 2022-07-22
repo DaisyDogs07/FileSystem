@@ -636,6 +636,7 @@ class FileSystem {
       inode->size = seekOff + count;
     }
     memcpy(inode->data + seekOff, buf, count);
+    fd->seekOff += count;
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
     inode->mtime = inode->ctime = ts;
