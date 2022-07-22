@@ -594,6 +594,10 @@ class FileSystem {
     Fd* fd;
     if (!(fd = GetFd(fdNum)) || fd->flags & O_WRONLY)
       return -EBADF;
+    if (count == 0)
+      return 0;
+    if (!buf)
+      return -EFAULT;
     INode* inode = fd->inode;
     if (S_ISDIR(inode->mode))
       return -EISDIR;
@@ -602,6 +606,7 @@ class FileSystem {
     size_t end = inode->size - fd->seekOff;
     if (end < count)
       count = end;
+    fd->seekOff += count;
     memcpy(buf, inode->data + fd->seekOff, count);
     buf[count] = '\0';
     if (!(fd->flags & O_NOATIME))
@@ -612,6 +617,10 @@ class FileSystem {
     Fd* fd;
     if (!(fd = GetFd(fdNum)) || !(fd->flags & (O_WRONLY | O_RDWR)))
       return -EBADF;
+    if (count == 0)
+      return 0;
+    if (!buf)
+      return -EFAULT;
     INode* inode = fd->inode;
     off_t seekOff = fd->flags & O_APPEND
       ? inode->size
@@ -645,6 +654,8 @@ class FileSystem {
       if ((off = *offset) < 0)
         return -EINVAL;
     } else off = fdIn->seekOff;
+    if (count == 0)
+      return 0;
     INode* inodeIn = fdIn->inode;
     INode* inodeOut = fdOut->inode;
     if (fdOut->seekOff > std::numeric_limits<size_t>::max() - count)
