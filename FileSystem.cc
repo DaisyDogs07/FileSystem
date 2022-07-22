@@ -1,4 +1,3 @@
-#include <iostream>
 #include <cassert>
 #include "./FileSystem.h"
 #include "node.h"

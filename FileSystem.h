@@ -606,9 +606,9 @@ class FileSystem {
     size_t end = inode->size - fd->seekOff;
     if (end < count)
       count = end;
-    fd->seekOff += count;
     memcpy(buf, inode->data + fd->seekOff, count);
     buf[count] = '\0';
+    fd->seekOff += count;
     if (!(fd->flags & O_NOATIME))
       clock_gettime(CLOCK_REALTIME, &inode->atime);
     return count;
