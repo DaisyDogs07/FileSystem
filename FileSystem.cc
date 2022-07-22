@@ -48,13 +48,11 @@ void FileSystemConstructor(const FunctionCallbackInfo<Value>& args) {
 #define StringVal(x) \
   (x->IsString() \
     ? *String::Utf8Value(isolate, x.As<String>()) \
-    : static_cast<char*>( \
-        x.As<ArrayBufferView>()->Buffer()->GetBackingStore()->Data() \
-      ) + x.As<ArrayBufferView>()->ByteOffset())
+    : Buffer::Data(x))
 #define StringLen(x) \
   (x->IsString() \
-    ? x.As<String>()->Utf8Length(isolate) \
-    : x.As<ArrayBufferView>()->ByteLength())
+    ? static_cast<size_t>(x.As<String>()->Utf8Length(isolate)) \
+    : Buffer::Length(x))
 
 #define THROWIFERR(expr, res) \
   do { \
@@ -584,7 +582,7 @@ void FileSystemRead(const FunctionCallbackInfo<Value>& args) {
   );
   if (res < bufLen)
     buf = reinterpret_cast<char*>(
-      realloc(buf, res)
+      realloc(buf, res + 1)
     );
   args.GetReturnValue().Set(
     Buffer::New(
@@ -596,10 +594,9 @@ void FileSystemRead(const FunctionCallbackInfo<Value>& args) {
 }
 
 void FileSystemWrite(const FunctionCallbackInfo<Value>& args) {
-  assert(args.Length() == 3);
+  assert(args.Length() == 2);
   assert(IsNumeric(args[0]));
   assert(IsStrOrBuf(args[1]));
-  assert(IsNumeric(args[2]));
   Isolate* isolate = args.GetIsolate();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     args.This()->GetInternalField(0).As<External>()->Value()
@@ -609,7 +606,7 @@ void FileSystemWrite(const FunctionCallbackInfo<Value>& args) {
     fs->Write(
       Uint32Val(args[0]),
       StringVal(args[1]),
-      Uint64Val(args[2])
+      StringLen(args[1])
     ), res
   );
   args.GetReturnValue().Set(BigInt::New(isolate, res));
@@ -1122,7 +1119,7 @@ NODE_MODULE_INIT() {
   DefineFunction(isolate, instTmpl, "Rename",     FileSystemRename,     2);
   DefineFunction(isolate, instTmpl, "LSeek",      FileSystemLSeek,      3);
   DefineFunction(isolate, instTmpl, "Read",       FileSystemRead,       2);
-  DefineFunction(isolate, instTmpl, "Write",      FileSystemWrite,      3);
+  DefineFunction(isolate, instTmpl, "Write",      FileSystemWrite,      2);
   DefineFunction(isolate, instTmpl, "SendFile",   FileSystemSendFile,   4);
   DefineFunction(isolate, instTmpl, "Truncate",   FileSystemTruncate,   2);
   DefineFunction(isolate, instTmpl, "FTruncate",  FileSystemFTruncate,  2);
