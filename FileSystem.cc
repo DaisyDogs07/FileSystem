@@ -761,7 +761,7 @@ Local<Object> StatToObj(Isolate* isolate, struct stat s) {
   statObj->Set(
     context,
     String::NewFromUtf8Literal(isolate, "st_mode"),
-    BigInt::NewFromUnsigned(isolate, s.st_mode)
+    Integer::NewFromUnsigned(isolate, s.st_mode)
   ).Check();
   statObj->Set(
     context,
@@ -898,7 +898,7 @@ Local<Object> StatxToObj(Isolate* isolate, struct statx s) {
   statxObj->Set(
     context,
     String::NewFromUtf8Literal(isolate, "stx_mode"),
-    BigInt::NewFromUnsigned(isolate, s.stx_mode)
+    Integer::NewFromUnsigned(isolate, s.stx_mode)
   ).Check();
   statxObj->Set(
     context,
