@@ -40,7 +40,7 @@ class FileSystem {
   }
 
   int FAccessAt(int dirFd, const char* path, int mode, int flags) {
-    if (mode & ~S_IRWXO || flags & ~AT_SYMLINK_NOFOLLOW)
+    if (mode & ~(F_OK | R_OK | W_OK | X_OK) || flags & ~AT_SYMLINK_NOFOLLOW)
       return -EINVAL;
     INode* origCwd = cwd.inode;
     if (dirFd != AT_FDCWD) {
@@ -57,9 +57,14 @@ class FileSystem {
     cwd.inode = origCwd;
     if (res != 0)
       return res;
-    if ((mode & X_OK && !(inode->mode & 0111)) ||
-        (mode & W_OK && !(inode->mode & 0222)) ||
-        (mode & R_OK && !(inode->mode & 0444)))
+    int check = 0;
+    if (mode & R_OK)
+      check &= 0444;
+    if (mode & W_OK)
+      check &= 0222;
+    if (mode & X_OK)
+      check &= 0111;
+    if (check != 0 && !(inode->mode & check))
       return -EACCES;
     return 0;
   }
@@ -67,7 +72,7 @@ class FileSystem {
     return FAccessAt(AT_FDCWD, path, mode, 0);
   }
   int OpenAt(int dirFd, const char* path, int flags, mode_t mode) {
-    if (flags & ~(O_WRONLY | O_RDWR | O_CREAT | O_EXCL | O_APPEND | O_TRUNC | O_DIRECTORY | O_NOFOLLOW | O_NOATIME))
+    if (flags & ~(O_RDONLY | O_WRONLY | O_RDWR | O_CREAT | O_EXCL | O_APPEND | O_TRUNC | O_DIRECTORY | O_NOFOLLOW | O_NOATIME))
       return -EINVAL;
     if (flags & O_CREAT) {
       if (mode & ~0777)
