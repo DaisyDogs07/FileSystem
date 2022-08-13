@@ -59,11 +59,11 @@ class FileSystem {
       return res;
     int check = 0;
     if (mode & R_OK)
-      check &= 0444;
+      check |= 0444;
     if (mode & W_OK)
-      check &= 0222;
+      check |= 0222;
     if (mode & X_OK)
-      check &= 0111;
+      check |= 0111;
     if (check != 0 && !(inode->mode & check))
       return -EACCES;
     return 0;
