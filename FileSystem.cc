@@ -1015,24 +1015,24 @@ void DefineConstants(Isolate* isolate, Local<FunctionTemplate> func) {
   DefineFlag(      AT_REMOVEDIR);
   DefineFlag(      AT_SYMLINK_FOLLOW);
   DefineFlag(      AT_SYMLINK_NOFOLLOW);
+  DefineFlag(      DT_REG);
   DefineFlag(      DT_DIR);
   DefineFlag(      DT_LNK);
-  DefineFlag(      DT_REG);
   DefineFlag(      O_APPEND);
   DefineFlag(      O_CREAT);
   DefineFlag(      O_DIRECTORY);
   DefineFlag(      O_EXCL);
   DefineFlag(      O_NOATIME);
   DefineFlag(      O_NOFOLLOW);
-  DefineFlag(      O_RDONLY);
-  DefineFlag(      O_RDWR);
   DefineFlag(      O_TRUNC);
+  DefineFlag(      O_RDONLY);
   DefineFlag(      O_WRONLY);
+  DefineFlag(      O_RDWR);
   DefineFlag(      RENAME_NOREPLACE);
-  DefineFlag(      S_IFDIR);
-  DefineFlag(      S_IFLNK);
   DefineFlag(      S_IFMT);
   DefineFlag(      S_IFREG);
+  DefineFlag(      S_IFDIR);
+  DefineFlag(      S_IFLNK);
   DefineFlag(      S_IRWXU);
   DefineFlag(      S_IRUSR);
   DefineFlag(      S_IWUSR);
@@ -1045,9 +1045,9 @@ void DefineConstants(Isolate* isolate, Local<FunctionTemplate> func) {
   DefineFlag(      S_IROTH);
   DefineFlag(      S_IWOTH);
   DefineFlag(      S_IXOTH);
+  DefineFlag(      SEEK_SET);
   DefineFlag(      SEEK_CUR);
   DefineFlag(      SEEK_END);
-  DefineFlag(      SEEK_SET);
   DefineFlag(      STATX_ATIME);
   DefineFlag(      STATX_BASIC_STATS);
   DefineFlag(      STATX_BLOCKS);
@@ -1059,10 +1059,10 @@ void DefineConstants(Isolate* isolate, Local<FunctionTemplate> func) {
   DefineFlag(      STATX_NLINK);
   DefineFlag(      STATX_SIZE);
   DefineFlag(      STATX_TYPE);
-  DefineFlag(      F_OK);
   DefineFlag(      R_OK);
   DefineFlag(      W_OK);
   DefineFlag(      X_OK);
+  DefineFlag(      F_OK);
 #undef DefineErrCode
 #undef DefineFlag
 #undef DefineFlagBigInt
