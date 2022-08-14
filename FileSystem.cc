@@ -381,11 +381,8 @@ void FileSystemGetDents(const FunctionCallbackInfo<Value>& args) {
         1024
       ), nread
     );
-    if (nread < 0) {
-      args.GetReturnValue().Set(Int32::New(isolate, nread));
-      return;
-    }
     if (nread == 0) {
+      fs.LSeek(fdNum, 0, SEEK_SET);
       args.GetReturnValue().Set(dentArr);
       return;
     }
