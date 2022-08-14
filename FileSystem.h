@@ -1078,7 +1078,7 @@ class FileSystem {
       realloc(name, nameLen + 1)
     );
   }
-  static const char* AbsolutePath(const char* path) {
+  const char* AbsolutePath(const char* path) {
     char* absPath = new char[PATH_MAX];
     size_t absPathLen = 0;
     if (path[0] != '/') {
