@@ -979,64 +979,6 @@ class FileSystem {
         return fds[i];
     return NULL;
   }
-  const char* GetName(const char* path) {
-    size_t pathLen = strlen(path);
-    char* name = new char[NAME_MAX + 1];
-    size_t nameLen = 0;
-    for (size_t i = pathLen; i != -1; --i) {
-      if (path[i] == '/') {
-        if (nameLen != 0)
-          break;
-      } else {
-        memmove(name + 1, name, nameLen++);
-        name[0] = path[i];
-      }
-    }
-    name[nameLen] = '\0';
-    return reinterpret_cast<char*>(
-      realloc(name, nameLen + 1)
-    );
-  }
-  const char* AbsolutePath(const char* path) {
-    char* absPath = new char[PATH_MAX];
-    size_t absPathLen = 0;
-    if (path[0] != '/') {
-      size_t cwdPathLen = strlen(cwd.path);
-      if (cwdPathLen != 1) {
-        memcpy(absPath, cwd.path, cwdPathLen);
-        absPath[cwdPathLen] = '/';
-        absPathLen = cwdPathLen + 1;
-      } else absPath[absPathLen++] = '/';
-    }
-    size_t pathLen = strlen(path);
-    for (size_t i = 0; i != pathLen; ++i) {
-      if (path[i] == '/') {
-        if (absPath[absPathLen - 1] != '/')
-          absPath[absPathLen++] = '/';
-      } else if (path[i] == '.' && absPath[absPathLen - 1] == '/') {
-        if (path[i + 1] == '.') {
-          if (path[i + 2] == '/' || path[i + 2] == '\0') {
-            --absPathLen;
-            while (absPathLen > 0 && absPath[--absPathLen - 1] != '/');
-            if (absPathLen == 0)
-              absPathLen = 1;
-            if (path[i + 2] == '\0')
-              ++i;
-            else i += 2;
-          }
-        } else if (path[i + 1] == '/' || path[i + 1] == '\0') {
-          if (path[i + 1] != '\0')
-            ++i;
-        } else absPath[absPathLen++] = '.';
-      } else absPath[absPathLen++] = path[i];
-    }
-    if (absPath[absPathLen - 1] == '/')
-      --absPathLen;
-    absPath[absPathLen] = '\0';
-    return reinterpret_cast<char*>(
-      realloc(absPath, absPathLen + 1)
-    );
-  }
   int GetINode(const char* path, INode** inode, INode** parent, bool followResolved = false) {
     size_t pathLen = strlen(path);
     if (pathLen == 0)
@@ -1118,7 +1060,63 @@ class FileSystem {
     *inode = current;
     return 0;
   }
-  void FillStat(INode* inode, struct stat* buf) {
+  static const char* GetName(const char* path) {
+    size_t pathLen = strlen(path);
+    char* name = new char[NAME_MAX + 1];
+    size_t nameLen = 0;
+    for (size_t i = pathLen; i != -1; --i) {
+      if (path[i] == '/') {
+        if (nameLen != 0)
+          break;
+      } else {
+        memmove(name + 1, name, nameLen++);
+        name[0] = path[i];
+      }
+    }
+    name[nameLen] = '\0';
+    return reinterpret_cast<char*>(
+      realloc(name, nameLen + 1)
+    );
+  }
+  static const char* AbsolutePath(const char* path) {
+    char* absPath = new char[PATH_MAX];
+    size_t absPathLen = 0;
+    if (path[0] != '/') {
+      size_t cwdPathLen = strlen(cwd.path);
+      if (cwdPathLen != 1) {
+        memcpy(absPath, cwd.path, cwdPathLen);
+        absPath[cwdPathLen] = '/';
+        absPathLen = cwdPathLen + 1;
+      } else absPath[absPathLen++] = '/';
+    }
+    size_t pathLen = strlen(path);
+    for (size_t i = 0; i != pathLen; ++i) {
+      if (path[i] == '/') {
+        if (absPath[absPathLen - 1] != '/')
+          absPath[absPathLen++] = '/';
+      } else if (path[i] == '.' && absPath[absPathLen - 1] == '/') {
+        if (path[i + 1] == '.') {
+          if (path[i + 2] == '/' || i + 2 == pathLen) {
+            --absPathLen;
+            while (absPathLen > 0 && absPath[--absPathLen - 1] != '/');
+            if (path[i + 2] == '\0')
+              ++i;
+            else i += 2;
+          }
+        } else if (path[i + 1] == '/')
+          ++i;
+        else if (i + 1 != pathLen)
+          absPath[absPathLen++] = '.';
+      } else absPath[absPathLen++] = path[i];
+    }
+    if (absPath[absPathLen - 1] == '/')
+      --absPathLen;
+    absPath[absPathLen] = '\0';
+    return reinterpret_cast<char*>(
+      realloc(absPath, absPathLen + 1)
+    );
+  }
+  static void FillStat(INode* inode, struct stat* buf) {
     memset(buf, '\0', sizeof(struct stat));
     buf->st_ino = inode->id;
     buf->st_mode = inode->mode;
@@ -1129,10 +1127,9 @@ class FileSystem {
     buf->st_ctim = inode->ctime;
     buf->st_blocks = inode->size / 512;
   }
-  void FillStatx(INode* inode, struct statx* buf, int mask) {
+  static void FillStatx(INode* inode, struct statx* buf, int mask) {
     memset(buf, '\0', sizeof(struct statx));
     buf->stx_mask = mask & (STATX_BASIC_STATS | STATX_BTIME);
-    buf->stx_attributes = buf->stx_attributes_mask = STATX_ATTR_NODUMP;
     if (mask & STATX_INO)
       buf->stx_ino = inode->id;
     if (mask & STATX_TYPE)
