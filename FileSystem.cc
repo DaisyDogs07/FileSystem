@@ -371,7 +371,8 @@ void FileSystemGetDents(const FunctionCallbackInfo<Value>& args) {
   );
   Local<Array> dentArr = Array::New(isolate);
   char buf[1024];
-  unsigned int fdNum = Int32Val(args[0]);
+  unsigned int fdNum = Uint32Val(args[0]);
+  off_t off = fs->LSeek(fdNum, 0, SEEK_CUR);
   while (true) {
     int nread;
     THROWIFERR(
@@ -382,7 +383,7 @@ void FileSystemGetDents(const FunctionCallbackInfo<Value>& args) {
       ), nread
     );
     if (nread == 0) {
-      fs->LSeek(fdNum, 0, SEEK_SET);
+      fs->LSeek(fdNum, off, SEEK_SET);
       args.GetReturnValue().Set(dentArr);
       return;
     }
@@ -407,7 +408,7 @@ void FileSystemGetDents(const FunctionCallbackInfo<Value>& args) {
       dentObj->Set(
         context,
         String::NewFromUtf8Literal(isolate, "d_type"),
-        Int32::New(isolate, (buf + i)[dent->d_reclen - 1])
+        Integer::New(isolate, (buf + i)[dent->d_reclen - 1])
       ).Check();
       dentArr->Set(
         context,
