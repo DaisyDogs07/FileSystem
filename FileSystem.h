@@ -327,15 +327,13 @@ class FileSystem {
       return 0;
     unsigned int nread = 0;
     char* dirpData = (char*)dirp;
-    for (unsigned int j = 0; j != count && fd->seekOff != fd->inode->dentCount; ++j, ++fd->seekOff) {
+    while (fd->seekOff != fd->inode->dentCount) {
       INode::Dent d = fd->inode->dents[fd->seekOff];
       size_t nameLen = strlen(d.name);
 #define ALIGN(x, a) (((x) + ((typeof(x))(a) - 1)) & ~((typeof(x))(a) - 1))
       unsigned short reclen = ALIGN(__builtin_offsetof(struct linux_dirent, d_name) + nameLen + 2, sizeof(long));
 #undef ALIGN
-      if (j == 0 && count < reclen)
-        return -EINVAL;
-      if (nread > count - reclen)
+      if (nread + reclen > count)
         break;
       struct linux_dirent* dent = (struct linux_dirent*)dirpData;
       dent->d_ino = d.inode->id;
@@ -346,7 +344,10 @@ class FileSystem {
       dirpData[reclen - 1] = (d.inode->mode & S_IFMT) >> 12;
       dirpData += reclen;
       nread += reclen;
+      ++fd->seekOff;
     }
+    if (nread == 0)
+      return -EINVAL;
     if (!(fd->flags & O_NOATIME))
       clock_gettime(CLOCK_REALTIME, &fd->inode->atime);
     return nread;
