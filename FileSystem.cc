@@ -739,12 +739,7 @@ void FileSystemGetCwd(const FunctionCallbackInfo<Value>& args) {
   int res;
   THROWIFERR(fs->GetCwd(buf, PATH_MAX), res);
   args.GetReturnValue().Set(
-    String::NewFromUtf8(
-      isolate,
-      buf,
-      NewStringType::kNormal,
-      res
-    ).ToLocalChecked()
+    String::NewFromUtf8(isolate, buf).ToLocalChecked()
   );
 }
 
@@ -1064,9 +1059,7 @@ void DefineConstants(Isolate* isolate, Local<FunctionTemplate> func) {
   DefineFlag(      W_OK);
   DefineFlag(      X_OK);
   DefineFlag(      F_OK);
-#undef DefineErrCode
 #undef DefineFlag
-#undef DefineFlagBigInt
 }
 
 template<size_t N>

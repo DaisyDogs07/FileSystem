@@ -321,14 +321,15 @@ class FileSystem {
     Fd* fd;
     if (!(fd = GetFd(fdNum)))
       return -EBADF;
-    if (!S_ISDIR(fd->inode->mode))
+    INode* inode = fd->inode;
+    if (!S_ISDIR(inode->mode))
       return -ENOTDIR;
-    if (fd->seekOff >= fd->inode->dentCount)
+    if (fd->seekOff >= inode->dentCount)
       return 0;
     unsigned int nread = 0;
     char* dirpData = (char*)dirp;
-    while (fd->seekOff != fd->inode->dentCount) {
-      INode::Dent d = fd->inode->dents[fd->seekOff];
+    do {
+      INode::Dent d = inode->dents[fd->seekOff];
       size_t nameLen = strlen(d.name);
 #define ALIGN(x, a) (((x) + ((typeof(x))(a) - 1)) & ~((typeof(x))(a) - 1))
       unsigned short reclen = ALIGN(__builtin_offsetof(struct linux_dirent, d_name) + nameLen + 2, sizeof(long));
@@ -344,16 +345,15 @@ class FileSystem {
       dirpData[reclen - 1] = (d.inode->mode & S_IFMT) >> 12;
       dirpData += reclen;
       nread += reclen;
-      ++fd->seekOff;
-    }
+    } while (++fd->seekOff != inode->dentCount);
     if (nread == 0)
       return -EINVAL;
     if (!(fd->flags & O_NOATIME))
-      clock_gettime(CLOCK_REALTIME, &fd->inode->atime);
+      clock_gettime(CLOCK_REALTIME, &inode->atime);
     return nread;
   }
   int LinkAt(int oldDirFd, const char* oldPath, int newDirFd, const char* newPath, int flags) {
-    if ((flags & ~AT_SYMLINK_FOLLOW) != 0)
+    if (flags & ~AT_SYMLINK_FOLLOW)
       return -EINVAL;
     Fd* oldFd;
     Fd* newFd;
@@ -408,7 +408,7 @@ class FileSystem {
     return LinkAt(AT_FDCWD, oldPath, AT_FDCWD, newPath, 0);
   }
   int UnlinkAt(int dirFd, const char* path, int flags) {
-    if ((flags & ~AT_REMOVEDIR) != 0)
+    if (flags & ~AT_REMOVEDIR)
       return -EINVAL;
     INode* origCwd = cwd.inode;
     if (dirFd != AT_FDCWD) {
