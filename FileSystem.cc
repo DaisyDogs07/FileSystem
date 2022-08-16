@@ -307,7 +307,7 @@ void FileSystemReadLinkAt(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     args.This()->GetInternalField(0).As<External>()->Value()
   );
-  char* buf = new char[PATH_MAX];
+  char buf[PATH_MAX];
   int res;
   THROWIFERR(
     fs->ReadLinkAt(
@@ -317,15 +317,9 @@ void FileSystemReadLinkAt(const FunctionCallbackInfo<Value>& args) {
       PATH_MAX
     ), res
   );
-  buf = reinterpret_cast<char*>(
-    realloc(buf, res)
-  );
+  buf[res] = '\0';
   args.GetReturnValue().Set(
-    Buffer::New(
-      isolate,
-      buf,
-      res
-    ).ToLocalChecked()
+    String::NewFromUtf8(isolate, buf).ToLocalChecked()
   );
 }
 void FileSystemReadLink(const FunctionCallbackInfo<Value>& args) {
@@ -335,7 +329,7 @@ void FileSystemReadLink(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     args.This()->GetInternalField(0).As<External>()->Value()
   );
-  char* buf = new char[PATH_MAX];
+  char buf[PATH_MAX];
   int res;
   THROWIFERR(
     fs->ReadLink(
@@ -344,15 +338,9 @@ void FileSystemReadLink(const FunctionCallbackInfo<Value>& args) {
       PATH_MAX
     ), res
   );
-  buf = reinterpret_cast<char*>(
-    realloc(buf, res)
-  );
+  buf[res] = '\0';
   args.GetReturnValue().Set(
-    Buffer::New(
-      isolate,
-      buf,
-      res
-    ).ToLocalChecked()
+    String::NewFromUtf8(isolate, buf).ToLocalChecked()
   );
 }
 void FileSystemGetDents(const FunctionCallbackInfo<Value>& args) {
