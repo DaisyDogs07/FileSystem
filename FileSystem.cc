@@ -362,18 +362,24 @@ void FileSystemReadLink(const FunctionCallbackInfo<Value>& args) {
   );
 }
 void FileSystemGetDents(const FunctionCallbackInfo<Value>& args) {
-  assert(args.Length() == 1);
+  assert(args.Length() == 1 || args.Length() == 2);
   assert(IsNumeric(args[0]));
   Isolate* isolate = args.GetIsolate();
   Local<Context> context = isolate->GetCurrentContext();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     args.This()->GetInternalField(0).As<External>()->Value()
   );
+  uint32_t count = std::numeric_limits<uint32_t>::max();
+  if (args.Length() == 2) {
+    assert(IsNumeric(args[1]));
+    count = Uint32Val(args[1]);
+  }
   Local<Array> dentArr = Array::New(isolate);
   char buf[1024];
   unsigned int fdNum = Uint32Val(args[0]);
   off_t off = fs->LSeek(fdNum, 0, SEEK_CUR);
-  while (true) {
+  uint32_t i = 0;
+  while (i < count) {
     int nread;
     THROWIFERR(
       fs->GetDents(
@@ -382,13 +388,10 @@ void FileSystemGetDents(const FunctionCallbackInfo<Value>& args) {
         1024
       ), nread
     );
-    if (nread == 0) {
-      fs->LSeek(fdNum, off, SEEK_SET);
-      args.GetReturnValue().Set(dentArr);
-      return;
-    }
-    for (int i = 0; i < nread;) {
-      struct linux_dirent* dent = (struct linux_dirent*)(buf + i);
+    if (nread == 0)
+      break;
+    for (int j = 0; i < count && j < nread; ++i) {
+      struct linux_dirent* dent = (struct linux_dirent*)(buf + j);
       Local<Object> dentObj = Object::New(isolate);
       dentObj->Set(
         context,
@@ -408,16 +411,18 @@ void FileSystemGetDents(const FunctionCallbackInfo<Value>& args) {
       dentObj->Set(
         context,
         String::NewFromUtf8Literal(isolate, "d_type"),
-        Integer::New(isolate, (buf + i)[dent->d_reclen - 1])
+        Integer::New(isolate, (buf + j)[dent->d_reclen - 1])
       ).Check();
       dentArr->Set(
         context,
         dentArr->Length(),
         dentObj
       ).Check();
-      i += dent->d_reclen;
+      j += dent->d_reclen;
     }
   }
+  fs->LSeek(fdNum, off, SEEK_SET);
+  args.GetReturnValue().Set(dentArr);
 }
 void FileSystemLinkAt(const FunctionCallbackInfo<Value>& args) {
   assert(args.Length() == 5);
