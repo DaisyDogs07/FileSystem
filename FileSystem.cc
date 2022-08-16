@@ -565,10 +565,9 @@ void FileSystemRead(const FunctionCallbackInfo<Value>& args) {
       bufLen
     ), res
   );
-  if (res < bufLen)
-    buf = reinterpret_cast<char*>(
-      realloc(buf, res + 1)
-    );
+  buf = reinterpret_cast<char*>(
+    realloc(buf, res)
+  );
   args.GetReturnValue().Set(
     Buffer::New(
       isolate,
