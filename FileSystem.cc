@@ -1,5 +1,5 @@
 #include <cassert>
-#include "./FileSystem.h"
+#include "FileSystem.h"
 #include "node.h"
 #include "node_buffer.h"
 
@@ -303,26 +303,23 @@ void FileSystemReadLinkAt(const FunctionCallbackInfo<Value>& args) {
   assert(args.Length() == 2);
   assert(IsNumeric(args[0]));
   assert(args[1]->IsString());
-  assert(IsNumeric(args[2]));
   Isolate* isolate = args.GetIsolate();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     args.This()->GetInternalField(0).As<External>()->Value()
   );
-  int bufLen = Int32Val(args[2]);
-  char* buf = new char[bufLen + 1];
+  char* buf = new char[PATH_MAX];
   int res;
   THROWIFERR(
     fs->ReadLinkAt(
       Int32Val(args[0]),
       *String::Utf8Value(isolate, args[1].As<String>()),
       buf,
-      bufLen
+      PATH_MAX
     ), res
   );
-  if (res < bufLen)
-    buf = reinterpret_cast<char*>(
-      realloc(buf, res)
-    );
+  buf = reinterpret_cast<char*>(
+    realloc(buf, res)
+  );
   args.GetReturnValue().Set(
     Buffer::New(
       isolate,
@@ -332,27 +329,24 @@ void FileSystemReadLinkAt(const FunctionCallbackInfo<Value>& args) {
   );
 }
 void FileSystemReadLink(const FunctionCallbackInfo<Value>& args) {
-  assert(args.Length() == 2);
+  assert(args.Length() == 1);
   assert(args[0]->IsString());
-  assert(IsNumeric(args[1]));
   Isolate* isolate = args.GetIsolate();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     args.This()->GetInternalField(0).As<External>()->Value()
   );
-  int bufLen = Int32Val(args[1]);
-  char* buf = new char[bufLen + 1];
+  char* buf = new char[PATH_MAX];
   int res;
   THROWIFERR(
     fs->ReadLink(
       *String::Utf8Value(isolate, args[0].As<String>()),
       buf,
-      bufLen
+      PATH_MAX
     ), res
   );
-  if (res < bufLen)
-    buf = reinterpret_cast<char*>(
-      realloc(buf, res)
-    );
+  buf = reinterpret_cast<char*>(
+    realloc(buf, res)
+  );
   args.GetReturnValue().Set(
     Buffer::New(
       isolate,
@@ -1115,8 +1109,8 @@ NODE_MODULE_INIT() {
   DefineFunction(isolate, instTmpl, "mkdir",      FileSystemMkDir,      2);
   DefineFunction(isolate, instTmpl, "symlinkat",  FileSystemSymlinkAt,  3);
   DefineFunction(isolate, instTmpl, "symlink",    FileSystemSymlink,    2);
-  DefineFunction(isolate, instTmpl, "readlinkat", FileSystemReadLinkAt, 3);
-  DefineFunction(isolate, instTmpl, "readlink",   FileSystemReadLink,   2);
+  DefineFunction(isolate, instTmpl, "readlinkat", FileSystemReadLinkAt, 2);
+  DefineFunction(isolate, instTmpl, "readlink",   FileSystemReadLink,   1);
   DefineFunction(isolate, instTmpl, "getdents",   FileSystemGetDents,   1);
   DefineFunction(isolate, instTmpl, "linkAt",     FileSystemLinkAt,     5);
   DefineFunction(isolate, instTmpl, "link",       FileSystemLink,       2);
