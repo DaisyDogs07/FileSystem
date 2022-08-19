@@ -29,6 +29,10 @@ void FileSystemConstructor(const FunctionCallbackInfo<Value>& args) {
   args.GetReturnValue().Set(args.This());
 }
 
+#define IsNumeric(x) \
+  (x->IsNumber() || x->IsBigInt())
+#define IsStrOrBuf(x) \
+  (x->IsString() || x->IsArrayBufferView())
 #define Int32Val(x) \
   (x->IsBigInt() \
     ? static_cast<int32_t>(x.As<BigInt>()->Int64Value()) \
@@ -54,24 +58,25 @@ void FileSystemConstructor(const FunctionCallbackInfo<Value>& args) {
     ? static_cast<size_t>(x.As<String>()->Utf8Length(isolate)) \
     : Buffer::Length(x))
 
-#define THROWIFERR(expr, res) \
+#define THROWERR(code) \
   do { \
-    if ((res = (expr)) < 0) { \
-      isolate->ThrowException( \
-        Exception::Error( \
-          String::NewFromUtf8( \
-            isolate, \
-            strerror(-res) \
-          ).ToLocalChecked() \
-        ) \
-      ); \
-      return; \
+    isolate->ThrowException( \
+      Exception::Error( \
+        String::NewFromUtf8( \
+          isolate, \
+          strerror(-code) \
+        ).ToLocalChecked() \
+      ) \
+    ); \
+    return; \
+  } while (0)
+#define THROWIFERR(res) \
+  do { \
+    auto tmp = (res); \
+    if (tmp < 0) { \
+      THROWERR(tmp); \
     } \
   } while (0)
-#define IsNumeric(x) \
-  (x->IsNumber() || x->IsBigInt())
-#define IsStrOrBuf(x) \
-  (x->IsString() || x->IsArrayBufferView())
 
 void FileSystemFAccessAt(const FunctionCallbackInfo<Value>& args) {
   assert(args.Length() == 4);
@@ -83,14 +88,13 @@ void FileSystemFAccessAt(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     args.This()->GetInternalField(0).As<External>()->Value()
   );
-  int res;
   THROWIFERR(
     fs->FAccessAt(
       Int32Val(args[0]),
       *String::Utf8Value(isolate, args[1].As<String>()),
       Int32Val(args[2]),
       Uint32Val(args[3])
-    ), res
+    )
   );
 }
 void FileSystemAccess(const FunctionCallbackInfo<Value>& args) {
@@ -101,12 +105,11 @@ void FileSystemAccess(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     args.This()->GetInternalField(0).As<External>()->Value()
   );
-  int res;
   THROWIFERR(
     fs->Access(
       *String::Utf8Value(isolate, args[0].As<String>()),
       Int32Val(args[1])
-    ), res
+    )
   );
 }
 void FileSystemOpenAt(const FunctionCallbackInfo<Value>& args) {
@@ -121,12 +124,12 @@ void FileSystemOpenAt(const FunctionCallbackInfo<Value>& args) {
   );
   int res;
   THROWIFERR(
-    fs->OpenAt(
+    res = fs->OpenAt(
       Int32Val(args[0]),
       *String::Utf8Value(isolate, args[1].As<String>()),
       Int32Val(args[2]),
       Uint32Val(args[3])
-    ), res
+    )
   );
   args.GetReturnValue().Set(
     Int32::New(
@@ -146,11 +149,11 @@ void FileSystemOpen(const FunctionCallbackInfo<Value>& args) {
   );
   int res;
   THROWIFERR(
-    fs->Open(
+    res = fs->Open(
       *String::Utf8Value(isolate, args[0].As<String>()),
       Int32Val(args[1]),
       Uint32Val(args[2])
-    ), res
+    )
   );
   args.GetReturnValue().Set(
     Int32::New(
@@ -169,10 +172,10 @@ void FileSystemCreat(const FunctionCallbackInfo<Value>& args) {
   );
   int res;
   THROWIFERR(
-    fs->Creat(
+    res = fs->Creat(
       *String::Utf8Value(isolate, args[0].As<String>()),
       Uint32Val(args[1])
-    ), res
+    )
   );
   args.GetReturnValue().Set(
     Int32::New(
@@ -188,11 +191,10 @@ void FileSystemClose(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     args.This()->GetInternalField(0).As<External>()->Value()
   );
-  int res;
   THROWIFERR(
     fs->Close(
       Int32Val(args[0])
-    ), res
+    )
   );
 }
 void FileSystemMkNodAt(const FunctionCallbackInfo<Value>& args) {
@@ -204,14 +206,13 @@ void FileSystemMkNodAt(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     args.This()->GetInternalField(0).As<External>()->Value()
   );
-  int res;
   THROWIFERR(
     fs->MkNodAt(
       Int32Val(args[0]),
       *String::Utf8Value(isolate, args[1].As<String>()),
       Uint32Val(args[2]),
       0
-    ), res
+    )
   );
 }
 void FileSystemMkNod(const FunctionCallbackInfo<Value>& args) {
@@ -222,13 +223,12 @@ void FileSystemMkNod(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     args.This()->GetInternalField(0).As<External>()->Value()
   );
-  int res;
   THROWIFERR(
     fs->MkNod(
       *String::Utf8Value(isolate, args[0].As<String>()),
       Uint32Val(args[1]),
       0
-    ), res
+    )
   );
 }
 void FileSystemMkDirAt(const FunctionCallbackInfo<Value>& args) {
@@ -240,13 +240,12 @@ void FileSystemMkDirAt(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     args.This()->GetInternalField(0).As<External>()->Value()
   );
-  int res;
   THROWIFERR(
     fs->MkDirAt(
       Int32Val(args[0]),
       *String::Utf8Value(isolate, args[1].As<String>()),
       Uint32Val(args[2])
-    ), res
+    )
   );
 }
 void FileSystemMkDir(const FunctionCallbackInfo<Value>& args) {
@@ -257,12 +256,11 @@ void FileSystemMkDir(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     args.This()->GetInternalField(0).As<External>()->Value()
   );
-  int res;
   THROWIFERR(
     fs->MkDir(
       *String::Utf8Value(isolate, args[0].As<String>()),
       Uint32Val(args[1])
-    ), res
+    )
   );
 }
 void FileSystemSymlinkAt(const FunctionCallbackInfo<Value>& args) {
@@ -274,13 +272,12 @@ void FileSystemSymlinkAt(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     args.This()->GetInternalField(0).As<External>()->Value()
   );
-  int res;
   THROWIFERR(
     fs->SymlinkAt(
       *String::Utf8Value(isolate, args[0].As<String>()),
       Int32Val(args[1]),
       *String::Utf8Value(isolate, args[2].As<String>())
-    ), res
+    )
   );
 }
 void FileSystemSymlink(const FunctionCallbackInfo<Value>& args) {
@@ -291,12 +288,11 @@ void FileSystemSymlink(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     args.This()->GetInternalField(0).As<External>()->Value()
   );
-  int res;
   THROWIFERR(
     fs->Symlink(
       *String::Utf8Value(isolate, args[0].As<String>()),
       *String::Utf8Value(isolate, args[1].As<String>())
-    ), res
+    )
   );
 }
 void FileSystemReadLinkAt(const FunctionCallbackInfo<Value>& args) {
@@ -310,12 +306,12 @@ void FileSystemReadLinkAt(const FunctionCallbackInfo<Value>& args) {
   char buf[PATH_MAX];
   int res;
   THROWIFERR(
-    fs->ReadLinkAt(
+    res = fs->ReadLinkAt(
       Int32Val(args[0]),
       *String::Utf8Value(isolate, args[1].As<String>()),
       buf,
       PATH_MAX
-    ), res
+    )
   );
   buf[res] = '\0';
   args.GetReturnValue().Set(
@@ -332,11 +328,11 @@ void FileSystemReadLink(const FunctionCallbackInfo<Value>& args) {
   char buf[PATH_MAX];
   int res;
   THROWIFERR(
-    fs->ReadLink(
+    res = fs->ReadLink(
       *String::Utf8Value(isolate, args[0].As<String>()),
       buf,
       PATH_MAX
-    ), res
+    )
   );
   buf[res] = '\0';
   args.GetReturnValue().Set(
@@ -364,11 +360,11 @@ void FileSystemGetDents(const FunctionCallbackInfo<Value>& args) {
   while (i < count) {
     int nread;
     THROWIFERR(
-      fs->GetDents(
+      nread = fs->GetDents(
         fdNum,
         (struct linux_dirent*)buf,
         1024
-      ), nread
+      )
     );
     if (nread == 0)
       break;
@@ -417,7 +413,6 @@ void FileSystemLinkAt(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     args.This()->GetInternalField(0).As<External>()->Value()
   );
-  int res;
   THROWIFERR(
     fs->LinkAt(
       Int32Val(args[0]),
@@ -425,7 +420,7 @@ void FileSystemLinkAt(const FunctionCallbackInfo<Value>& args) {
       Int32Val(args[2]),
       *String::Utf8Value(isolate, args[3].As<String>()),
       Int32Val(args[4])
-    ), res
+    )
   );
 }
 void FileSystemLink(const FunctionCallbackInfo<Value>& args) {
@@ -436,12 +431,11 @@ void FileSystemLink(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     args.This()->GetInternalField(0).As<External>()->Value()
   );
-  int res;
   THROWIFERR(
     fs->Link(
       *String::Utf8Value(isolate, args[0].As<String>()),
       *String::Utf8Value(isolate, args[1].As<String>())
-    ), res
+    )
   );
 }
 void FileSystemUnlinkAt(const FunctionCallbackInfo<Value>& args) {
@@ -453,13 +447,12 @@ void FileSystemUnlinkAt(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     args.This()->GetInternalField(0).As<External>()->Value()
   );
-  int res;
   THROWIFERR(
     fs->UnlinkAt(
       Int32Val(args[0]),
       *String::Utf8Value(isolate, args[1].As<String>()),
       Int32Val(args[2])
-    ), res
+    )
   );
 }
 void FileSystemUnlink(const FunctionCallbackInfo<Value>& args) {
@@ -469,11 +462,10 @@ void FileSystemUnlink(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     args.This()->GetInternalField(0).As<External>()->Value()
   );
-  int res;
   THROWIFERR(
     fs->Unlink(
       *String::Utf8Value(isolate, args[0].As<String>())
-    ), res
+    )
   );
 }
 void FileSystemRmDir(const FunctionCallbackInfo<Value>& args) {
@@ -483,11 +475,10 @@ void FileSystemRmDir(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     args.This()->GetInternalField(0).As<External>()->Value()
   );
-  int res;
   THROWIFERR(
     fs->RmDir(
       *String::Utf8Value(isolate, args[0].As<String>())
-    ), res
+    )
   );
 }
 void FileSystemRenameAt(const FunctionCallbackInfo<Value>& args) {
@@ -501,7 +492,6 @@ void FileSystemRenameAt(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     args.This()->GetInternalField(0).As<External>()->Value()
   );
-  int res;
   THROWIFERR(
     fs->RenameAt(
       Int32Val(args[0]),
@@ -509,7 +499,7 @@ void FileSystemRenameAt(const FunctionCallbackInfo<Value>& args) {
       Int32Val(args[2]),
       *String::Utf8Value(isolate, args[3].As<String>()),
       Int32Val(args[4])
-    ), res
+    )
   );
 }
 void FileSystemRename(const FunctionCallbackInfo<Value>& args) {
@@ -520,12 +510,11 @@ void FileSystemRename(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     args.This()->GetInternalField(0).As<External>()->Value()
   );
-  int res;
   THROWIFERR(
     fs->Rename(
       *String::Utf8Value(isolate, args[0].As<String>()),
       *String::Utf8Value(isolate, args[1].As<String>())
-    ), res
+    )
   );
 }
 void FileSystemLSeek(const FunctionCallbackInfo<Value>& args) {
@@ -539,11 +528,11 @@ void FileSystemLSeek(const FunctionCallbackInfo<Value>& args) {
   );
   off_t res;
   THROWIFERR(
-    fs->LSeek(
+    res = fs->LSeek(
       Uint32Val(args[0]),
       Int64Val(args[1]),
       Uint32Val(args[2])
-    ), res
+    )
   );
   args.GetReturnValue().Set(BigInt::New(isolate, res));
 }
@@ -555,16 +544,27 @@ void FileSystemRead(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     args.This()->GetInternalField(0).As<External>()->Value()
   );
-  size_t bufLen = Uint64Val(args[1]);
-  char* buf = new char[bufLen + 1];
+  unsigned int fdNum = Uint32Val(args[0]);
+  struct stat s;
   ssize_t res;
-  THROWIFERR(
-    fs->Read(
-      Uint32Val(args[0]),
-      buf,
-      bufLen
-    ), res
+  THROWIFERR(res = fs->FStat(fdNum, &s));
+  size_t bufLen = std::min(
+    Uint64Val(args[1]),
+    std::min(
+      (size_t)s.st_size,
+      (size_t)std::numeric_limits<int>::max()
+    )
   );
+  char* buf = new char[bufLen + 1];
+  res = fs->Read(
+    fdNum,
+    buf,
+    bufLen
+  );
+  if (res < 0) {
+    delete buf;
+    THROWERR(res);
+  }
   buf = reinterpret_cast<char*>(
     realloc(buf, res)
   );
@@ -587,11 +587,11 @@ void FileSystemWrite(const FunctionCallbackInfo<Value>& args) {
   );
   ssize_t res;
   THROWIFERR(
-    fs->Write(
+    res = fs->Write(
       Uint32Val(args[0]),
       StringVal(args[1]),
       StringLen(args[1])
-    ), res
+    )
   );
   args.GetReturnValue().Set(BigInt::New(isolate, res));
 }
@@ -605,17 +605,17 @@ void FileSystemSendFile(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     args.This()->GetInternalField(0).As<External>()->Value()
   );
-  off_t* off = NULL;
+  off_t off;
   if (!args[2]->IsNull())
-    *off = Int64Val(args[2]);
+    off = Int64Val(args[2]);
   ssize_t res;
   THROWIFERR(
-    fs->SendFile(
+    res = fs->SendFile(
       Uint32Val(args[0]),
       Uint32Val(args[1]),
-      off,
+      args[2]->IsNull() ? NULL : &off,
       Uint64Val(args[3])
-    ), res
+    )
   );
   args.GetReturnValue().Set(BigInt::New(isolate, res));
 }
@@ -627,12 +627,11 @@ void FileSystemTruncate(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     args.This()->GetInternalField(0).As<External>()->Value()
   );
-  int res;
   THROWIFERR(
     fs->Truncate(
       *String::Utf8Value(isolate, args[0].As<String>()),
       Int64Val(args[1])
-    ), res
+    )
   );
 }
 void FileSystemFTruncate(const FunctionCallbackInfo<Value>& args) {
@@ -643,12 +642,11 @@ void FileSystemFTruncate(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     args.This()->GetInternalField(0).As<External>()->Value()
   );
-  int res;
   THROWIFERR(
     fs->FTruncate(
       Uint32Val(args[0]),
       Int64Val(args[1])
-    ), res
+    )
   );
 }
 void FileSystemFChModAt(const FunctionCallbackInfo<Value>& args) {
@@ -660,13 +658,12 @@ void FileSystemFChModAt(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     args.This()->GetInternalField(0).As<External>()->Value()
   );
-  int res;
   THROWIFERR(
     fs->FChModAt(
       Int32Val(args[0]),
       *String::Utf8Value(isolate, args[1].As<String>()),
       Uint32Val(args[2])
-    ), res
+    )
   );
 }
 void FileSystemChMod(const FunctionCallbackInfo<Value>& args) {
@@ -677,12 +674,11 @@ void FileSystemChMod(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     args.This()->GetInternalField(0).As<External>()->Value()
   );
-  int res;
   THROWIFERR(
     fs->ChMod(
       *String::Utf8Value(isolate, args[0].As<String>()),
       Uint32Val(args[1])
-    ), res
+    )
   );
 }
 void FileSystemFChMod(const FunctionCallbackInfo<Value>& args) {
@@ -693,12 +689,11 @@ void FileSystemFChMod(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     args.This()->GetInternalField(0).As<External>()->Value()
   );
-  int res;
   THROWIFERR(
     fs->FChMod(
       Uint32Val(args[0]),
       Uint32Val(args[1])
-    ), res
+    )
   );
 }
 void FileSystemChDir(const FunctionCallbackInfo<Value>& args) {
@@ -708,11 +703,10 @@ void FileSystemChDir(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     args.This()->GetInternalField(0).As<External>()->Value()
   );
-  int res;
   THROWIFERR(
     fs->ChDir(
       *String::Utf8Value(isolate, args[0].As<String>())
-    ), res
+    )
   );
 }
 void FileSystemGetCwd(const FunctionCallbackInfo<Value>& args) {
@@ -722,11 +716,30 @@ void FileSystemGetCwd(const FunctionCallbackInfo<Value>& args) {
     args.This()->GetInternalField(0).As<External>()->Value()
   );
   char buf[PATH_MAX];
-  int res;
-  THROWIFERR(fs->GetCwd(buf, PATH_MAX), res);
+  THROWIFERR(fs->GetCwd(buf, PATH_MAX));
   args.GetReturnValue().Set(
     String::NewFromUtf8(isolate, buf).ToLocalChecked()
   );
+}
+
+void SetTimeProp(Isolate* isolate, Local<Object> obj, const char* prop, time_t sec, long nsec) {
+  Local<Context> context = isolate->GetCurrentContext();
+  Local<Object> tim = Object::New(isolate);
+  tim->Set(
+    context,
+    String::NewFromUtf8Literal(isolate, "tv_sec"),
+    Integer::NewFromUnsigned(isolate, sec)
+  ).Check();
+  tim->Set(
+    context,
+    String::NewFromUtf8Literal(isolate, "tv_nsec"),
+    Integer::NewFromUnsigned(isolate, nsec)
+  ).Check();
+  obj->Set(
+    context,
+    String::NewFromUtf8(isolate, prop).ToLocalChecked(),
+    tim
+  ).Check();
 }
 
 Local<Object> StatToObj(Isolate* isolate, struct stat s) {
@@ -752,54 +765,9 @@ Local<Object> StatToObj(Isolate* isolate, struct stat s) {
     String::NewFromUtf8Literal(isolate, "st_size"),
     BigInt::NewFromUnsigned(isolate, s.st_size)
   ).Check();
-  Local<Object> atimObj = Object::New(isolate);
-  atimObj->Set(
-    context,
-    String::NewFromUtf8Literal(isolate, "tv_sec"),
-    Integer::NewFromUnsigned(isolate, s.st_atim.tv_sec)
-  ).Check();
-  atimObj->Set(
-    context,
-    String::NewFromUtf8Literal(isolate, "tv_nsec"),
-    Integer::NewFromUnsigned(isolate, s.st_atim.tv_nsec)
-  ).Check();
-  statObj->Set(
-    context,
-    String::NewFromUtf8Literal(isolate, "st_atim"),
-    atimObj
-  ).Check();
-  Local<Object> mtimObj = Object::New(isolate);
-  mtimObj->Set(
-    context,
-    String::NewFromUtf8Literal(isolate, "tv_sec"),
-    Integer::NewFromUnsigned(isolate, s.st_mtim.tv_sec)
-  ).Check();
-  mtimObj->Set(
-    context,
-    String::NewFromUtf8Literal(isolate, "tv_nsec"),
-    Integer::NewFromUnsigned(isolate, s.st_mtim.tv_nsec)
-  ).Check();
-  statObj->Set(
-    context,
-    String::NewFromUtf8Literal(isolate, "st_mtim"),
-    mtimObj
-  ).Check();
-  Local<Object> ctimObj = Object::New(isolate);
-  ctimObj->Set(
-    context,
-    String::NewFromUtf8Literal(isolate, "tv_sec"),
-    Integer::NewFromUnsigned(isolate, s.st_ctim.tv_sec)
-  ).Check();
-  ctimObj->Set(
-    context,
-    String::NewFromUtf8Literal(isolate, "tv_nsec"),
-    Integer::NewFromUnsigned(isolate, s.st_ctim.tv_nsec)
-  ).Check();
-  statObj->Set(
-    context,
-    String::NewFromUtf8Literal(isolate, "st_ctim"),
-    ctimObj
-  ).Check();
+  SetTimeProp(isolate, statObj, "st_atim", s.st_atim.tv_sec, s.st_atim.tv_nsec);
+  SetTimeProp(isolate, statObj, "st_mtim", s.st_mtim.tv_sec, s.st_mtim.tv_nsec);
+  SetTimeProp(isolate, statObj, "st_ctim", s.st_ctim.tv_sec, s.st_ctim.tv_nsec);
   statObj->Set(
     context,
     String::NewFromUtf8Literal(isolate, "st_blocks"),
@@ -816,12 +784,11 @@ void FileSystemStat(const FunctionCallbackInfo<Value>& args) {
     args.This()->GetInternalField(0).As<External>()->Value()
   );
   struct stat s;
-  int res;
   THROWIFERR(
     fs->Stat(
       *String::Utf8Value(isolate, args[0].As<String>()),
       &s
-    ), res
+    )
   );
   args.GetReturnValue().Set(
     StatToObj(isolate, s)
@@ -835,12 +802,11 @@ void FileSystemLStat(const FunctionCallbackInfo<Value>& args) {
     args.This()->GetInternalField(0).As<External>()->Value()
   );
   struct stat s;
-  int res;
   THROWIFERR(
     fs->LStat(
       *String::Utf8Value(isolate, args[0].As<String>()),
       &s
-    ), res
+    )
   );
   args.GetReturnValue().Set(
     StatToObj(isolate, s)
@@ -854,12 +820,11 @@ void FileSystemFStat(const FunctionCallbackInfo<Value>& args) {
     args.This()->GetInternalField(0).As<External>()->Value()
   );
   struct stat s;
-  int res;
   THROWIFERR(
     fs->FStat(
       Uint32Val(args[0]),
       &s
-    ), res
+    )
   );
   args.GetReturnValue().Set(
     StatToObj(isolate, s)
@@ -889,70 +854,10 @@ Local<Object> StatxToObj(Isolate* isolate, struct statx s) {
     String::NewFromUtf8Literal(isolate, "stx_size"),
     BigInt::NewFromUnsigned(isolate, s.stx_size)
   ).Check();
-  Local<Object> atimeObj = Object::New(isolate);
-  atimeObj->Set(
-    context,
-    String::NewFromUtf8Literal(isolate, "tv_sec"),
-    Integer::NewFromUnsigned(isolate, s.stx_atime.tv_sec)
-  ).Check();
-  atimeObj->Set(
-    context,
-    String::NewFromUtf8Literal(isolate, "tv_nsec"),
-    Integer::NewFromUnsigned(isolate, s.stx_atime.tv_nsec)
-  ).Check();
-  statxObj->Set(
-    context,
-    String::NewFromUtf8Literal(isolate, "stx_atime"),
-    atimeObj
-  ).Check();
-  Local<Object> mtimeObj = Object::New(isolate);
-  mtimeObj->Set(
-    context,
-    String::NewFromUtf8Literal(isolate, "tv_sec"),
-    Integer::NewFromUnsigned(isolate, s.stx_mtime.tv_sec)
-  ).Check();
-  mtimeObj->Set(
-    context,
-    String::NewFromUtf8Literal(isolate, "tv_nsec"),
-    Integer::NewFromUnsigned(isolate, s.stx_mtime.tv_nsec)
-  ).Check();
-  statxObj->Set(
-    context,
-    String::NewFromUtf8Literal(isolate, "stx_mtime"),
-    mtimeObj
-  ).Check();
-  Local<Object> ctimeObj = Object::New(isolate);
-  ctimeObj->Set(
-    context,
-    String::NewFromUtf8Literal(isolate, "tv_sec"),
-    Integer::NewFromUnsigned(isolate, s.stx_ctime.tv_sec)
-  ).Check();
-  ctimeObj->Set(
-    context,
-    String::NewFromUtf8Literal(isolate, "tv_nsec"),
-    Integer::NewFromUnsigned(isolate, s.stx_ctime.tv_nsec)
-  ).Check();
-  statxObj->Set(
-    context,
-    String::NewFromUtf8Literal(isolate, "stx_ctime"),
-    ctimeObj
-  ).Check();
-  Local<Object> btimeObj = Object::New(isolate);
-  btimeObj->Set(
-    context,
-    String::NewFromUtf8Literal(isolate, "tv_sec"),
-    Integer::NewFromUnsigned(isolate, s.stx_btime.tv_sec)
-  ).Check();
-  btimeObj->Set(
-    context,
-    String::NewFromUtf8Literal(isolate, "tv_nsec"),
-    Integer::NewFromUnsigned(isolate, s.stx_btime.tv_nsec)
-  ).Check();
-  statxObj->Set(
-    context,
-    String::NewFromUtf8Literal(isolate, "stx_btime"),
-    btimeObj
-  ).Check();
+  SetTimeProp(isolate, statxObj, "stx_atime", s.stx_atime.tv_sec, s.stx_atime.tv_nsec);
+  SetTimeProp(isolate, statxObj, "stx_mtime", s.stx_mtime.tv_sec, s.stx_mtime.tv_nsec);
+  SetTimeProp(isolate, statxObj, "stx_ctime", s.stx_ctime.tv_sec, s.stx_ctime.tv_nsec);
+  SetTimeProp(isolate, statxObj, "stx_btime", s.stx_btime.tv_sec, s.stx_btime.tv_nsec);
   statxObj->Set(
     context,
     String::NewFromUtf8Literal(isolate, "stx_blocks"),
@@ -972,7 +877,6 @@ void FileSystemStatx(const FunctionCallbackInfo<Value>& args) {
     args.This()->GetInternalField(0).As<External>()->Value()
   );
   struct statx s;
-  int res;
   THROWIFERR(
     fs->Statx(
       Int32Val(args[0]),
@@ -980,7 +884,7 @@ void FileSystemStatx(const FunctionCallbackInfo<Value>& args) {
       Int32Val(args[2]),
       Int32Val(args[3]),
       &s
-    ), res
+    )
   );
   args.GetReturnValue().Set(
     StatxToObj(isolate, s)

@@ -116,7 +116,7 @@ class FileSystem {
         const char* absPath = AbsolutePath(path);
         const char* name = GetName(absPath);
         delete absPath;
-        if (parent->size > std::numeric_limits<size_t>::max() - (strlen(name) * 2)) {
+        if (parent->size > std::numeric_limits<off_t>::max() - (strlen(name) * 2)) {
           delete name;
           return -ENOSPC;
         }
@@ -181,7 +181,7 @@ class FileSystem {
     const char* absPath = AbsolutePath(path);
     const char* name = GetName(absPath);
     delete absPath;
-    if (parent->size > std::numeric_limits<size_t>::max() - (strlen(name) * 2)) {
+    if (parent->size > std::numeric_limits<off_t>::max() - (strlen(name) * 2)) {
       delete name;
       return -ENOSPC;
     }
@@ -220,7 +220,7 @@ class FileSystem {
     const char* absPath = AbsolutePath(path);
     const char* name = GetName(absPath);
     delete absPath;
-    if (parent->size > std::numeric_limits<size_t>::max() - (strlen(name) * 2)) {
+    if (parent->size > std::numeric_limits<off_t>::max() - (strlen(name) * 2)) {
       delete name;
       return -ENOSPC;
     }
@@ -266,7 +266,7 @@ class FileSystem {
     const char* absPath = AbsolutePath(newPath);
     const char* name = GetName(absPath);
     delete absPath;
-    if (parent->size > std::numeric_limits<size_t>::max() - (strlen(name) * 2)) {
+    if (parent->size > std::numeric_limits<off_t>::max() - (strlen(name) * 2)) {
       delete name;
       return -ENOSPC;
     }
@@ -393,7 +393,7 @@ class FileSystem {
     const char* absPath = AbsolutePath(newPath);
     const char* name = GetName(absPath);
     delete absPath;
-    if (parent->size > std::numeric_limits<size_t>::max() - (strlen(name) * 2)) {
+    if (parent->size > std::numeric_limits<off_t>::max() - (strlen(name) * 2)) {
       delete name;
       return -ENOSPC;
     }
@@ -539,7 +539,7 @@ class FileSystem {
     const char* newAbs = AbsolutePath(newPath);
     const char* newName = GetName(newAbs);
     delete newAbs;
-    if (newParent->size > std::numeric_limits<size_t>::max() - (strlen(newName) * 2)) {
+    if (newParent->size > std::numeric_limits<off_t>::max() - (strlen(newName) * 2)) {
       delete newName;
       return -ENOSPC;
     }
@@ -604,12 +604,14 @@ class FileSystem {
       return 0;
     if (!buf)
       return -EFAULT;
+    if (count > std::numeric_limits<int>::max())
+      count = std::numeric_limits<int>::max();
     INode* inode = fd->inode;
     if (S_ISDIR(inode->mode))
       return -EISDIR;
     if (fd->seekOff >= inode->size)
       return 0;
-    size_t end = inode->size - fd->seekOff;
+    off_t end = inode->size - fd->seekOff;
     if (end < count)
       count = end;
     memcpy(buf, inode->data + fd->seekOff, count);
@@ -627,11 +629,13 @@ class FileSystem {
       return 0;
     if (!buf)
       return -EFAULT;
+    if (count > std::numeric_limits<int>::max())
+      count = std::numeric_limits<int>::max();
     INode* inode = fd->inode;
     off_t seekOff = fd->flags & O_APPEND
       ? inode->size
       : fd->seekOff;
-    if (seekOff > std::numeric_limits<size_t>::max() - count)
+    if (seekOff > std::numeric_limits<off_t>::max() - count)
       return -EFBIG;
     if (seekOff + count > inode->size) {
       inode->data = reinterpret_cast<char*>(
@@ -663,14 +667,16 @@ class FileSystem {
     } else off = fdIn->seekOff;
     if (count == 0)
       return 0;
+    if (count > std::numeric_limits<int>::max())
+      count = std::numeric_limits<int>::max();
     INode* inodeIn = fdIn->inode;
     INode* inodeOut = fdOut->inode;
-    if (fdOut->seekOff > std::numeric_limits<size_t>::max() - count)
+    if (fdOut->seekOff > std::numeric_limits<off_t>::max() - count)
       return -EFBIG;
     // read
     if (off >= inodeIn->size)
       return 0;
-    size_t end = inodeIn->size - off;
+    off_t end = inodeIn->size - off;
     if (end < count)
       count = end;
     if (!offset)
@@ -865,7 +871,7 @@ class FileSystem {
       INode* inode;
     };
     struct Dent* dents = NULL;
-    size_t dentCount = 0;
+    off_t dentCount = 0;
     void PushDent(const char* name, INode* inode) {
       dents = reinterpret_cast<struct Dent*>(
         realloc(dents, sizeof(struct Dent) * (dentCount + 1))
@@ -874,7 +880,7 @@ class FileSystem {
       size += strlen(name) * 2;
     }
     void RemoveDent(const char* name) {
-      for (size_t i = 0; i != dentCount; ++i)
+      for (off_t i = 0; i != dentCount; ++i)
         if (strcmp(dents[i].name, name) == 0) {
           delete dents[i].name;
           if (i != dentCount - 1)
@@ -887,7 +893,7 @@ class FileSystem {
         }
     }
     char* data = NULL;
-    size_t size = 0;
+    off_t size = 0;
     nlink_t nsymlink = 0;
     nlink_t nlink = 0;
     mode_t mode;
@@ -1003,7 +1009,7 @@ class FileSystem {
           continue;
         if (err)
           return err;
-        size_t j = 0;
+        off_t j = 0;
         for (; j != current->dentCount; ++j)
           if (strcmp(current->dents[j].name, name) == 0)
             break;
@@ -1041,7 +1047,7 @@ class FileSystem {
       return err;
     if (nameLen != 0) {
       *parent = current;
-      for (size_t i = 0; i != current->dentCount; ++i)
+      for (off_t i = 0; i != current->dentCount; ++i)
         if (strcmp(current->dents[i].name, name) == 0) {
           current = current->dents[i].inode;
           goto out;
