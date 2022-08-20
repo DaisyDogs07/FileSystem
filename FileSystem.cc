@@ -578,9 +578,11 @@ void FileSystemRead(const FunctionCallbackInfo<Value>& args) {
 }
 
 void FileSystemWrite(const FunctionCallbackInfo<Value>& args) {
-  assert(args.Length() == 2);
+  assert(args.Length() == 2 || args.Length() == 3);
   assert(IsNumeric(args[0]));
   assert(IsStrOrBuf(args[1]));
+  if (args.Length() == 3)
+    assert(IsNumeric(args[2]));
   Isolate* isolate = args.GetIsolate();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     args.This()->GetInternalField(0).As<External>()->Value()
@@ -590,7 +592,9 @@ void FileSystemWrite(const FunctionCallbackInfo<Value>& args) {
     res = fs->Write(
       Uint32Val(args[0]),
       StringVal(args[1]),
-      StringLen(args[1])
+      args.Length() == 3
+        ? Uint64Val(args[2])
+        : StringLen(args[1])
     )
   );
   args.GetReturnValue().Set(BigInt::New(isolate, res));
