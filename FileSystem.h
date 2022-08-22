@@ -97,7 +97,7 @@ class FileSystem {
     INode* parent = NULL;
     int res = GetINode(path, &inode, &parent, !(flags & O_NOFOLLOW));
     cwd.inode = origCwd;
-    if (parent == NULL)
+    if (!parent)
       return res;
     if (res == 0) {
       if (flags & O_CREAT) {
@@ -157,9 +157,9 @@ class FileSystem {
   int MkNodAt(int dirFd, const char* path, mode_t mode, dev_t) {
     if (inodeCount == std::numeric_limits<ino_t>::max())
       return -EDQUOT;
-    if ((mode & S_IFMT) == 0)
+    if (!(mode & S_IFMT))
       mode |= S_IFREG;
-    if ((mode & S_IFMT) != S_IFREG)
+    else if (!S_ISREG(mode))
       return -EINVAL;
     INode* origCwd = cwd.inode;
     if (dirFd != AT_FDCWD) {
@@ -174,7 +174,7 @@ class FileSystem {
     INode* parent = NULL;
     int res = GetINode(path, &inode, &parent);
     cwd.inode = origCwd;
-    if (parent == NULL)
+    if (!parent)
       return res;
     if (res == 0)
       return -EEXIST;
@@ -213,7 +213,7 @@ class FileSystem {
     INode* parent = NULL;
     int res = GetINode(path, &inode, &parent);
     cwd.inode = origCwd;
-    if (parent == NULL)
+    if (!parent)
       return res;
     if (res == 0)
       return -EEXIST;
@@ -243,25 +243,26 @@ class FileSystem {
   int SymlinkAt(const char* oldPath, int newDirFd, const char* newPath) {
     if (inodeCount == std::numeric_limits<ino_t>::max())
       return -EDQUOT;
+    Fd* fd;
+    if (newDirFd != AT_FDCWD) {
+      if (!(fd = GetFd(newDirFd)))
+        return -EBADF;
+      if (!S_ISDIR(fd->inode->mode))
+        return -ENOTDIR;
+    }
     INode* oldInode;
     INode* parent;
     int res = GetINode(oldPath, &oldInode, &parent);
     if (res != 0)
       return res;
     INode* origCwd = cwd.inode;
-    if (newDirFd != AT_FDCWD) {
-      Fd* fd;
-      if (!(fd = GetFd(newDirFd)))
-        return -EBADF;
-      if (!S_ISDIR(fd->inode->mode))
-        return -ENOTDIR;
+    if (newDirFd != AT_FDCWD)
       cwd.inode = fd->inode;
-    }
     INode* newInode;
     parent = NULL;
     res = GetINode(newPath, &newInode, &parent);
     cwd.inode = origCwd;
-    if (parent == NULL)
+    if (!parent)
       return res;
     const char* absPath = AbsolutePath(newPath);
     const char* name = GetName(absPath);
@@ -384,7 +385,7 @@ class FileSystem {
     parent = NULL;
     res = GetINode(newPath, &newInode, &parent);
     cwd.inode = origCwd;
-    if (parent == NULL)
+    if (!parent)
       return res;
     if (res == 0)
       return -EEXIST;
@@ -519,7 +520,7 @@ class FileSystem {
     INode* newParent = NULL;
     res = GetINode(newPath, &newInode, &newParent);
     cwd.inode = origCwd;
-    if (newParent == NULL)
+    if (!newParent)
       return res;
     if (oldInode == newInode)
       return 0;
