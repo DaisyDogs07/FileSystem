@@ -1,3 +1,6 @@
+#ifndef __linux__
+#error The Linux FileSystem is only available in Linux
+#endif
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
