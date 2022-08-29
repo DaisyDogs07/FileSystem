@@ -36,8 +36,8 @@ class FileSystem {
     cwd = { rootPath, root, root };
   }
   ~FileSystem() {
-    for (ino_t i = 0; i != inodeCount; ++i)
-      delete inodes[i];
+    while (inodeCount--)
+      delete inodes[inodeCount];
     delete inodes;
     delete fds;
   }
@@ -276,7 +276,7 @@ class FileSystem {
     }
     INode* x = new INode;
     x->mode = 0777 | S_IFLNK;
-    x->target = oldInode;
+    x->target = AbsolutePath(oldPath);
     x->nlink = 1;
     size_t oldPathLen = strlen(oldPath);
     x->data = new char[oldPathLen + 1];
@@ -285,7 +285,6 @@ class FileSystem {
     x->size = oldPathLen;
     PushINode(x);
     parent->PushDent(name, x);
-    ++oldInode->nsymlink;
     parent->ctime = parent->mtime = x->btime;
     return 0;
   }
@@ -441,12 +440,9 @@ class FileSystem {
     delete absPath;
     parent->RemoveDent(name);
     delete name;
-    if (S_ISLNK(inode->mode) &&
-        --inode->target->nsymlink == 0 && inode->target->nlink == 0)
-      RemoveINode(inode->target);
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
-    if (--inode->nlink == 0 && inode->nsymlink == 0)
+    if (--inode->nlink == 0)
       RemoveINode(inode);
     else inode->ctime = ts;
     parent->ctime = parent->mtime = ts;
@@ -480,7 +476,7 @@ class FileSystem {
     --parent->nlink;
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
-    if (--inode->nlink == 0 && inode->nsymlink == 0)
+    if (--inode->nlink == 0)
       RemoveINode(inode);
     else inode->ctime = ts;
     parent->ctime = parent->mtime = ts;
@@ -562,10 +558,7 @@ class FileSystem {
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
     if (newInode) {
-      if (S_ISLNK(newInode->mode) &&
-          --newInode->target->nsymlink == 0 && newInode->target->nlink == 0)
-        RemoveINode(newInode->target);
-      if (--newInode->nlink == 0 && newInode->nsymlink == 0)
+      if (--newInode->nlink == 0)
         RemoveINode(newInode);
       else newInode->ctime = ts;
     }
@@ -862,6 +855,8 @@ class FileSystem {
     ~INode() {
       if (data != NULL)
         delete data;
+      if (target != NULL)
+        delete target;
       if (dents != NULL) {
         while (dentCount != 2)
           delete dents[--dentCount].name;
@@ -869,7 +864,7 @@ class FileSystem {
       }
     }
     ino_t id;
-    INode* target;
+    const char* target = NULL;
     struct Dent {
       const char* name;
       INode* inode;
@@ -898,7 +893,6 @@ class FileSystem {
     }
     char* data = NULL;
     off_t size = 0;
-    nlink_t nsymlink = 0;
     nlink_t nlink = 0;
     mode_t mode;
     struct timespec btime;
@@ -990,7 +984,7 @@ class FileSystem {
         return fds[i];
     return NULL;
   }
-  int GetINode(const char* path, INode** inode, INode** parent, bool followResolved = false) {
+  int GetINode(const char* path, INode** inode, INode** parent, bool followResolved = false, int followCount = 0) {
     size_t pathLen = strlen(path);
     if (pathLen == 0)
       return -ENOENT;
@@ -1006,7 +1000,6 @@ class FileSystem {
     int err = 0;
     char name[NAME_MAX + 1];
     size_t nameLen = 0;
-    int followCount = 0;
     for (size_t i = 0; i != pathLen; ++i) {
       if (path[i] == '/') {
         if (nameLen == 0)
@@ -1028,9 +1021,10 @@ class FileSystem {
             err = -ELOOP;
             goto resetName;
           }
-          current = current->target;
-          if (current->nlink == 0) {
-            err = -ENOENT;
+          INode* targetParent;
+          int res = GetINode(current->target, &current, &targetParent, true, followCount);
+          if (res != 0) {
+            err = res;
             goto resetName;
           }
         }
@@ -1061,11 +1055,12 @@ class FileSystem {
    out:
     if (followResolved) {
       while (S_ISLNK(current->mode)) {
-        if (followCount++ == 40)
+        if (followCount++ == 40) 
           return -ELOOP;
-        current = current->target;
-        if (current->nlink == 0)
-          return -ENOENT;
+        INode* targetParent;
+        int res = GetINode(current->target, &current, &targetParent, true, followCount);
+        if (res != 0)
+          return res;
       }
     }
     *inode = current;
