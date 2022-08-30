@@ -1055,7 +1055,7 @@ class FileSystem {
    out:
     if (followResolved) {
       while (S_ISLNK(current->mode)) {
-        if (followCount++ == 40) 
+        if (followCount++ == 40)
           return -ELOOP;
         INode* targetParent;
         int res = GetINode(current->target, &current, &targetParent, true, followCount);
@@ -1070,7 +1070,7 @@ class FileSystem {
     size_t pathLen = strlen(path);
     char* name = new char[NAME_MAX + 1];
     size_t nameLen = 0;
-    for (size_t i = pathLen; i != -1; --i) {
+    for (size_t i = pathLen; i <= pathLen; --i) {
       if (path[i] == '/') {
         if (nameLen != 0)
           break;
