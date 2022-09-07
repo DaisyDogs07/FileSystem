@@ -267,6 +267,8 @@ class FileSystem {
     cwd.inode = origCwd;
     if (!parent)
       return res;
+    if (res == 0)
+      return -EEXIST;
     const char* absPath = AbsolutePath(newPath);
     const char* name = GetName(absPath);
     delete absPath;
@@ -1016,7 +1018,7 @@ class FileSystem {
         }
         currParent = current;
         current = current->dents[j].inode;
-        while (S_ISLNK(current->mode)) {
+        if (S_ISLNK(current->mode)) {
           if (followCount++ == 40) {
             err = -ELOOP;
             goto resetName;
@@ -1054,7 +1056,7 @@ class FileSystem {
     }
    out:
     if (followResolved) {
-      while (S_ISLNK(current->mode)) {
+      if (S_ISLNK(current->mode)) {
         if (followCount++ == 40)
           return -ELOOP;
         INode* targetParent;
