@@ -117,7 +117,7 @@ class FileSystem {
           return -EDQUOT;
         flags &= ~O_TRUNC;
         const char* absPath = AbsolutePath(path);
-        const char* name = GetName(absPath);
+        const char* name = GetLast(absPath);
         delete absPath;
         if (parent->size > std::numeric_limits<off_t>::max() - (strlen(name) * 2)) {
           delete name;
@@ -182,7 +182,7 @@ class FileSystem {
     if (res == 0)
       return -EEXIST;
     const char* absPath = AbsolutePath(path);
-    const char* name = GetName(absPath);
+    const char* name = GetLast(absPath);
     delete absPath;
     if (parent->size > std::numeric_limits<off_t>::max() - (strlen(name) * 2)) {
       delete name;
@@ -221,7 +221,7 @@ class FileSystem {
     if (res == 0)
       return -EEXIST;
     const char* absPath = AbsolutePath(path);
-    const char* name = GetName(absPath);
+    const char* name = GetLast(absPath);
     delete absPath;
     if (parent->size > std::numeric_limits<off_t>::max() - (strlen(name) * 2)) {
       delete name;
@@ -270,7 +270,7 @@ class FileSystem {
     if (res == 0)
       return -EEXIST;
     const char* absPath = AbsolutePath(newPath);
-    const char* name = GetName(absPath);
+    const char* name = GetLast(absPath);
     delete absPath;
     if (parent->size > std::numeric_limits<off_t>::max() - (strlen(name) * 2)) {
       delete name;
@@ -396,7 +396,7 @@ class FileSystem {
     if (S_ISDIR(oldInode->mode))
       return -EPERM;
     const char* absPath = AbsolutePath(newPath);
-    const char* name = GetName(absPath);
+    const char* name = GetLast(absPath);
     delete absPath;
     if (parent->size > std::numeric_limits<off_t>::max() - (strlen(name) * 2)) {
       delete name;
@@ -438,7 +438,7 @@ class FileSystem {
       if (fds[i]->inode == inode)
         return -EBUSY;
     const char* absPath = AbsolutePath(path);
-    const char* name = GetName(absPath);
+    const char* name = GetLast(absPath);
     delete absPath;
     parent->RemoveDent(name);
     delete name;
@@ -463,7 +463,7 @@ class FileSystem {
     for (int i = 0; i != fdCount; ++i)
       if (fds[i]->inode == inode)
         return -EBUSY;
-    const char* last = GetName(path);
+    const char* last = GetLast(path);
     bool isDot = strcmp(last, ".") == 0;
     delete last;
     if (isDot)
@@ -471,7 +471,7 @@ class FileSystem {
     if (inode->dentCount != 2)
       return -ENOTEMPTY;
     const char* absPath = AbsolutePath(path);
-    const char* name = GetName(absPath);
+    const char* name = GetLast(absPath);
     delete absPath;
     parent->RemoveDent(name);
     delete name;
@@ -487,7 +487,7 @@ class FileSystem {
   int RenameAt(int oldDirFd, const char* oldPath, int newDirFd, const char* newPath, unsigned int flags) {
     if (flags & ~RENAME_NOREPLACE)
       return -EINVAL;
-    const char* last = GetName(oldPath);
+    const char* last = GetLast(oldPath);
     bool isDot = strcmp(last, ".") == 0 || strcmp(last, "..") == 0;
     delete last;
     if (isDot)
@@ -539,14 +539,14 @@ class FileSystem {
     if (flags & RENAME_NOREPLACE && newInode)
       return -EEXIST;
     const char* newAbs = AbsolutePath(newPath);
-    const char* newName = GetName(newAbs);
+    const char* newName = GetLast(newAbs);
     delete newAbs;
     if (newParent->size > std::numeric_limits<off_t>::max() - (strlen(newName) * 2)) {
       delete newName;
       return -ENOSPC;
     }
     const char* oldAbs = AbsolutePath(oldPath);
-    const char* oldName = GetName(oldAbs);
+    const char* oldName = GetLast(oldAbs);
     delete oldAbs;
     oldParent->RemoveDent(oldName);
     delete oldName;
@@ -1068,7 +1068,7 @@ class FileSystem {
     *inode = current;
     return 0;
   }
-  static const char* GetName(const char* path) {
+  static const char* GetLast(const char* path) {
     size_t pathLen = strlen(path);
     char* name = new char[NAME_MAX + 1];
     size_t nameLen = 0;
@@ -1086,7 +1086,7 @@ class FileSystem {
       realloc(name, nameLen + 1)
     );
   }
-  const char* AbsolutePath(const char* path) {
+  static const char* AbsolutePath(const char* path) {
     char* absPath = new char[PATH_MAX];
     size_t absPathLen = 0;
     if (path[0] != '/') {
