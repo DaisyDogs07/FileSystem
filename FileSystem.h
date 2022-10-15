@@ -666,6 +666,77 @@ class FileSystem {
       clock_gettime(CLOCK_REALTIME, &inode->atime);
     return count;
   }
+  ssize_t PRead(unsigned int fdNum, char* buf, size_t count, off_t offset) {
+    Fd* fd;
+    if (!(fd = GetFd(fdNum)) || fd->flags & O_WRONLY)
+      return -EBADF;
+    struct INode* inode = fd->inode;
+    if (S_ISDIR(inode->mode))
+      return -EISDIR;
+    if (count == 0)
+      return 0;
+    if (!buf)
+      return -EFAULT;
+    if (count > 0x7ffff000)
+      count = 0x7ffff000;
+    if (offset >= inode->size)
+      return 0;
+    off_t end = inode->size - offset;
+    if (end < count)
+      count = end;
+    memcpy(buf, inode->data + offset, count);
+    buf[count] = '\0';
+    if (!(fd->flags & O_NOATIME))
+      clock_gettime(CLOCK_REALTIME, &inode->atime);
+    return count;
+  }
+  ssize_t PReadv(unsigned int fdNum, struct iovec* iov, int iovcnt, off_t offset) {
+    Fd* fd;
+    if (!(fd = GetFd(fdNum)) || fd->flags & O_WRONLY)
+      return -EBADF;
+    struct INode* inode = fd->inode;
+    if (S_ISDIR(inode->mode))
+      return -EISDIR;
+    if (iovcnt == 0)
+      return 0;
+    if (iovcnt < 0 || iovcnt > 1024)
+      return -EINVAL;
+    if (!iov)
+      return -EFAULT;
+    ssize_t totalLen = 0;
+    for (int i = 0; i != iovcnt; ++i) {
+      ssize_t len = (ssize_t)iov[i].iov_len;
+      if (len == 0)
+        continue;
+      if (len < 0)
+        return -EINVAL;
+      if (!iov[i].iov_base)
+        break;
+      if (len > 0x7ffff000 - totalLen) {
+        len = 0x7ffff000 - totalLen;
+        iov[i].iov_len = len;
+      }
+      totalLen += len;
+    }
+    if (totalLen == 0 || offset >= inode->size)
+      return 0;
+    off_t end = inode->size - offset;
+    if (end < totalLen)
+      totalLen = end;
+    ssize_t count = 0;
+    for (int i = 0; i != iovcnt; ++i) {
+      ssize_t len = (ssize_t)iov[i].iov_len;
+      if (len == 0)
+        continue;
+      memcpy(iov[i].iov_base, inode->data + offset + count, len);
+      count += len;
+      if (count == totalLen)
+        break;
+    }
+    if (!(fd->flags & O_NOATIME))
+      clock_gettime(CLOCK_REALTIME, &inode->atime);
+    return count;
+  }
   ssize_t Write(unsigned int fdNum, const char* buf, size_t count) {
     Fd* fd;
     if (!(fd = GetFd(fdNum)) || !(fd->flags & (O_WRONLY | O_RDWR)))
@@ -749,6 +820,86 @@ class FileSystem {
         break;
     }
     fd->seekOff += count;
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    inode->mtime = inode->ctime = ts;
+    return count;
+  }
+  ssize_t PWrite(unsigned int fdNum, const char* buf, size_t count, off_t offset) {
+    Fd* fd;
+    if (!(fd = GetFd(fdNum)) || !(fd->flags & (O_WRONLY | O_RDWR)))
+      return -EBADF;
+    if (count == 0)
+      return 0;
+    if (count > 0x7ffff000)
+      count = 0x7ffff000;
+    if (!buf)
+      return -EFAULT;
+    struct INode* inode = fd->inode;
+    if (offset > std::numeric_limits<off_t>::max() - count)
+      return -EFBIG;
+    if (offset + count > inode->size) {
+      inode->data = reinterpret_cast<char*>(
+        realloc(inode->data, offset + count + 1)
+      );
+      if (inode->size < offset)
+        memset(inode->data + inode->size, '\0', offset - inode->size);
+      inode->size = offset + count;
+    }
+    memcpy(inode->data + offset, buf, count);
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    inode->mtime = inode->ctime = ts;
+    return count;
+  }
+  ssize_t PWritev(unsigned int fdNum, struct iovec* iov, int iovcnt, off_t offset) {
+    Fd* fd;
+    if (!(fd = GetFd(fdNum)) || !(fd->flags & (O_WRONLY | O_RDWR)))
+      return -EBADF;
+    if (iovcnt == 0)
+      return 0;
+    if (iovcnt < 0 || iovcnt > 1024)
+      return -EINVAL;
+    if (!iov)
+      return -EFAULT;
+    ssize_t totalLen = 0;
+    for (int i = 0; i != iovcnt; ++i) {
+      ssize_t len = (ssize_t)iov[i].iov_len;
+      if (len == 0)
+        continue;
+      if (len < 0)
+        return -EINVAL;
+      if (!iov[i].iov_base)
+        break;
+      if (len > 0x7ffff000 - totalLen) {
+        len = 0x7ffff000 - totalLen;
+        iov[i].iov_len = len;
+      }
+      totalLen += len;
+    }
+    if (totalLen == 0)
+      return 0;
+    struct INode* inode = fd->inode;
+    if (offset > std::numeric_limits<off_t>::max() - totalLen)
+      return -EFBIG;
+    if (offset + totalLen > inode->size) {
+      inode->data = reinterpret_cast<char*>(
+        realloc(inode->data, offset + totalLen + 1)
+      );
+      if (inode->size < offset)
+        memset(inode->data + inode->size, '\0', offset - inode->size);
+      inode->size = offset + totalLen;
+    }
+    ssize_t count = 0;
+    for (int i = 0; i != iovcnt; ++i) {
+      ssize_t len = (ssize_t)iov[i].iov_len;
+      if (len == 0)
+        continue;
+      memcpy(inode->data + offset + count, iov[i].iov_base, len);
+      count += len;
+      if (count == totalLen)
+        break;
+    }
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
     inode->mtime = inode->ctime = ts;

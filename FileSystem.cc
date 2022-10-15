@@ -673,6 +673,84 @@ void FileSystemReadv(const FunctionCallbackInfo<Value>& args) {
     THROWERR(res);
   args.GetReturnValue().Set(BigInt::New(isolate, res));
 }
+void FileSystemPRead(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "FileSystem.prototype.pread");
+  assert(args.Length() == 3);
+  assert(IsNumeric(args[0]));
+  assert(IsNumeric(args[1]));
+  assert(IsNumeric(args[2]));
+  FileSystem* fs = reinterpret_cast<FileSystem*>(
+    self->GetInternalField(0).As<External>()->Value()
+  );
+  unsigned int fdNum = Uint32Val(args[0]);
+  struct stat s;
+  ssize_t res;
+  THROWIFERR(res = fs->FStat(fdNum, &s));
+  size_t bufLen = std::min(
+    std::min(
+      Uint64Val(args[2]),
+      (size_t)s.st_size
+    ),
+    (size_t)std::numeric_limits<int>::max()
+  );
+  char* buf = new char[bufLen + 1];
+  res = fs->PRead(
+    fdNum,
+    buf,
+    bufLen,
+    Int64Val(args[1])
+  );
+  if (res < 0) {
+    delete buf;
+    THROWERR(res);
+  }
+  buf = reinterpret_cast<char*>(
+    realloc(buf, res)
+  );
+  args.GetReturnValue().Set(
+    Buffer::New(
+      isolate,
+      buf,
+      res
+    ).ToLocalChecked()
+  );
+}
+void FileSystemPReadv(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "FileSystem.prototype.preadv");
+  assert(args.Length() == 3);
+  assert(IsNumeric(args[0]));
+  assert(args[1]->IsArray());
+  assert(IsNumeric(args[2]));
+  FileSystem* fs = reinterpret_cast<FileSystem*>(
+    self->GetInternalField(0).As<External>()->Value()
+  );
+  Local<Context> context = isolate->GetCurrentContext();
+  Local<Array> buffers = args[1].As<Array>();
+  struct iovec* iov = new iovec[buffers->Length()];
+  for (uint32_t i = 0; i != buffers->Length(); ++i) {
+    Local<Value> buf = buffers->Get(
+      context,
+      i
+    ).ToLocalChecked();
+    assert(Buffer::HasInstance(buf));
+    iov[i].iov_base = Buffer::Data(buf);
+    iov[i].iov_len = Buffer::Length(buf);
+  }
+  ssize_t res = fs->PReadv(
+    Uint32Val(args[0]),
+    iov,
+    buffers->Length(),
+    Int64Val(args[2])
+  );
+  delete[] iov;
+  if (res < 0)
+    THROWERR(res);
+  args.GetReturnValue().Set(BigInt::New(isolate, res));
+}
 void FileSystemWrite(const FunctionCallbackInfo<Value>& args) {
   Isolate* isolate = args.GetIsolate();
   Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
@@ -723,6 +801,61 @@ void FileSystemWritev(const FunctionCallbackInfo<Value>& args) {
     Uint32Val(args[0]),
     iov,
     buffers->Length()
+  );
+  delete[] iov;
+  if (res < 0)
+    THROWERR(res);
+  args.GetReturnValue().Set(BigInt::New(isolate, res));
+}
+void FileSystemPWrite(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "FileSystem.prototype.pwrite");
+  assert(args.Length() == 3);
+  assert(IsNumeric(args[0]));
+  assert(IsNumeric(args[1]));
+  assert(IsNumeric(args[2]));
+  FileSystem* fs = reinterpret_cast<FileSystem*>(
+    self->GetInternalField(0).As<External>()->Value()
+  );
+  ssize_t res = fs->PWrite(
+    Uint32Val(args[0]),
+    StringVal(args[1]),
+    Uint64Val(args[2]),
+    Int64Val(args[3])
+  );
+  if (res < 0)
+    THROWERR(res);
+  args.GetReturnValue().Set(BigInt::New(isolate, res));
+}
+void FileSystemPWritev(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "FileSystem.prototype.pwritev");
+  assert(args.Length() == 3);
+  assert(IsNumeric(args[0]));
+  assert(args[1]->IsArray());
+  assert(IsNumeric(args[2]));
+  FileSystem* fs = reinterpret_cast<FileSystem*>(
+    self->GetInternalField(0).As<External>()->Value()
+  );
+  Local<Context> context = isolate->GetCurrentContext();
+  Local<Array> buffers = args[1].As<Array>();
+  struct iovec* iov = new iovec[buffers->Length()];
+  for (uint32_t i = 0; i != buffers->Length(); ++i) {
+    Local<Value> buf = buffers->Get(
+      context,
+      i
+    ).ToLocalChecked();
+    assert(Buffer::HasInstance(buf));
+    iov[i].iov_base = Buffer::Data(buf);
+    iov[i].iov_len = Buffer::Length(buf);
+  }
+  ssize_t res = fs->PWritev(
+    Uint32Val(args[0]),
+    iov,
+    buffers->Length(),
+    Int64Val(args[2])
   );
   delete[] iov;
   if (res < 0)
@@ -1369,8 +1502,12 @@ void DefineTemplateFunctions(Isolate* isolate, Local<ObjectTemplate> tmpl) {
   DefineFunction(isolate, tmpl, "lseek",      FileSystemLSeek,      3);
   DefineFunction(isolate, tmpl, "read",       FileSystemRead,       2);
   DefineFunction(isolate, tmpl, "readv",      FileSystemReadv,      2);
+  DefineFunction(isolate, tmpl, "pread",      FileSystemPRead,      3);
+  DefineFunction(isolate, tmpl, "preadv",     FileSystemPReadv,     3);
   DefineFunction(isolate, tmpl, "write",      FileSystemWrite,      2);
   DefineFunction(isolate, tmpl, "writev",     FileSystemWritev,     2);
+  DefineFunction(isolate, tmpl, "pwrite",     FileSystemPWrite,     3);
+  DefineFunction(isolate, tmpl, "pwritev",    FileSystemPWritev,    3);
   DefineFunction(isolate, tmpl, "sendfile",   FileSystemSendFile,   4);
   DefineFunction(isolate, tmpl, "ftruncate",  FileSystemFTruncate,  2);
   DefineFunction(isolate, tmpl, "truncate",   FileSystemTruncate,   2);

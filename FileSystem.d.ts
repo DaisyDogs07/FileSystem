@@ -112,8 +112,12 @@ declare module "FileSystem" {
     lseek(fd: number | BigInt, offset: number | BigInt, whence: number | BigInt): BigInt;
     read(fd: number | BigInt, count: number | BigInt): Buffer;
     readv(fd: number | BigInt, iov: Buffer[]): BigInt;
+    pread(fd: number | BigInt, count: number | BigInt, offset: number | BigInt): Buffer;
+    preadv(fd: number | BigInt, iov: Buffer[], offset: number | BigInt): BigInt;
     write(fd: number | BigInt, buffer: string | Buffer, count?: number | BigInt): BigInt;
     writev(fd: number | BigInt, iov: Buffer[]): BigInt;
+    pwrite(fd: number | BigInt, buffer: string | Buffer, count: number | BigInt, offset: number | BigInt): BigInt;
+    pwritev(fd: number | BigInt, iov: Buffer[], offset: number | BigInt): BigInt;
     sendfile(outFd: number | BigInt, inFd: number | BigInt, offset: null | number | BigInt, count: number | BigInt): BigInt;
     ftruncate(fd: number | BigInt, length: number | BigInt): void;
     truncate(path: string, length: number | BigInt): void;
