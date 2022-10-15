@@ -425,15 +425,14 @@ class FileSystem {
     if (flags & ~AT_REMOVEDIR)
       return -EINVAL;
     Fd* fd;
+    struct INode* origCwd = cwd.inode;
     if (dirFd != AT_FDCWD) {
       if (!(fd = GetFd(dirFd)))
         return -EBADF;
       if (!S_ISDIR(fd->inode->mode))
         return -ENOTDIR;
-    }
-    struct INode* origCwd = cwd.inode;
-    if (dirFd != AT_FDCWD)
       cwd.inode = fd->inode;
+    }
     struct INode* inode;
     struct INode* parent;
     int res = GetINode(path, &inode, &parent);
