@@ -1,15 +1,16 @@
 #ifndef __linux__
 #error The Linux FileSystem is only available in Linux
 #endif
+#include <sys/stat.h>
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <limits>
+#include <mutex>
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
-#include <sys/stat.h>
 #include <time.h>
 #include <utime.h>
 #include <unistd.h>
@@ -41,6 +42,7 @@ class FileSystem {
   }
 
   int FAccessAt(int dirFd, const char* path, int mode, int flags) {
+    std::lock_guard<std::mutex> lock(mtx);
     if (mode & ~(F_OK | R_OK | W_OK | X_OK) || flags & ~AT_SYMLINK_NOFOLLOW)
       return -EINVAL;
     struct INode* origCwd = cwd.inode;
@@ -73,6 +75,7 @@ class FileSystem {
     return FAccessAt(AT_FDCWD, path, mode, 0);
   }
   int OpenAt(int dirFd, const char* path, int flags, mode_t mode) {
+    std::lock_guard<std::mutex> lock(mtx);
     if (flags & ~(O_RDONLY | O_WRONLY | O_RDWR | O_CREAT | O_EXCL | O_APPEND | O_TRUNC | O_DIRECTORY | O_NOFOLLOW | O_NOATIME))
       return -EINVAL;
     if (flags & O_CREAT) {
@@ -153,9 +156,11 @@ class FileSystem {
     return OpenAt(AT_FDCWD, path, O_CREAT | O_WRONLY | O_TRUNC, mode);
   }
   int Close(unsigned int fd) {
+    std::lock_guard<std::mutex> lock(mtx);
     return RemoveFd(fd);
   }
   int MkNodAt(int dirFd, const char* path, mode_t mode, dev_t) {
+    std::lock_guard<std::mutex> lock(mtx);
     if (inodeCount == std::numeric_limits<ino_t>::max())
       return -EDQUOT;
     if (!(mode & S_IFMT))
@@ -199,6 +204,7 @@ class FileSystem {
     return MkNodAt(AT_FDCWD, path, mode, 0);
   }
   int MkDirAt(int dirFd, const char* path, mode_t mode) {
+    std::lock_guard<std::mutex> lock(mtx);
     if (inodeCount == std::numeric_limits<ino_t>::max())
       return -EDQUOT;
     struct INode* origCwd = cwd.inode;
@@ -242,6 +248,7 @@ class FileSystem {
     return MkDirAt(AT_FDCWD, path, mode);
   }
   int SymlinkAt(const char* oldPath, int newDirFd, const char* newPath) {
+    std::lock_guard<std::mutex> lock(mtx);
     if (inodeCount == std::numeric_limits<ino_t>::max())
       return -EDQUOT;
     Fd* fd;
@@ -292,6 +299,7 @@ class FileSystem {
     return SymlinkAt(oldPath, AT_FDCWD, newPath);
   }
   int ReadLinkAt(int dirFd, const char* path, char* buf, int bufLen) {
+    std::lock_guard<std::mutex> lock(mtx);
     if (bufLen <= 0)
       return -EINVAL;
     struct INode* origCwd = cwd.inode;
@@ -321,6 +329,7 @@ class FileSystem {
     return ReadLinkAt(AT_FDCWD, path, buf, bufLen);
   }
   int GetDents(unsigned int fdNum, struct linux_dirent* dirp, unsigned int count) {
+    std::lock_guard<std::mutex> lock(mtx);
     Fd* fd;
     if (!(fd = GetFd(fdNum)))
       return -EBADF;
@@ -356,6 +365,7 @@ class FileSystem {
     return nread;
   }
   int LinkAt(int oldDirFd, const char* oldPath, int newDirFd, const char* newPath, int flags) {
+    std::lock_guard<std::mutex> lock(mtx);
     if (flags & ~AT_SYMLINK_FOLLOW)
       return -EINVAL;
     Fd* oldFd;
@@ -411,35 +421,52 @@ class FileSystem {
     return LinkAt(AT_FDCWD, oldPath, AT_FDCWD, newPath, 0);
   }
   int UnlinkAt(int dirFd, const char* path, int flags) {
+    std::lock_guard<std::mutex> lock(mtx);
     if (flags & ~AT_REMOVEDIR)
       return -EINVAL;
-    struct INode* origCwd = cwd.inode;
+    Fd* fd;
     if (dirFd != AT_FDCWD) {
-      Fd* fd;
       if (!(fd = GetFd(dirFd)))
         return -EBADF;
+      if (!S_ISDIR(fd->inode->mode))
+        return -ENOTDIR;
       cwd.inode = fd->inode;
     }
-    int res = flags & AT_REMOVEDIR ? RmDir(path) : Unlink(path);
-    cwd.inode = origCwd;
-    return res;
-  }
-  int Unlink(const char* path) {
+    struct INode* origCwd = cwd.inode;
+    if (dirFd != AT_FDCWD)
+      cwd.inode = fd->inode;
     struct INode* inode;
     struct INode* parent;
     int res = GetINode(path, &inode, &parent);
+    cwd.inode = origCwd;
     if (res != 0)
       return res;
-    if (S_ISDIR(inode->mode))
+    if (flags & AT_REMOVEDIR) {
+      if (!S_ISDIR(inode->mode))
+        return -ENOTDIR;
+      if (inode == inodes[0])
+        return -EBUSY;
+    } else if (S_ISDIR(inode->mode))
       return -EISDIR;
     for (int i = 0; i != fdCount; ++i)
       if (fds[i]->inode == inode)
         return -EBUSY;
+    if (flags & AT_REMOVEDIR) {
+      const char* last = GetLast(path);
+      bool isDot = strcmp(last, ".") == 0;
+      delete last;
+      if (isDot)
+        return -EINVAL;
+      if (inode->dentCount != 2)
+        return -ENOTEMPTY;
+    }
     const char* absPath = AbsolutePath(path);
     const char* name = GetLast(absPath);
     delete absPath;
     parent->RemoveDent(name);
     delete name;
+    if (flags & AT_REMOVEDIR)
+      --parent->nlink;
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
     if (--inode->nlink == 0)
@@ -447,42 +474,15 @@ class FileSystem {
     else inode->ctime = ts;
     parent->ctime = parent->mtime = ts;
     return 0;
+  }
+  int Unlink(const char* path) {
+    return UnlinkAt(AT_FDCWD, path, 0);
   }
   int RmDir(const char* path) {
-    struct INode* inode;
-    struct INode* parent;
-    int res = GetINode(path, &inode, &parent);
-    if (res != 0)
-      return res;
-    if (!S_ISDIR(inode->mode))
-      return -ENOTDIR;
-    if (inode == inodes[0])
-      return -EBUSY;
-    for (int i = 0; i != fdCount; ++i)
-      if (fds[i]->inode == inode)
-        return -EBUSY;
-    const char* last = GetLast(path);
-    bool isDot = strcmp(last, ".") == 0;
-    delete last;
-    if (isDot)
-      return -EINVAL;
-    if (inode->dentCount != 2)
-      return -ENOTEMPTY;
-    const char* absPath = AbsolutePath(path);
-    const char* name = GetLast(absPath);
-    delete absPath;
-    parent->RemoveDent(name);
-    delete name;
-    --parent->nlink;
-    struct timespec ts;
-    clock_gettime(CLOCK_REALTIME, &ts);
-    if (--inode->nlink == 0)
-      RemoveINode(inode);
-    else inode->ctime = ts;
-    parent->ctime = parent->mtime = ts;
-    return 0;
+    return UnlinkAt(AT_FDCWD, path, AT_REMOVEDIR);
   }
   int RenameAt(int oldDirFd, const char* oldPath, int newDirFd, const char* newPath, unsigned int flags) {
+    std::lock_guard<std::mutex> lock(mtx);
     if (flags & ~RENAME_NOREPLACE)
       return -EINVAL;
     const char* last = GetLast(oldPath);
@@ -571,6 +571,7 @@ class FileSystem {
     return RenameAt(AT_FDCWD, oldPath, AT_FDCWD, newPath, 0);
   }
   off_t LSeek(unsigned int fdNum, off_t offset, unsigned int whence) {
+    std::lock_guard<std::mutex> lock(mtx);
     if (offset < 0)
       return -EINVAL;
     Fd* fd;
@@ -594,6 +595,7 @@ class FileSystem {
     }
   }
   ssize_t Read(unsigned int fdNum, char* buf, size_t count) {
+    std::lock_guard<std::mutex> lock(mtx);
     Fd* fd;
     if (!(fd = GetFd(fdNum)) || fd->flags & O_WRONLY)
       return -EBADF;
@@ -619,6 +621,7 @@ class FileSystem {
     return count;
   }
   ssize_t Readv(unsigned int fdNum, struct iovec* iov, int iovcnt) {
+    std::lock_guard<std::mutex> lock(mtx);
     Fd* fd;
     if (!(fd = GetFd(fdNum)) || fd->flags & O_WRONLY)
       return -EBADF;
@@ -667,6 +670,7 @@ class FileSystem {
     return count;
   }
   ssize_t PRead(unsigned int fdNum, char* buf, size_t count, off_t offset) {
+    std::lock_guard<std::mutex> lock(mtx);
     Fd* fd;
     if (!(fd = GetFd(fdNum)) || fd->flags & O_WRONLY)
       return -EBADF;
@@ -691,6 +695,7 @@ class FileSystem {
     return count;
   }
   ssize_t PReadv(unsigned int fdNum, struct iovec* iov, int iovcnt, off_t offset) {
+    std::lock_guard<std::mutex> lock(mtx);
     Fd* fd;
     if (!(fd = GetFd(fdNum)) || fd->flags & O_WRONLY)
       return -EBADF;
@@ -738,6 +743,7 @@ class FileSystem {
     return count;
   }
   ssize_t Write(unsigned int fdNum, const char* buf, size_t count) {
+    std::lock_guard<std::mutex> lock(mtx);
     Fd* fd;
     if (!(fd = GetFd(fdNum)) || !(fd->flags & (O_WRONLY | O_RDWR)))
       return -EBADF;
@@ -769,6 +775,7 @@ class FileSystem {
     return count;
   }
   ssize_t Writev(unsigned int fdNum, struct iovec* iov, int iovcnt) {
+    std::lock_guard<std::mutex> lock(mtx);
     Fd* fd;
     if (!(fd = GetFd(fdNum)) || !(fd->flags & (O_WRONLY | O_RDWR)))
       return -EBADF;
@@ -826,6 +833,7 @@ class FileSystem {
     return count;
   }
   ssize_t PWrite(unsigned int fdNum, const char* buf, size_t count, off_t offset) {
+    std::lock_guard<std::mutex> lock(mtx);
     Fd* fd;
     if (!(fd = GetFd(fdNum)) || !(fd->flags & (O_WRONLY | O_RDWR)))
       return -EBADF;
@@ -853,6 +861,7 @@ class FileSystem {
     return count;
   }
   ssize_t PWritev(unsigned int fdNum, struct iovec* iov, int iovcnt, off_t offset) {
+    std::lock_guard<std::mutex> lock(mtx);
     Fd* fd;
     if (!(fd = GetFd(fdNum)) || !(fd->flags & (O_WRONLY | O_RDWR)))
       return -EBADF;
@@ -906,6 +915,7 @@ class FileSystem {
     return count;
   }
   ssize_t SendFile(unsigned int outFd, unsigned int inFd, off_t* offset, size_t count) {
+    std::lock_guard<std::mutex> lock(mtx);
     Fd* fdIn;
     Fd* fdOut;
     if ((!(fdIn = GetFd(inFd)) || fdIn->flags & O_WRONLY) ||
@@ -952,6 +962,7 @@ class FileSystem {
     return count;
   }
   int FTruncate(unsigned int fdNum, off_t length) {
+    std::lock_guard<std::mutex> lock(mtx);
     if (length < 0)
       return -EINVAL;
     Fd* fd;
@@ -974,6 +985,7 @@ class FileSystem {
     return 0;
   }
   int Truncate(const char* path, off_t length) {
+    std::lock_guard<std::mutex> lock(mtx);
     if (length < 0)
       return -EINVAL;
     struct INode* inode;
@@ -999,6 +1011,7 @@ class FileSystem {
     return 0;
   }
   int FChModAt(int dirFd, const char* path, mode_t mode) {
+    std::lock_guard<std::mutex> lock(mtx);
     struct INode* origCwd = cwd.inode;
     if (dirFd != AT_FDCWD) {
       Fd* fd;
@@ -1017,6 +1030,7 @@ class FileSystem {
     return 0;
   }
   int FChMod(unsigned int fdNum, mode_t mode) {
+    std::lock_guard<std::mutex> lock(mtx);
     Fd* fd;
     if (!(fd = GetFd(fdNum)))
       return -EBADF;
@@ -1029,6 +1043,7 @@ class FileSystem {
     return FChModAt(AT_FDCWD, path, mode);
   }
   int ChDir(const char* path) {
+    std::lock_guard<std::mutex> lock(mtx);
     struct INode* inode;
     struct INode* parent;
     int res = GetINode(path, &inode, &parent, true);
@@ -1040,6 +1055,7 @@ class FileSystem {
     return 0;
   }
   int GetCwd(char* buf, size_t size) {
+    std::lock_guard<std::mutex> lock(mtx);
     if (cwd.inode != inodes[0]) {
       struct INode* inode;
       struct INode* parent;
@@ -1057,6 +1073,7 @@ class FileSystem {
     return cwdLen;
   }
   int FStat(unsigned int fdNum, struct stat* buf) {
+    std::lock_guard<std::mutex> lock(mtx);
     Fd* fd;
     if (!(fd = GetFd(fdNum)))
       return -EBADF;
@@ -1064,6 +1081,7 @@ class FileSystem {
     return 0;
   }
   int Stat(const char* path, struct stat* buf) {
+    std::lock_guard<std::mutex> lock(mtx);
     struct INode* inode;
     struct INode* parent;
     int res = GetINode(path, &inode, &parent, true);
@@ -1073,6 +1091,7 @@ class FileSystem {
     return 0;
   }
   int LStat(const char* path, struct stat* buf) {
+    std::lock_guard<std::mutex> lock(mtx);
     struct INode* inode;
     struct INode* parent;
     int res = GetINode(path, &inode, &parent);
@@ -1082,6 +1101,7 @@ class FileSystem {
     return 0;
   }
   int Statx(int dirFd, const char* path, int flags, int mask, struct statx* buf) {
+    std::lock_guard<std::mutex> lock(mtx);
     if (flags & ~AT_SYMLINK_NOFOLLOW || mask & ~STATX_ALL)
       return -EINVAL;
     struct INode* origCwd = cwd.inode;
@@ -1101,6 +1121,7 @@ class FileSystem {
     return 0;
   }
   int UTimeNsAt(int dirFd, const char* path, const struct timespec* times, int flags) {
+    std::lock_guard<std::mutex> lock(mtx);
     if (flags & ~AT_SYMLINK_NOFOLLOW)
       return -EINVAL;
     struct INode* origCwd = cwd.inode;
@@ -1134,6 +1155,7 @@ class FileSystem {
     return 0;
   }
   int FUTimesAt(unsigned int fdNum, const char* path, const struct timeval* times) {
+    std::lock_guard<std::mutex> lock(mtx);
     if (times) {
       if (times[0].tv_usec < 0 || times[0].tv_usec >= 1000000 ||
           times[1].tv_usec < 0 || times[1].tv_usec >= 1000000)
@@ -1199,6 +1221,7 @@ class FileSystem {
    *     data (blank if directory)
    */
   int DumpToFile(const char* filename) {
+    std::lock_guard<std::mutex> lock(mtx);
     int fd = creat(filename, 0644);
     if (fd < 0)
       return -errno;
@@ -1405,6 +1428,7 @@ class FileSystem {
   ino_t inodeCount = 0;
   Fd** fds = {};
   int fdCount = 0;
+  std::mutex mtx;
   bool PushINode(struct INode* inode) {
     if (inodeCount == std::numeric_limits<ino_t>::max())
       return false;

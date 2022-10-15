@@ -90,7 +90,7 @@ declare module "FileSystem" {
     faccessat(dirFd: number | BigInt, path: string, mode: number | BigInt, flags: number | BigInt): void;
     access(path: string, mode: number | BigInt): void;
     openat(dirFd: number | BigInt, path: string, flags: number | BigInt, mode: number | BigInt): number;
-    open(path: string, mode: number | BigInt): number;
+    open(path: string, flags: number | BigInt, mode: number | BigInt): number;
     creat(path: string, mode: number | BigInt): number;
     close(fd: number | BigInt): void;
     mknodat(dirFd: number | BigInt, path: string, mode: number | BigInt): void;
