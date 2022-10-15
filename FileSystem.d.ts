@@ -69,6 +69,7 @@ declare module "FileSystem" {
     static SEEK_SET: number;
     static SEEK_CUR: number;
     static SEEK_END: number;
+    static STATX_ALL: number;
     static STATX_ATIME: number;
     static STATX_BASIC_STATS: number;
     static STATX_BLOCKS: number;
