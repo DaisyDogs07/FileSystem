@@ -6,7 +6,10 @@
 using namespace node;
 using namespace v8;
 
-void FileSystemCleanup(void* data) {
+Persistent<FunctionTemplate> FSConstructorTmpl;
+Persistent<ObjectTemplate> FSInstanceTmpl;
+
+void FileSystemCleanup(void*, size_t, void* data) {
   delete reinterpret_cast<FileSystem*>(data);
 }
 
@@ -24,15 +27,16 @@ void FileSystemConstructor(const FunctionCallbackInfo<Value>& args) {
     return;
   }
   FileSystem* fs = new FileSystem;
-  AtExit(GetCurrentEnvironment(isolate->GetCurrentContext()), FileSystemCleanup, fs);
+  std::unique_ptr<BackingStore> ab = ArrayBuffer::NewBackingStore(fs, sizeof(FileSystem), FileSystemCleanup, fs);
+  Local<ArrayBuffer> abuf = ArrayBuffer::New(isolate, std::move(ab));
   args.This()->SetInternalField(0, External::New(isolate, fs));
-  args.GetReturnValue().Set(args.This());
+  args.This()->SetInternalField(1, abuf);
 }
 
 #define IsNumeric(x) \
   (x->IsNumber() || x->IsBigInt())
 #define IsStrOrBuf(x) \
-  (x->IsString() || x->IsArrayBufferView())
+  (x->IsString() || Buffer::HasInstance(x))
 #define Int32Val(x) \
   (x->IsBigInt() \
     ? static_cast<int32_t>(x.As<BigInt>()->Int64Value()) \
@@ -58,6 +62,20 @@ void FileSystemConstructor(const FunctionCallbackInfo<Value>& args) {
     ? static_cast<size_t>(x.As<String>()->Utf8Length(isolate)) \
     : Buffer::Length(x))
 
+#define THROWIFNOTFS(self, method) \
+  do { \
+    if (self.IsEmpty()) { \
+      isolate->ThrowException( \
+        Exception::TypeError( \
+          String::NewFromUtf8Literal( \
+            isolate, \
+            method " requires that 'this' be a FileSystem" \
+          ) \
+        ) \
+      ); \
+      return; \
+    }\
+  } while (0)
 #define THROWERR(code) \
   do { \
     isolate->ThrowException( \
@@ -73,20 +91,21 @@ void FileSystemConstructor(const FunctionCallbackInfo<Value>& args) {
 #define THROWIFERR(res) \
   do { \
     auto tmp = (res); \
-    if (tmp < 0) { \
+    if (tmp < 0) \
       THROWERR(tmp); \
-    } \
   } while (0)
 
 void FileSystemFAccessAt(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "FileSystem.prototype.faccessat");
   assert(args.Length() == 4);
   assert(IsNumeric(args[0]));
   assert(args[1]->IsString());
   assert(IsNumeric(args[2]));
   assert(IsNumeric(args[3]));
-  Isolate* isolate = args.GetIsolate();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
-    args.This()->GetInternalField(0).As<External>()->Value()
+    self->GetInternalField(0).As<External>()->Value()
   );
   THROWIFERR(
     fs->FAccessAt(
@@ -98,12 +117,14 @@ void FileSystemFAccessAt(const FunctionCallbackInfo<Value>& args) {
   );
 }
 void FileSystemAccess(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "FileSystem.prototype.access");
   assert(args.Length() == 2);
   assert(args[0]->IsString());
   assert(IsNumeric(args[1]));
-  Isolate* isolate = args.GetIsolate();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
-    args.This()->GetInternalField(0).As<External>()->Value()
+    self->GetInternalField(0).As<External>()->Value()
   );
   THROWIFERR(
     fs->Access(
@@ -113,14 +134,16 @@ void FileSystemAccess(const FunctionCallbackInfo<Value>& args) {
   );
 }
 void FileSystemOpenAt(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "FileSystem.prototype.openat");
   assert(args.Length() == 4);
   assert(IsNumeric(args[0]));
   assert(args[1]->IsString());
   assert(IsNumeric(args[2]));
   assert(IsNumeric(args[3]));
-  Isolate* isolate = args.GetIsolate();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
-    args.This()->GetInternalField(0).As<External>()->Value()
+    self->GetInternalField(0).As<External>()->Value()
   );
   int res;
   THROWIFERR(
@@ -139,13 +162,15 @@ void FileSystemOpenAt(const FunctionCallbackInfo<Value>& args) {
   );
 }
 void FileSystemOpen(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "FileSystem.prototype.open");
   assert(args.Length() == 3);
   assert(args[0]->IsString());
   assert(IsNumeric(args[1]));
   assert(IsNumeric(args[2]));
-  Isolate* isolate = args.GetIsolate();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
-    args.This()->GetInternalField(0).As<External>()->Value()
+    self->GetInternalField(0).As<External>()->Value()
   );
   int res;
   THROWIFERR(
@@ -163,12 +188,14 @@ void FileSystemOpen(const FunctionCallbackInfo<Value>& args) {
   );
 }
 void FileSystemCreat(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "FileSystem.prototype.creat");
   assert(args.Length() == 2);
   assert(args[0]->IsString());
   assert(IsNumeric(args[1]));
-  Isolate* isolate = args.GetIsolate();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
-    args.This()->GetInternalField(0).As<External>()->Value()
+    self->GetInternalField(0).As<External>()->Value()
   );
   int res;
   THROWIFERR(
@@ -185,11 +212,13 @@ void FileSystemCreat(const FunctionCallbackInfo<Value>& args) {
   );
 }
 void FileSystemClose(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "FileSystem.prototype.close");
   assert(args.Length() == 1);
   assert(IsNumeric(args[0]));
-  Isolate* isolate = args.GetIsolate();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
-    args.This()->GetInternalField(0).As<External>()->Value()
+    self->GetInternalField(0).As<External>()->Value()
   );
   THROWIFERR(
     fs->Close(
@@ -198,13 +227,15 @@ void FileSystemClose(const FunctionCallbackInfo<Value>& args) {
   );
 }
 void FileSystemMkNodAt(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "FileSystem.prototype.mknodat");
   assert(args.Length() == 3);
   assert(IsNumeric(args[0]));
   assert(args[1]->IsString());
   assert(IsNumeric(args[2]));
-  Isolate* isolate = args.GetIsolate();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
-    args.This()->GetInternalField(0).As<External>()->Value()
+    self->GetInternalField(0).As<External>()->Value()
   );
   THROWIFERR(
     fs->MkNodAt(
@@ -216,12 +247,14 @@ void FileSystemMkNodAt(const FunctionCallbackInfo<Value>& args) {
   );
 }
 void FileSystemMkNod(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "FileSystem.prototype.mknod");
   assert(args.Length() == 2);
   assert(args[0]->IsString());
   assert(IsNumeric(args[1]));
-  Isolate* isolate = args.GetIsolate();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
-    args.This()->GetInternalField(0).As<External>()->Value()
+    self->GetInternalField(0).As<External>()->Value()
   );
   THROWIFERR(
     fs->MkNod(
@@ -232,13 +265,15 @@ void FileSystemMkNod(const FunctionCallbackInfo<Value>& args) {
   );
 }
 void FileSystemMkDirAt(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "FileSystem.prototype.mkdirat");
   assert(args.Length() == 3);
   assert(IsNumeric(args[0]));
   assert(args[1]->IsString());
   assert(IsNumeric(args[2]));
-  Isolate* isolate = args.GetIsolate();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
-    args.This()->GetInternalField(0).As<External>()->Value()
+    self->GetInternalField(0).As<External>()->Value()
   );
   THROWIFERR(
     fs->MkDirAt(
@@ -249,12 +284,14 @@ void FileSystemMkDirAt(const FunctionCallbackInfo<Value>& args) {
   );
 }
 void FileSystemMkDir(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "FileSystem.prototype.mkdir");
   assert(args.Length() == 2);
   assert(args[0]->IsString());
   assert(IsNumeric(args[1]));
-  Isolate* isolate = args.GetIsolate();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
-    args.This()->GetInternalField(0).As<External>()->Value()
+    self->GetInternalField(0).As<External>()->Value()
   );
   THROWIFERR(
     fs->MkDir(
@@ -264,13 +301,15 @@ void FileSystemMkDir(const FunctionCallbackInfo<Value>& args) {
   );
 }
 void FileSystemSymlinkAt(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "FileSystem.prototype.symlinkat");
   assert(args.Length() == 3);
   assert(args[0]->IsString());
   assert(IsNumeric(args[1]));
   assert(args[2]->IsString());
-  Isolate* isolate = args.GetIsolate();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
-    args.This()->GetInternalField(0).As<External>()->Value()
+    self->GetInternalField(0).As<External>()->Value()
   );
   THROWIFERR(
     fs->SymlinkAt(
@@ -281,12 +320,14 @@ void FileSystemSymlinkAt(const FunctionCallbackInfo<Value>& args) {
   );
 }
 void FileSystemSymlink(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "FileSystem.prototype.symlink");
   assert(args.Length() == 2);
   assert(args[0]->IsString());
   assert(args[1]->IsString());
-  Isolate* isolate = args.GetIsolate();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
-    args.This()->GetInternalField(0).As<External>()->Value()
+    self->GetInternalField(0).As<External>()->Value()
   );
   THROWIFERR(
     fs->Symlink(
@@ -296,12 +337,14 @@ void FileSystemSymlink(const FunctionCallbackInfo<Value>& args) {
   );
 }
 void FileSystemReadLinkAt(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "FileSystem.prototype.readlinkat");
   assert(args.Length() == 2);
   assert(IsNumeric(args[0]));
   assert(args[1]->IsString());
-  Isolate* isolate = args.GetIsolate();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
-    args.This()->GetInternalField(0).As<External>()->Value()
+    self->GetInternalField(0).As<External>()->Value()
   );
   char buf[PATH_MAX];
   int res;
@@ -319,11 +362,13 @@ void FileSystemReadLinkAt(const FunctionCallbackInfo<Value>& args) {
   );
 }
 void FileSystemReadLink(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "FileSystem.prototype.readlink");
   assert(args.Length() == 1);
   assert(args[0]->IsString());
-  Isolate* isolate = args.GetIsolate();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
-    args.This()->GetInternalField(0).As<External>()->Value()
+    self->GetInternalField(0).As<External>()->Value()
   );
   char buf[PATH_MAX];
   int res;
@@ -340,12 +385,14 @@ void FileSystemReadLink(const FunctionCallbackInfo<Value>& args) {
   );
 }
 void FileSystemGetDents(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "FileSystem.prototype.getdents");
   assert(args.Length() == 1 || args.Length() == 2);
   assert(IsNumeric(args[0]));
-  Isolate* isolate = args.GetIsolate();
   Local<Context> context = isolate->GetCurrentContext();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
-    args.This()->GetInternalField(0).As<External>()->Value()
+    self->GetInternalField(0).As<External>()->Value()
   );
   uint32_t count = std::numeric_limits<uint32_t>::max();
   if (args.Length() == 2) {
@@ -403,15 +450,17 @@ void FileSystemGetDents(const FunctionCallbackInfo<Value>& args) {
   args.GetReturnValue().Set(dentArr);
 }
 void FileSystemLinkAt(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "FileSystem.prototype.linkat");
   assert(args.Length() == 5);
   assert(IsNumeric(args[0]));
   assert(args[1]->IsString());
   assert(IsNumeric(args[2]));
   assert(args[3]->IsString());
   assert(IsNumeric(args[4]));
-  Isolate* isolate = args.GetIsolate();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
-    args.This()->GetInternalField(0).As<External>()->Value()
+    self->GetInternalField(0).As<External>()->Value()
   );
   THROWIFERR(
     fs->LinkAt(
@@ -424,12 +473,14 @@ void FileSystemLinkAt(const FunctionCallbackInfo<Value>& args) {
   );
 }
 void FileSystemLink(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "FileSystem.prototype.link");
   assert(args.Length() == 2);
   assert(args[0]->IsString());
   assert(args[1]->IsString());
-  Isolate* isolate = args.GetIsolate();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
-    args.This()->GetInternalField(0).As<External>()->Value()
+    self->GetInternalField(0).As<External>()->Value()
   );
   THROWIFERR(
     fs->Link(
@@ -439,13 +490,15 @@ void FileSystemLink(const FunctionCallbackInfo<Value>& args) {
   );
 }
 void FileSystemUnlinkAt(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "FileSystem.prototype.unlinkat");
   assert(args.Length() == 3);
   assert(IsNumeric(args[0]));
   assert(args[1]->IsString());
   assert(IsNumeric(args[2]));
-  Isolate* isolate = args.GetIsolate();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
-    args.This()->GetInternalField(0).As<External>()->Value()
+    self->GetInternalField(0).As<External>()->Value()
   );
   THROWIFERR(
     fs->UnlinkAt(
@@ -456,11 +509,13 @@ void FileSystemUnlinkAt(const FunctionCallbackInfo<Value>& args) {
   );
 }
 void FileSystemUnlink(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "FileSystem.prototype.unlink");
   assert(args.Length() == 1);
   assert(args[0]->IsString());
-  Isolate* isolate = args.GetIsolate();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
-    args.This()->GetInternalField(0).As<External>()->Value()
+    self->GetInternalField(0).As<External>()->Value()
   );
   THROWIFERR(
     fs->Unlink(
@@ -469,11 +524,13 @@ void FileSystemUnlink(const FunctionCallbackInfo<Value>& args) {
   );
 }
 void FileSystemRmDir(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "FileSystem.prototype.rmdir");
   assert(args.Length() == 1);
   assert(args[0]->IsString());
-  Isolate* isolate = args.GetIsolate();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
-    args.This()->GetInternalField(0).As<External>()->Value()
+    self->GetInternalField(0).As<External>()->Value()
   );
   THROWIFERR(
     fs->RmDir(
@@ -482,15 +539,17 @@ void FileSystemRmDir(const FunctionCallbackInfo<Value>& args) {
   );
 }
 void FileSystemRenameAt(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "FileSystem.prototype.renameat");
   assert(args.Length() == 5);
   assert(IsNumeric(args[0]));
   assert(args[1]->IsString());
   assert(IsNumeric(args[2]));
   assert(args[3]->IsString());
   assert(IsNumeric(args[4]));
-  Isolate* isolate = args.GetIsolate();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
-    args.This()->GetInternalField(0).As<External>()->Value()
+    self->GetInternalField(0).As<External>()->Value()
   );
   THROWIFERR(
     fs->RenameAt(
@@ -503,12 +562,14 @@ void FileSystemRenameAt(const FunctionCallbackInfo<Value>& args) {
   );
 }
 void FileSystemRename(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "FileSystem.prototype.rename");
   assert(args.Length() == 2);
   assert(args[0]->IsString());
   assert(args[1]->IsString());
-  Isolate* isolate = args.GetIsolate();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
-    args.This()->GetInternalField(0).As<External>()->Value()
+    self->GetInternalField(0).As<External>()->Value()
   );
   THROWIFERR(
     fs->Rename(
@@ -518,13 +579,15 @@ void FileSystemRename(const FunctionCallbackInfo<Value>& args) {
   );
 }
 void FileSystemLSeek(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "FileSystem.prototype.lseek");
   assert(args.Length() == 3);
   assert(IsNumeric(args[0]));
   assert(IsNumeric(args[1]));
   assert(IsNumeric(args[2]));
-  Isolate* isolate = args.GetIsolate();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
-    args.This()->GetInternalField(0).As<External>()->Value()
+    self->GetInternalField(0).As<External>()->Value()
   );
   off_t res;
   THROWIFERR(
@@ -537,23 +600,25 @@ void FileSystemLSeek(const FunctionCallbackInfo<Value>& args) {
   args.GetReturnValue().Set(BigInt::New(isolate, res));
 }
 void FileSystemRead(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "FileSystem.prototype.read");
   assert(args.Length() == 2);
   assert(IsNumeric(args[0]));
   assert(IsNumeric(args[1]));
-  Isolate* isolate = args.GetIsolate();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
-    args.This()->GetInternalField(0).As<External>()->Value()
+    self->GetInternalField(0).As<External>()->Value()
   );
   unsigned int fdNum = Uint32Val(args[0]);
   struct stat s;
   ssize_t res;
   THROWIFERR(res = fs->FStat(fdNum, &s));
   size_t bufLen = std::min(
-    Uint64Val(args[1]),
     std::min(
-      (size_t)s.st_size,
-      (size_t)std::numeric_limits<int>::max()
-    )
+      Uint64Val(args[1]),
+      (size_t)s.st_size
+    ),
+    (size_t)std::numeric_limits<int>::max()
   );
   char* buf = new char[bufLen + 1];
   res = fs->Read(
@@ -576,16 +641,49 @@ void FileSystemRead(const FunctionCallbackInfo<Value>& args) {
     ).ToLocalChecked()
   );
 }
-
+void FileSystemReadv(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "FileSystem.prototype.readv");
+  assert(args.Length() == 2);
+  assert(IsNumeric(args[0]));
+  assert(args[1]->IsArray());
+  FileSystem* fs = reinterpret_cast<FileSystem*>(
+    self->GetInternalField(0).As<External>()->Value()
+  );
+  Local<Context> context = isolate->GetCurrentContext();
+  Local<Array> buffers = args[1].As<Array>();
+  struct iovec* iov = new iovec[buffers->Length()];
+  for (uint32_t i = 0; i != buffers->Length(); ++i) {
+    Local<Value> buf = buffers->Get(
+      context,
+      i
+    ).ToLocalChecked();
+    assert(Buffer::HasInstance(buf));
+    iov[i].iov_base = Buffer::Data(buf);
+    iov[i].iov_len = Buffer::Length(buf);
+  }
+  ssize_t res = fs->Readv(
+    Uint32Val(args[0]),
+    iov,
+    buffers->Length()
+  );
+  delete[] iov;
+  if (res < 0)
+    THROWERR(res);
+  args.GetReturnValue().Set(BigInt::New(isolate, res));
+}
 void FileSystemWrite(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "FileSystem.prototype.write");
   assert(args.Length() == 2 || args.Length() == 3);
   assert(IsNumeric(args[0]));
   assert(IsStrOrBuf(args[1]));
   if (args.Length() == 3)
     assert(IsNumeric(args[2]));
-  Isolate* isolate = args.GetIsolate();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
-    args.This()->GetInternalField(0).As<External>()->Value()
+    self->GetInternalField(0).As<External>()->Value()
   );
   ssize_t res;
   THROWIFERR(
@@ -599,15 +697,49 @@ void FileSystemWrite(const FunctionCallbackInfo<Value>& args) {
   );
   args.GetReturnValue().Set(BigInt::New(isolate, res));
 }
+void FileSystemWritev(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "FileSystem.prototype.writev");
+  assert(args.Length() == 2);
+  assert(IsNumeric(args[0]));
+  assert(args[1]->IsArray());
+  FileSystem* fs = reinterpret_cast<FileSystem*>(
+    self->GetInternalField(0).As<External>()->Value()
+  );
+  Local<Context> context = isolate->GetCurrentContext();
+  Local<Array> buffers = args[1].As<Array>();
+  struct iovec* iov = new iovec[buffers->Length()];
+  for (uint32_t i = 0; i != buffers->Length(); ++i) {
+    Local<Value> buf = buffers->Get(
+      context,
+      i
+    ).ToLocalChecked();
+    assert(Buffer::HasInstance(buf));
+    iov[i].iov_base = Buffer::Data(buf);
+    iov[i].iov_len = Buffer::Length(buf);
+  }
+  ssize_t res = fs->Writev(
+    Uint32Val(args[0]),
+    iov,
+    buffers->Length()
+  );
+  delete[] iov;
+  if (res < 0)
+    THROWERR(res);
+  args.GetReturnValue().Set(BigInt::New(isolate, res));
+}
 void FileSystemSendFile(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "FileSystem.prototype.sendfile");
   assert(args.Length() == 4);
   assert(IsNumeric(args[0]));
   assert(IsNumeric(args[1]));
   assert(args[2]->IsNull() || IsNumeric(args[2]));
   assert(IsNumeric(args[3]));
-  Isolate* isolate = args.GetIsolate();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
-    args.This()->GetInternalField(0).As<External>()->Value()
+    self->GetInternalField(0).As<External>()->Value()
   );
   off_t off;
   if (!args[2]->IsNull())
@@ -623,28 +755,15 @@ void FileSystemSendFile(const FunctionCallbackInfo<Value>& args) {
   );
   args.GetReturnValue().Set(BigInt::New(isolate, res));
 }
-void FileSystemTruncate(const FunctionCallbackInfo<Value>& args) {
-  assert(args.Length() == 2);
-  assert(args[0]->IsString());
-  assert(IsNumeric(args[1]));
-  Isolate* isolate = args.GetIsolate();
-  FileSystem* fs = reinterpret_cast<FileSystem*>(
-    args.This()->GetInternalField(0).As<External>()->Value()
-  );
-  THROWIFERR(
-    fs->Truncate(
-      *String::Utf8Value(isolate, args[0].As<String>()),
-      Int64Val(args[1])
-    )
-  );
-}
 void FileSystemFTruncate(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "FileSystem.prototype.ftruncate");
   assert(args.Length() == 2);
   assert(IsNumeric(args[0]));
   assert(IsNumeric(args[1]));
-  Isolate* isolate = args.GetIsolate();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
-    args.This()->GetInternalField(0).As<External>()->Value()
+    self->GetInternalField(0).As<External>()->Value()
   );
   THROWIFERR(
     fs->FTruncate(
@@ -653,14 +772,33 @@ void FileSystemFTruncate(const FunctionCallbackInfo<Value>& args) {
     )
   );
 }
+void FileSystemTruncate(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "FileSystem.prototype.truncate");
+  assert(args.Length() == 2);
+  assert(args[0]->IsString());
+  assert(IsNumeric(args[1]));
+  FileSystem* fs = reinterpret_cast<FileSystem*>(
+    self->GetInternalField(0).As<External>()->Value()
+  );
+  THROWIFERR(
+    fs->Truncate(
+      *String::Utf8Value(isolate, args[0].As<String>()),
+      Int64Val(args[1])
+    )
+  );
+}
 void FileSystemFChModAt(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "FileSystem.prototype.fchmodat");
   assert(args.Length() == 3);
   assert(IsNumeric(args[0]));
   assert(args[1]->IsString());
   assert(IsNumeric(args[2]));
-  Isolate* isolate = args.GetIsolate();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
-    args.This()->GetInternalField(0).As<External>()->Value()
+    self->GetInternalField(0).As<External>()->Value()
   );
   THROWIFERR(
     fs->FChModAt(
@@ -670,28 +808,15 @@ void FileSystemFChModAt(const FunctionCallbackInfo<Value>& args) {
     )
   );
 }
-void FileSystemChMod(const FunctionCallbackInfo<Value>& args) {
-  assert(args.Length() == 2);
-  assert(args[0]->IsString());
-  assert(IsNumeric(args[1]));
-  Isolate* isolate = args.GetIsolate();
-  FileSystem* fs = reinterpret_cast<FileSystem*>(
-    args.This()->GetInternalField(0).As<External>()->Value()
-  );
-  THROWIFERR(
-    fs->ChMod(
-      *String::Utf8Value(isolate, args[0].As<String>()),
-      Uint32Val(args[1])
-    )
-  );
-}
 void FileSystemFChMod(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "FileSystem.prototype.fchmod");
   assert(args.Length() == 2);
   assert(IsNumeric(args[0]));
   assert(IsNumeric(args[1]));
-  Isolate* isolate = args.GetIsolate();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
-    args.This()->GetInternalField(0).As<External>()->Value()
+    self->GetInternalField(0).As<External>()->Value()
   );
   THROWIFERR(
     fs->FChMod(
@@ -700,12 +825,31 @@ void FileSystemFChMod(const FunctionCallbackInfo<Value>& args) {
     )
   );
 }
+void FileSystemChMod(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "FileSystem.prototype.chmod");
+  assert(args.Length() == 2);
+  assert(args[0]->IsString());
+  assert(IsNumeric(args[1]));
+  FileSystem* fs = reinterpret_cast<FileSystem*>(
+    self->GetInternalField(0).As<External>()->Value()
+  );
+  THROWIFERR(
+    fs->ChMod(
+      *String::Utf8Value(isolate, args[0].As<String>()),
+      Uint32Val(args[1])
+    )
+  );
+}
 void FileSystemChDir(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "FileSystem.prototype.chdir");
   assert(args.Length() == 1);
   assert(args[0]->IsString());
-  Isolate* isolate = args.GetIsolate();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
-    args.This()->GetInternalField(0).As<External>()->Value()
+    self->GetInternalField(0).As<External>()->Value()
   );
   THROWIFERR(
     fs->ChDir(
@@ -714,10 +858,12 @@ void FileSystemChDir(const FunctionCallbackInfo<Value>& args) {
   );
 }
 void FileSystemGetCwd(const FunctionCallbackInfo<Value>& args) {
-  assert(args.Length() == 0);
   Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "FileSystem.prototype.getcwd");
+  assert(args.Length() == 0);
   FileSystem* fs = reinterpret_cast<FileSystem*>(
-    args.This()->GetInternalField(0).As<External>()->Value()
+    self->GetInternalField(0).As<External>()->Value()
   );
   char buf[PATH_MAX];
   THROWIFERR(fs->GetCwd(buf, PATH_MAX));
@@ -780,12 +926,34 @@ Local<Object> StatToObj(Isolate* isolate, struct stat s) {
   return statObj;
 }
 
+void FileSystemFStat(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "FileSystem.prototype.fstat");
+  assert(args.Length() == 1);
+  assert(IsNumeric(args[0]));
+  FileSystem* fs = reinterpret_cast<FileSystem*>(
+    self->GetInternalField(0).As<External>()->Value()
+  );
+  struct stat s;
+  THROWIFERR(
+    fs->FStat(
+      Uint32Val(args[0]),
+      &s
+    )
+  );
+  args.GetReturnValue().Set(
+    StatToObj(isolate, s)
+  );
+}
 void FileSystemStat(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "FileSystem.prototype.stat");
   assert(args.Length() == 1);
   assert(args[0]->IsString());
-  Isolate* isolate = args.GetIsolate();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
-    args.This()->GetInternalField(0).As<External>()->Value()
+    self->GetInternalField(0).As<External>()->Value()
   );
   struct stat s;
   THROWIFERR(
@@ -799,34 +967,18 @@ void FileSystemStat(const FunctionCallbackInfo<Value>& args) {
   );
 }
 void FileSystemLStat(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "FileSystem.prototype.lstat");
   assert(args.Length() == 1);
   assert(args[0]->IsString());
-  Isolate* isolate = args.GetIsolate();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
-    args.This()->GetInternalField(0).As<External>()->Value()
+    self->GetInternalField(0).As<External>()->Value()
   );
   struct stat s;
   THROWIFERR(
     fs->LStat(
       *String::Utf8Value(isolate, args[0].As<String>()),
-      &s
-    )
-  );
-  args.GetReturnValue().Set(
-    StatToObj(isolate, s)
-  );
-}
-void FileSystemFStat(const FunctionCallbackInfo<Value>& args) {
-  assert(args.Length() == 1);
-  assert(IsNumeric(args[0]));
-  Isolate* isolate = args.GetIsolate();
-  FileSystem* fs = reinterpret_cast<FileSystem*>(
-    args.This()->GetInternalField(0).As<External>()->Value()
-  );
-  struct stat s;
-  THROWIFERR(
-    fs->FStat(
-      Uint32Val(args[0]),
       &s
     )
   );
@@ -871,14 +1023,16 @@ Local<Object> StatxToObj(Isolate* isolate, struct statx s) {
 }
 
 void FileSystemStatx(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "FileSystem.prototype.statx");
   assert(args.Length() == 4);
   assert(IsNumeric(args[0]));
   assert(args[1]->IsString());
   assert(IsNumeric(args[2]));
   assert(IsNumeric(args[3]));
-  Isolate* isolate = args.GetIsolate();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
-    args.This()->GetInternalField(0).As<External>()->Value()
+    self->GetInternalField(0).As<External>()->Value()
   );
   struct statx s;
   THROWIFERR(
@@ -894,75 +1048,283 @@ void FileSystemStatx(const FunctionCallbackInfo<Value>& args) {
     StatxToObj(isolate, s)
   );
 }
+void FileSystemUTimeNsAt(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "FileSystem.prototype.utimensat");
+  assert(args.Length() == 4);
+  assert(IsNumeric(args[0]));
+  assert(args[1]->IsString());
+  assert(args[2]->IsNull() || args[2]->IsArray());
+  if (args[2]->IsArray())
+    assert(args[2].As<Array>()->Length() == 2);
+  assert(IsNumeric(args[3]));
+  FileSystem* fs = reinterpret_cast<FileSystem*>(
+    self->GetInternalField(0).As<External>()->Value()
+  );
+  Local<Context> context = isolate->GetCurrentContext();
+  struct timespec times[2];
+  if (!args[2]->IsNull()) {
+    double atime = args[2].As<Array>()->Get(
+      context,
+      0
+    ).ToLocalChecked().As<Number>()->Value();
+    double mtime = args[2].As<Array>()->Get(
+      context,
+      1
+    ).ToLocalChecked().As<Number>()->Value();
+    if (atime != -1) {
+      times[0].tv_sec = atime / 1000.0;
+      times[0].tv_nsec = atime * 1000000.0;
+    } else {
+      times[0].tv_sec = 0;
+      times[0].tv_nsec = UTIME_OMIT;
+    }
+    if (mtime != -1) {
+      times[1].tv_sec = mtime / 1000.0;
+      times[1].tv_nsec = mtime * 1000000.0;
+    } else {
+      times[1].tv_sec = 0;
+      times[1].tv_nsec = UTIME_OMIT;
+    }
+  }
+  THROWIFERR(
+    fs->UTimeNsAt(
+      Int32Val(args[0]),
+      *String::Utf8Value(isolate, args[1].As<String>()),
+      args[2]->IsNull() ? NULL : times,
+      Int32Val(args[3])
+    )
+  );
+}
+void FileSystemFUTimesAt(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "FileSystem.prototype.futimesat");
+  assert(args.Length() == 3);
+  assert(IsNumeric(args[0]));
+  assert(args[1]->IsString());
+  assert(args[2]->IsNull() || args[2]->IsArray());
+  if (args[2]->IsArray())
+    assert(args[2].As<Array>()->Length() == 2);
+  FileSystem* fs = reinterpret_cast<FileSystem*>(
+    self->GetInternalField(0).As<External>()->Value()
+  );
+  Local<Context> context = isolate->GetCurrentContext();
+  struct timeval times[2];
+  if (!args[2]->IsNull()) {
+    Local<Value> atime = args[2].As<Array>()->Get(
+      context,
+      0
+    ).ToLocalChecked();
+    Local<Value> mtime = args[2].As<Array>()->Get(
+      context,
+      1
+    ).ToLocalChecked();
+    assert(atime->IsNumber());
+    assert(mtime->IsNumber());
+    double atimeVal = atime.As<Number>()->Value();
+    double mtimeVal = mtime.As<Number>()->Value();
+    times[0].tv_sec = atimeVal / 1000.0;
+    times[0].tv_usec = atimeVal * 1000.0;
+    times[1].tv_sec = mtimeVal / 1000.0;
+    times[1].tv_usec = mtimeVal * 1000.0;
+  }
+  THROWIFERR(
+    fs->FUTimesAt(
+      Int32Val(args[0]),
+      *String::Utf8Value(isolate, args[1].As<String>()),
+      args[2]->IsNull() ? NULL : times
+    )
+  );
+}
+void FileSystemUTimes(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "FileSystem.prototype.utimes");
+  assert(args.Length() == 2);
+  assert(args[0]->IsString());
+  assert(args[1]->IsNull() || args[1]->IsArray());
+  if (args[1]->IsArray())
+    assert(args[1].As<Array>()->Length() == 2);
+  FileSystem* fs = reinterpret_cast<FileSystem*>(
+    self->GetInternalField(0).As<External>()->Value()
+  );
+  Local<Context> context = isolate->GetCurrentContext();
+  struct timeval times[2];
+  if (!args[1]->IsNull()) {
+    Local<Value> atime = args[1].As<Array>()->Get(
+      context,
+      0
+    ).ToLocalChecked();
+    Local<Value> mtime = args[1].As<Array>()->Get(
+      context,
+      1
+    ).ToLocalChecked();
+    assert(atime->IsNumber());
+    assert(mtime->IsNumber());
+    double atimeVal = atime.As<Number>()->Value();
+    double mtimeVal = mtime.As<Number>()->Value();
+    times[0].tv_sec = atimeVal / 1000.0;
+    times[0].tv_usec = atimeVal * 1000.0;
+    times[1].tv_sec = mtimeVal / 1000.0;
+    times[1].tv_usec = mtimeVal * 1000.0;
+  }
+  THROWIFERR(
+    fs->UTimes(
+      *String::Utf8Value(isolate, args[0].As<String>()),
+      args[1]->IsNull() ? NULL : times
+    )
+  );
+}
+void FileSystemUTime(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "FileSystem.prototype.utime");
+  assert(args.Length() == 2);
+  assert(args[0]->IsString());
+  assert(args[1]->IsNull() || args[1]->IsArray());
+  if (args[1]->IsArray())
+    assert(args[1].As<Array>()->Length() == 2);
+  FileSystem* fs = reinterpret_cast<FileSystem*>(
+    self->GetInternalField(0).As<External>()->Value()
+  );
+  Local<Context> context = isolate->GetCurrentContext();
+  struct utimbuf times;
+  if (!args[1]->IsNull()) {
+    Local<Value> atime = args[1].As<Array>()->Get(
+      context,
+      0
+    ).ToLocalChecked();
+    Local<Value> mtime = args[1].As<Array>()->Get(
+      context,
+      1
+    ).ToLocalChecked();
+    assert(atime->IsNumber());
+    assert(mtime->IsNumber());
+    times.actime = atime.As<Number>()->Value() / 1000.0;
+    times.modtime = mtime.As<Number>()->Value() / 1000.0;
+  }
+  THROWIFERR(
+    fs->UTime(
+      *String::Utf8Value(isolate, args[0].As<String>()),
+      args[1]->IsNull() ? NULL : &times
+    )
+  );
+}
+
+void FileSystemDumpTo(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "FileSystem.prototype.dumpTo");
+  assert(args.Length() == 1);
+  assert(args[0]->IsString());
+  FileSystem* fs = reinterpret_cast<FileSystem*>(
+    self->GetInternalField(0).As<External>()->Value()
+  );
+  THROWIFERR(
+    fs->DumpToFile(
+      *String::Utf8Value(isolate, args[0].As<String>())
+    )
+  );
+}
+
+void FileSystemCreateFrom(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  assert(args.Length() == 1);
+  assert(args[0]->IsString());
+  FileSystem* fs = FileSystem::CreateFromFile(
+    *String::Utf8Value(isolate, args[0].As<String>())
+  );
+  if (!fs) {
+    isolate->ThrowException(
+      Exception::Error(
+        String::NewFromUtf8Literal(isolate, "FileSystem corrupt or invalid")
+      )
+    );
+    return;
+  }
+  Local<Context> context = isolate->GetCurrentContext();
+  Local<Object> fsObj = FSInstanceTmpl.Get(isolate)->NewInstance(context).ToLocalChecked();
+  std::unique_ptr<BackingStore> ab = ArrayBuffer::NewBackingStore(fs, sizeof(FileSystem), FileSystemCleanup, fs);
+  Local<ArrayBuffer> abuf = ArrayBuffer::New(isolate, std::move(ab));
+  fsObj->SetInternalField(0, External::New(isolate, fs));
+  fsObj->SetInternalField(1, abuf);
+  args.GetReturnValue().Set(fsObj);
+}
 
 void DefineConstants(Isolate* isolate, Local<FunctionTemplate> func) {
 #define DefineFlag(v) \
-  func->Set( \
-    String::NewFromUtf8Literal(isolate, #v), \
-    Integer::New(isolate, v) \
-  )
-  DefineFlag(      AT_FDCWD);
-  DefineFlag(      AT_REMOVEDIR);
-  DefineFlag(      AT_SYMLINK_FOLLOW);
-  DefineFlag(      AT_SYMLINK_NOFOLLOW);
-  DefineFlag(      DT_REG);
-  DefineFlag(      DT_DIR);
-  DefineFlag(      DT_LNK);
-  DefineFlag(      O_APPEND);
-  DefineFlag(      O_CREAT);
-  DefineFlag(      O_DIRECTORY);
-  DefineFlag(      O_EXCL);
-  DefineFlag(      O_NOATIME);
-  DefineFlag(      O_NOFOLLOW);
-  DefineFlag(      O_TRUNC);
-  DefineFlag(      O_RDONLY);
-  DefineFlag(      O_WRONLY);
-  DefineFlag(      O_RDWR);
-  DefineFlag(      RENAME_NOREPLACE);
-  DefineFlag(      S_IFMT);
-  DefineFlag(      S_IFREG);
-  DefineFlag(      S_IFDIR);
-  DefineFlag(      S_IFLNK);
-  DefineFlag(      S_IRWXU);
-  DefineFlag(      S_IRUSR);
-  DefineFlag(      S_IWUSR);
-  DefineFlag(      S_IXUSR);
-  DefineFlag(      S_IRWXG);
-  DefineFlag(      S_IRGRP);
-  DefineFlag(      S_IWGRP);
-  DefineFlag(      S_IXGRP);
-  DefineFlag(      S_IRWXO);
-  DefineFlag(      S_IROTH);
-  DefineFlag(      S_IWOTH);
-  DefineFlag(      S_IXOTH);
-  DefineFlag(      SEEK_SET);
-  DefineFlag(      SEEK_CUR);
-  DefineFlag(      SEEK_END);
-  DefineFlag(      STATX_ATIME);
-  DefineFlag(      STATX_BASIC_STATS);
-  DefineFlag(      STATX_BLOCKS);
-  DefineFlag(      STATX_BTIME);
-  DefineFlag(      STATX_CTIME);
-  DefineFlag(      STATX_INO);
-  DefineFlag(      STATX_MODE);
-  DefineFlag(      STATX_MTIME);
-  DefineFlag(      STATX_NLINK);
-  DefineFlag(      STATX_SIZE);
-  DefineFlag(      STATX_TYPE);
-  DefineFlag(      R_OK);
-  DefineFlag(      W_OK);
-  DefineFlag(      X_OK);
-  DefineFlag(      F_OK);
+  do { \
+    func->Set( \
+      String::NewFromUtf8Literal(isolate, #v), \
+      Integer::New(isolate, v) \
+    ); \
+  } while (0)
+  DefineFlag(AT_FDCWD);
+  DefineFlag(AT_REMOVEDIR);
+  DefineFlag(AT_SYMLINK_FOLLOW);
+  DefineFlag(AT_SYMLINK_NOFOLLOW);
+  DefineFlag(DT_REG);
+  DefineFlag(DT_DIR);
+  DefineFlag(DT_LNK);
+  DefineFlag(O_APPEND);
+  DefineFlag(O_CREAT);
+  DefineFlag(O_DIRECTORY);
+  DefineFlag(O_EXCL);
+  DefineFlag(O_NOATIME);
+  DefineFlag(O_NOFOLLOW);
+  DefineFlag(O_TRUNC);
+  DefineFlag(O_RDONLY);
+  DefineFlag(O_WRONLY);
+  DefineFlag(O_RDWR);
+  DefineFlag(RENAME_NOREPLACE);
+  DefineFlag(S_IFMT);
+  DefineFlag(S_IFREG);
+  DefineFlag(S_IFDIR);
+  DefineFlag(S_IFLNK);
+  DefineFlag(S_IRWXU);
+  DefineFlag(S_IRUSR);
+  DefineFlag(S_IWUSR);
+  DefineFlag(S_IXUSR);
+  DefineFlag(S_IRWXG);
+  DefineFlag(S_IRGRP);
+  DefineFlag(S_IWGRP);
+  DefineFlag(S_IXGRP);
+  DefineFlag(S_IRWXO);
+  DefineFlag(S_IROTH);
+  DefineFlag(S_IWOTH);
+  DefineFlag(S_IXOTH);
+  DefineFlag(SEEK_SET);
+  DefineFlag(SEEK_CUR);
+  DefineFlag(SEEK_END);
+  DefineFlag(STATX_ALL);
+  DefineFlag(STATX_ATIME);
+  DefineFlag(STATX_BASIC_STATS);
+  DefineFlag(STATX_BLOCKS);
+  DefineFlag(STATX_BTIME);
+  DefineFlag(STATX_CTIME);
+  DefineFlag(STATX_INO);
+  DefineFlag(STATX_MODE);
+  DefineFlag(STATX_MTIME);
+  DefineFlag(STATX_NLINK);
+  DefineFlag(STATX_SIZE);
+  DefineFlag(STATX_TYPE);
+  DefineFlag(R_OK);
+  DefineFlag(W_OK);
+  DefineFlag(X_OK);
+  DefineFlag(F_OK);
 #undef DefineFlag
 }
 
-template<size_t N>
+template<typename T, size_t N>
 void DefineFunction(
   Isolate* isolate,
-  Local<ObjectTemplate> obj,
+  Local<T> obj,
   const char (&prop)[N],
   FunctionCallback fn,
-  int argc = 0
+  int argc = 0,
+  PropertyAttribute attr = PropertyAttribute::DontEnum
 ) {
   Local<FunctionTemplate> funcTmpl = FunctionTemplate::New(
     isolate,
@@ -974,12 +1336,58 @@ void DefineFunction(
     SideEffectType::kHasSideEffect
   );
   Local<String> name = String::NewFromUtf8Literal(isolate, prop);
-  funcTmpl->SetClassName(name);
   obj->Set(
     name,
     funcTmpl,
-    PropertyAttribute::DontEnum
+    attr
   );
+}
+void DefineTemplateFunctions(Isolate* isolate, Local<ObjectTemplate> tmpl) {
+  tmpl->SetInternalFieldCount(2);
+  DefineFunction(isolate, tmpl, "faccessat",  FileSystemFAccessAt,  4);
+  DefineFunction(isolate, tmpl, "access",     FileSystemAccess,     2);
+  DefineFunction(isolate, tmpl, "openat",     FileSystemOpenAt,     4);
+  DefineFunction(isolate, tmpl, "open",       FileSystemOpen,       3);
+  DefineFunction(isolate, tmpl, "creat",      FileSystemCreat,      2);
+  DefineFunction(isolate, tmpl, "close",      FileSystemClose,      1);
+  DefineFunction(isolate, tmpl, "mknodat",    FileSystemMkNodAt,    3);
+  DefineFunction(isolate, tmpl, "mknod",      FileSystemMkNod,      2);
+  DefineFunction(isolate, tmpl, "mkdirat",    FileSystemMkDirAt,    3);
+  DefineFunction(isolate, tmpl, "mkdir",      FileSystemMkDir,      2);
+  DefineFunction(isolate, tmpl, "symlinkat",  FileSystemSymlinkAt,  3);
+  DefineFunction(isolate, tmpl, "symlink",    FileSystemSymlink,    2);
+  DefineFunction(isolate, tmpl, "readlinkat", FileSystemReadLinkAt, 2);
+  DefineFunction(isolate, tmpl, "readlink",   FileSystemReadLink,   1);
+  DefineFunction(isolate, tmpl, "getdents",   FileSystemGetDents,   1);
+  DefineFunction(isolate, tmpl, "linkAt",     FileSystemLinkAt,     5);
+  DefineFunction(isolate, tmpl, "link",       FileSystemLink,       2);
+  DefineFunction(isolate, tmpl, "unlinkat",   FileSystemUnlinkAt,   3);
+  DefineFunction(isolate, tmpl, "unlink",     FileSystemUnlink,     1);
+  DefineFunction(isolate, tmpl, "rmdir",      FileSystemRmDir,      1);
+  DefineFunction(isolate, tmpl, "renameat",   FileSystemRenameAt,   4);
+  DefineFunction(isolate, tmpl, "rename",     FileSystemRename,     2);
+  DefineFunction(isolate, tmpl, "lseek",      FileSystemLSeek,      3);
+  DefineFunction(isolate, tmpl, "read",       FileSystemRead,       2);
+  DefineFunction(isolate, tmpl, "readv",      FileSystemReadv,      2);
+  DefineFunction(isolate, tmpl, "write",      FileSystemWrite,      2);
+  DefineFunction(isolate, tmpl, "writev",     FileSystemWritev,     2);
+  DefineFunction(isolate, tmpl, "sendfile",   FileSystemSendFile,   4);
+  DefineFunction(isolate, tmpl, "ftruncate",  FileSystemFTruncate,  2);
+  DefineFunction(isolate, tmpl, "truncate",   FileSystemTruncate,   2);
+  DefineFunction(isolate, tmpl, "fchmodat",   FileSystemFChModAt,   3);
+  DefineFunction(isolate, tmpl, "fchmod",     FileSystemFChMod,     2);
+  DefineFunction(isolate, tmpl, "chmod",      FileSystemChMod,      2);
+  DefineFunction(isolate, tmpl, "chdir",      FileSystemChDir,      1);
+  DefineFunction(isolate, tmpl, "getcwd",     FileSystemGetCwd,     0);
+  DefineFunction(isolate, tmpl, "fstat",      FileSystemFStat,      1);
+  DefineFunction(isolate, tmpl, "stat",       FileSystemStat,       1);
+  DefineFunction(isolate, tmpl, "lstat",      FileSystemLStat,      1);
+  DefineFunction(isolate, tmpl, "statx",      FileSystemStatx,      4);
+  DefineFunction(isolate, tmpl, "utimensat",  FileSystemUTimeNsAt,  4);
+  DefineFunction(isolate, tmpl, "futimesat",  FileSystemFUTimesAt,  3);
+  DefineFunction(isolate, tmpl, "utimes",     FileSystemUTimes,     2);
+  DefineFunction(isolate, tmpl, "utime",      FileSystemUTime,      2);
+  DefineFunction(isolate, tmpl, "dumpTo",     FileSystemDumpTo,     1);
 }
 
 NODE_MODULE_INIT() {
@@ -990,45 +1398,12 @@ NODE_MODULE_INIT() {
   );
   FSTmpl->SetClassName(String::NewFromUtf8Literal(isolate, "FileSystem"));
   DefineConstants(isolate, FSTmpl);
+  FSConstructorTmpl.Reset(isolate, FSTmpl);
   Local<ObjectTemplate> instTmpl = FSTmpl->InstanceTemplate();
-  instTmpl->SetInternalFieldCount(1);
-  DefineFunction(isolate, instTmpl, "faccessat",  FileSystemFAccessAt,  4);
-  DefineFunction(isolate, instTmpl, "access",     FileSystemAccess,     2);
-  DefineFunction(isolate, instTmpl, "openat",     FileSystemOpenAt,     4);
-  DefineFunction(isolate, instTmpl, "open",       FileSystemOpen,       3);
-  DefineFunction(isolate, instTmpl, "creat",      FileSystemCreat,      2);
-  DefineFunction(isolate, instTmpl, "close",      FileSystemClose,      1);
-  DefineFunction(isolate, instTmpl, "mknodat",    FileSystemMkNodAt,    3);
-  DefineFunction(isolate, instTmpl, "mknod",      FileSystemMkNod,      2);
-  DefineFunction(isolate, instTmpl, "mkdirat",    FileSystemMkDirAt,    3);
-  DefineFunction(isolate, instTmpl, "mkdir",      FileSystemMkDir,      2);
-  DefineFunction(isolate, instTmpl, "symlinkat",  FileSystemSymlinkAt,  3);
-  DefineFunction(isolate, instTmpl, "symlink",    FileSystemSymlink,    2);
-  DefineFunction(isolate, instTmpl, "readlinkat", FileSystemReadLinkAt, 2);
-  DefineFunction(isolate, instTmpl, "readlink",   FileSystemReadLink,   1);
-  DefineFunction(isolate, instTmpl, "getdents",   FileSystemGetDents,   1);
-  DefineFunction(isolate, instTmpl, "linkAt",     FileSystemLinkAt,     5);
-  DefineFunction(isolate, instTmpl, "link",       FileSystemLink,       2);
-  DefineFunction(isolate, instTmpl, "unlinkat",   FileSystemUnlinkAt,   3);
-  DefineFunction(isolate, instTmpl, "unlink",     FileSystemUnlink,     1);
-  DefineFunction(isolate, instTmpl, "rmdir",      FileSystemRmDir,      1);
-  DefineFunction(isolate, instTmpl, "renameat",   FileSystemRenameAt,   4);
-  DefineFunction(isolate, instTmpl, "rename",     FileSystemRename,     2);
-  DefineFunction(isolate, instTmpl, "lseek",      FileSystemLSeek,      3);
-  DefineFunction(isolate, instTmpl, "read",       FileSystemRead,       2);
-  DefineFunction(isolate, instTmpl, "write",      FileSystemWrite,      2);
-  DefineFunction(isolate, instTmpl, "sendfile",   FileSystemSendFile,   4);
-  DefineFunction(isolate, instTmpl, "truncate",   FileSystemTruncate,   2);
-  DefineFunction(isolate, instTmpl, "ftruncate",  FileSystemFTruncate,  2);
-  DefineFunction(isolate, instTmpl, "fchmodat",   FileSystemFChModAt,   3);
-  DefineFunction(isolate, instTmpl, "chmod",      FileSystemChMod,      2);
-  DefineFunction(isolate, instTmpl, "fchmod",     FileSystemFChMod,     2);
-  DefineFunction(isolate, instTmpl, "chdir",      FileSystemChDir,      1);
-  DefineFunction(isolate, instTmpl, "getcwd",     FileSystemGetCwd,     0);
-  DefineFunction(isolate, instTmpl, "stat",       FileSystemStat,       1);
-  DefineFunction(isolate, instTmpl, "lstat",      FileSystemLStat,      1);
-  DefineFunction(isolate, instTmpl, "fstat",      FileSystemFStat,      1);
-  DefineFunction(isolate, instTmpl, "statx",      FileSystemStatx,      4);
+  DefineTemplateFunctions(isolate, instTmpl);
+  DefineTemplateFunctions(isolate, FSTmpl->PrototypeTemplate());
+  DefineFunction(isolate, FSTmpl, "createFrom", FileSystemCreateFrom, 1, PropertyAttribute::None);
+  FSInstanceTmpl.Reset(isolate, instTmpl);
   Local<Function> FSFunc = FSTmpl->GetFunction(context).ToLocalChecked();
   module.As<Object>()->Set(
     context,

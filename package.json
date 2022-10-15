@@ -2,6 +2,7 @@
   "name": "FileSystem",
   "version": "v1.0.0",
   "main": "./build/Release/FileSystem.node",
+  "types": "FileSystem.d.ts",
   "author": "DaisyDogs07",
   "license": "ISC"
 }
