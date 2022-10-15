@@ -1261,7 +1261,6 @@ class FileSystem {
   bool PushINode(struct INode* inode) {
     if (inodeCount == std::numeric_limits<ino_t>::max())
       return false;
-    // find an open spot in the inodes array. if inodes[i]->id is not i, then insert inode at i by shifting all inodes after i up one.
     ino_t id = inodeCount;
     for (ino_t i = 0; i != inodeCount; ++i)
       if (inodes[i]->id != i) {
