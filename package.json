@@ -4,5 +4,9 @@
   "main": "./build/Release/FileSystem.node",
   "types": "FileSystem.d.ts",
   "author": "DaisyDogs07",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DaisyDogs07/FileSystem"
+  },
   "license": "ISC"
 }
