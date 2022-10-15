@@ -430,7 +430,6 @@ class FileSystem {
         return -EBADF;
       if (!S_ISDIR(fd->inode->mode))
         return -ENOTDIR;
-      cwd.inode = fd->inode;
     }
     struct INode* origCwd = cwd.inode;
     if (dirFd != AT_FDCWD)
