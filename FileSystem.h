@@ -1164,12 +1164,7 @@ class FileSystem {
     return 0;
   }
   int UTimes(const char* path, const struct timeval* times) {
-    struct timeval ts[2];
-    if (times) {
-      ts[0] = times[0];
-      ts[1] = times[1];
-    }
-    return FUTimesAt(AT_FDCWD, path, times ? ts : NULL);
+    return FUTimesAt(AT_FDCWD, path, times);
   }
   int UTime(const char* path, const struct utimbuf* times) {
     struct timeval ts[2];
@@ -1181,6 +1176,7 @@ class FileSystem {
     }
     return FUTimesAt(AT_FDCWD, path, times ? ts : NULL);
   }
+
   /**
    * format:
    *   magic number ("\x7FVFS")
@@ -1432,8 +1428,9 @@ class FileSystem {
         delete inode;
         if (i != inodeCount - 1) {
           memmove(inodes + i, inodes + i + 1, sizeof(struct INode*) * (inodeCount - i));
-          while (i != inodeCount - 1)
+          do {
             --inodes[i++]->ndx;
+          } while (i != inodeCount - 1);
         }
         inodes = reinterpret_cast<struct INode**>(
           realloc(inodes, sizeof(struct INode*) * --inodeCount)
@@ -1446,12 +1443,11 @@ class FileSystem {
     if (fdCount == std::numeric_limits<int>::max())
       return -ENFILE;
     int fdNum = fdCount;
-    for (int i = 0; i != fdCount; ++i) {
+    for (int i = 0; i != fdCount; ++i)
       if (fds[i]->fd != i) {
         fdNum = i;
         break;
       }
-    }
     fds = reinterpret_cast<Fd**>(
       realloc(fds, sizeof(Fd*) * (fdCount + 1))
     );
