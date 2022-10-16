@@ -1,5 +1,5 @@
 #ifndef __linux__
-#error The Linux FileSystem is only available in Linux
+#error FileSystem is only available in Linux
 #endif
 #include <sys/stat.h>
 #include <dirent.h>
