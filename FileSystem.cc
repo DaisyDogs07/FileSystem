@@ -1362,11 +1362,11 @@ void FileSystemDumpTo(const FunctionCallbackInfo<Value>& args) {
   );
 }
 
-void FileSystemCreateFrom(const FunctionCallbackInfo<Value>& args) {
+void FileSystemLoadFrom(const FunctionCallbackInfo<Value>& args) {
   Isolate* isolate = args.GetIsolate();
   assert(args.Length() == 1);
   assert(args[0]->IsString());
-  FileSystem* fs = FileSystem::CreateFromFile(
+  FileSystem* fs = FileSystem::LoadFromFile(
     *String::Utf8Value(isolate, args[0].As<String>())
   );
   if (!fs) {
@@ -1539,7 +1539,7 @@ NODE_MODULE_INIT() {
   Local<ObjectTemplate> instTmpl = FSTmpl->InstanceTemplate();
   DefineTemplateFunctions(isolate, instTmpl);
   DefineTemplateFunctions(isolate, FSTmpl->PrototypeTemplate());
-  DefineFunction(isolate, FSTmpl, "createFrom", FileSystemCreateFrom, 1, PropertyAttribute::None);
+  DefineFunction(isolate, FSTmpl, "loadFrom", FileSystemLoadFrom, 1, PropertyAttribute::None);
   FSInstanceTmpl.Reset(isolate, instTmpl);
   Local<Function> FSFunc = FSTmpl->GetFunction(context).ToLocalChecked();
   module.As<Object>()->Set(

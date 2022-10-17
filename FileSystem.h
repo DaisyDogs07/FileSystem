@@ -1264,7 +1264,7 @@ class FileSystem {
     errno = 0;
     return err;
   }
-  static FileSystem* CreateFromFile(const char* filename) {
+  static FileSystem* LoadFromFile(const char* filename) {
     int fd = open(filename, O_RDONLY);
     if (fd < 0)
       return NULL;
