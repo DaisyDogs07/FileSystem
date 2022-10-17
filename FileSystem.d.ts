@@ -135,7 +135,7 @@ declare module "FileSystem" {
     utimes(path: string, times: number[]): void;
     utime(path: string, times: number[]): void;
     dumpTo(path: string): void;
-    static createFrom(path: string): FileSystem;
+    static loadFrom(path: string): FileSystem;
   }
 
   export = FileSystem;
