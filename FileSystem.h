@@ -1344,6 +1344,7 @@ class FileSystem {
     }
     close(fd);
     FileSystem* fs = (FileSystem*)malloc(sizeof(FileSystem));
+    memset(fs, '\0', sizeof(FileSystem));
     fs->inodes = inodes;
     fs->inodeCount = inodeCount;
     fs->fds = {};
