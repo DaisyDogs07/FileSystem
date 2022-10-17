@@ -1370,11 +1370,20 @@ void FileSystemLoadFrom(const FunctionCallbackInfo<Value>& args) {
     *String::Utf8Value(isolate, args[0].As<String>())
   );
   if (!fs) {
-    isolate->ThrowException(
-      Exception::Error(
-        String::NewFromUtf8Literal(isolate, "FileSystem corrupt or invalid")
-      )
-    );
+    if (errno) {
+      isolate->ThrowException(
+        Exception::Error(
+          String::NewFromUtf8(isolate, strerror(errno)).ToLocalChecked()
+        )
+      );
+      errno = 0;
+    } else {
+      isolate->ThrowException(
+        Exception::Error(
+          String::NewFromUtf8Literal(isolate, "FileSystem corrupt or invalid")
+        )
+      );
+    }
     return;
   }
   Local<Context> context = isolate->GetCurrentContext();
