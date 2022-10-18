@@ -140,10 +140,8 @@ class FileSystem {
       if (flags & O_DIRECTORY)
         return -ENOTDIR;
       if (flags & O_TRUNC && inode->size != 0) {
-        inode->data = reinterpret_cast<char*>(
-          realloc(inode->data, 1)
-        );
-        inode->data[0] = '\0';
+        delete inode->data;
+        inode->data = new char;
         inode->size = 0;
       }
     }
@@ -1064,7 +1062,7 @@ class FileSystem {
     size_t cwdLen = strlen(cwd.path);
     if (size <= cwdLen)
       return -ERANGE;
-    if (buf != NULL) {
+    if (buf) {
       memcpy(buf, cwd.path, cwdLen);
       buf[cwdLen] = '\0';
     }
@@ -1360,11 +1358,11 @@ class FileSystem {
       ctime = mtime = atime = btime;
     }
     ~INode() {
-      if (data != NULL)
+      if (data)
         delete data;
-      if (target != NULL)
+      if (target)
         delete target;
-      if (dents != NULL) {
+      if (dents) {
         while (dentCount != 2)
           delete dents[--dentCount].name;
         delete dents;
