@@ -1438,9 +1438,9 @@ class FileSystem {
     inodes = reinterpret_cast<struct INode**>(
       realloc(inodes, sizeof(struct INode*) * (inodeCount + 1))
     );
+    inode->ndx = inodeCount;
     inode->id = id;
-    inode->ndx = inodeCount++;
-    inodes[inode->ndx] = inode;
+    inodes[inodeCount++] = inode;
     return true;
   }
   void RemoveINode(struct INode* inode) {
