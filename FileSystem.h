@@ -1462,7 +1462,7 @@ class FileSystem {
   }
   int PushFd(struct INode* inode, int flags) {
     if (fdCount == std::numeric_limits<int>::max())
-      return -EMFILE;
+      return -ENFILE;
     int fdNum = fdCount;
     for (int i = 0; i != fdCount; ++i)
       if (fds[i]->fd != i) {
