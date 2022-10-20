@@ -1216,51 +1216,48 @@ class FileSystem {
    *       name
    *     data (blank if directory)
    */
-  int DumpToFile(const char* filename) {
+  bool DumpToFile(const char* filename) {
     std::lock_guard<std::mutex> lock(mtx);
     int fd = creat(filename, 0644);
     if (fd < 0)
-      return -errno;
+      return false;
     if (write(fd, "\x7FVFS", 4) != 4 ||
         write(fd, &inodeCount, sizeof(ino_t)) != sizeof(ino_t))
-      goto err;
+      return false;
     for (ino_t i = 0; i != inodeCount; ++i) {
       struct INode* inode = inodes[i];
-      if (write(fd, &inode->id, sizeof(ino_t)) != sizeof(ino_t) ||
-          write(fd, &inode->dentCount, sizeof(off_t)) != sizeof(off_t) ||
-          write(fd, &inode->size, sizeof(off_t)) != sizeof(off_t) ||
-          write(fd, &inode->nlink, sizeof(nlink_t)) != sizeof(nlink_t) ||
-          write(fd, &inode->mode, sizeof(mode_t)) != sizeof(mode_t) ||
-          write(fd, &inode->btime, sizeof(struct timespec)) != sizeof(struct timespec) ||
-          write(fd, &inode->ctime, sizeof(struct timespec)) != sizeof(struct timespec) ||
-          write(fd, &inode->mtime, sizeof(struct timespec)) != sizeof(struct timespec) ||
-          write(fd, &inode->atime, sizeof(struct timespec)) != sizeof(struct timespec))
-        goto err;
+      struct DumpedINode dumped;
+      dumped.id = inode->id;
+      dumped.dentCount = inode->dentCount;
+      dumped.size = inode->size;
+      dumped.nlink = inode->nlink;
+      dumped.mode = inode->mode;
+      dumped.btime = inode->btime;
+      dumped.ctime = inode->ctime;
+      dumped.mtime = inode->mtime;
+      dumped.atime = inode->atime;
+      if (write(fd, &dumped, sizeof(struct DumpedINode)) != sizeof(struct DumpedINode))
+        return false;
       if (S_ISLNK(inode->mode)) {
         size_t targetLen = strlen(inode->target) + 1;
         if (write(fd, inode->target, targetLen) != targetLen)
-          goto err;
+          return false;
       }
       if (S_ISDIR(inode->mode)) {
         for (off_t j = 0; j != inode->dentCount; ++j) {
           struct INode::Dent* dent = &inode->dents[j];
           if (write(fd, &dent->inode->ndx, sizeof(ino_t)) != sizeof(ino_t)) {
-            goto err;
+            return false;
           }
           size_t nameLen = strlen(dent->name) + 1;
           if (write(fd, dent->name, nameLen) != nameLen)
-            goto err;
+            return false;
         }
       } else if (inode->size != 0 && write(fd, inode->data, inode->size) != inode->size)
-        goto err;
+        return false;
     }
     close(fd);
-    return 0;
-   err:
-    close(fd);
-    int err = -errno;
-    errno = 0;
-    return err;
+    return true;
   }
   static FileSystem* LoadFromFile(const char* filename) {
     int fd = open(filename, O_RDONLY);
@@ -1278,18 +1275,20 @@ class FileSystem {
     for (ino_t i = 0; i != inodeCount; ++i) {
       struct INode* inode = (struct INode*)malloc(sizeof(struct INode));
       inode->ndx = i;
-      if (read(fd, &inode->id, sizeof(ino_t)) != sizeof(ino_t) ||
-          read(fd, &inode->dentCount, sizeof(off_t)) != sizeof(off_t) ||
-          read(fd, &inode->size, sizeof(off_t)) != sizeof(off_t) ||
-          read(fd, &inode->nlink, sizeof(nlink_t)) != sizeof(nlink_t) ||
-          read(fd, &inode->mode, sizeof(mode_t)) != sizeof(mode_t) ||
-          read(fd, &inode->btime, sizeof(struct timespec)) != sizeof(struct timespec) ||
-          read(fd, &inode->ctime, sizeof(struct timespec)) != sizeof(struct timespec) ||
-          read(fd, &inode->mtime, sizeof(struct timespec)) != sizeof(struct timespec) ||
-          read(fd, &inode->atime, sizeof(struct timespec)) != sizeof(struct timespec)) {
+      struct DumpedINode archived;
+      if (read(fd, &archived, sizeof(struct DumpedINode)) != sizeof(struct DumpedINode)) {
         close(fd);
         return NULL;
       }
+      inode->id = archived.id;
+      inode->dentCount = archived.dentCount;
+      inode->size = archived.size;
+      inode->nlink = archived.nlink;
+      inode->mode = archived.mode;
+      inode->btime = archived.btime;
+      inode->ctime = archived.ctime;
+      inode->mtime = archived.mtime;
+      inode->atime = archived.atime;
       if (S_ISLNK(inode->mode)) {
         char target[PATH_MAX];
         size_t targetLen = 0;
@@ -1406,6 +1405,17 @@ class FileSystem {
     struct timespec mtime;
     struct timespec atime;
   };
+  struct DumpedINode {
+    ino_t id;
+    off_t dentCount;
+    off_t size;
+    nlink_t nlink;
+    mode_t mode;
+    struct timespec btime;
+    struct timespec ctime;
+    struct timespec mtime;
+    struct timespec atime;
+  };
   struct Fd {
     struct INode* inode;
     int fd;
@@ -1426,9 +1436,7 @@ class FileSystem {
   Fd** fds = {};
   int fdCount = 0;
   std::mutex mtx;
-  bool PushINode(struct INode* inode) {
-    if (inodeCount == std::numeric_limits<ino_t>::max())
-      return false;
+  void PushINode(struct INode* inode) {
     ino_t id = inodeCount;
     for (ino_t i = 0; i != inodeCount; ++i)
       if (inodes[i]->id != i) {
@@ -1441,7 +1449,6 @@ class FileSystem {
     inode->ndx = inodeCount;
     inode->id = id;
     inodes[inodeCount++] = inode;
-    return true;
   }
   void RemoveINode(struct INode* inode) {
     for (ino_t i = 0; i != inodeCount; ++i) {

@@ -1355,11 +1355,16 @@ void FileSystemDumpTo(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  THROWIFERR(
-    fs->DumpToFile(
-      *String::Utf8Value(isolate, args[0].As<String>())
-    )
-  );
+  if (!fs->DumpToFile(
+        *String::Utf8Value(isolate, args[0].As<String>())
+      )) {
+    isolate->ThrowException(
+      Exception::Error(
+        String::NewFromUtf8(isolate, strerror(errno)).ToLocalChecked()
+      )
+    );
+    errno = 0;
+  }
 }
 
 void FileSystemLoadFrom(const FunctionCallbackInfo<Value>& args) {
