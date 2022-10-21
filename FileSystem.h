@@ -1275,20 +1275,20 @@ class FileSystem {
     for (ino_t i = 0; i != inodeCount; ++i) {
       struct INode* inode = (struct INode*)malloc(sizeof(struct INode));
       inode->ndx = i;
-      struct DumpedINode archived;
-      if (read(fd, &archived, sizeof(struct DumpedINode)) != sizeof(struct DumpedINode)) {
+      struct DumpedINode dumped;
+      if (read(fd, &dumped, sizeof(struct DumpedINode)) != sizeof(struct DumpedINode)) {
         close(fd);
         return NULL;
       }
-      inode->id = archived.id;
-      inode->dentCount = archived.dentCount;
-      inode->size = archived.size;
-      inode->nlink = archived.nlink;
-      inode->mode = archived.mode;
-      inode->btime = archived.btime;
-      inode->ctime = archived.ctime;
-      inode->mtime = archived.mtime;
-      inode->atime = archived.atime;
+      inode->id = dumped.id;
+      inode->dentCount = dumped.dentCount;
+      inode->size = dumped.size;
+      inode->nlink = dumped.nlink;
+      inode->mode = dumped.mode;
+      inode->btime = dumped.btime;
+      inode->ctime = dumped.ctime;
+      inode->mtime = dumped.mtime;
+      inode->atime = dumped.atime;
       if (S_ISLNK(inode->mode)) {
         char target[PATH_MAX];
         size_t targetLen = 0;
