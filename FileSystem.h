@@ -1345,7 +1345,6 @@ class FileSystem {
     fs->inodes = inodes;
     fs->inodeCount = inodeCount;
     fs->fds = {};
-    fs->fdCount = 0;
     fs->cwd = { strdup("/"), inodes[0], inodes[0] };
     return fs;
   }
