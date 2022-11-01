@@ -1198,8 +1198,7 @@ class FileSystem {
   /**
    * format:
    *   magic number ("\x7FVFS")
-   *   FileSystem info:
-   *     inodeCount
+   *   inodeCount
    *   inodes:
    *     id
    *     dentCount
@@ -1210,11 +1209,11 @@ class FileSystem {
    *     ctime
    *     mtime
    *     atime
-   *     target (blank if not symlink)
-   *     dents (blank if not directory):
+   *     target (if symlink)
+   *     dents (if directory):
    *       inode index
    *       name
-   *     data (blank if directory)
+   *     data (if not directory)
    */
   bool DumpToFile(const char* filename) {
     std::lock_guard<std::mutex> lock(mtx);
