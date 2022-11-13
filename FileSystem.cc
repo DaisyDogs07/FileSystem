@@ -415,7 +415,7 @@ void FileSystemGetDents(const FunctionCallbackInfo<Value>& args) {
     );
     if (nread == 0)
       break;
-    for (int j = 0; i < count && j < nread; ++i) {
+    for (int j = 0; i < count && j != nread; ++i) {
       struct linux_dirent* dent = (struct linux_dirent*)(buf + j);
       Local<Object> dentObj = Object::New(isolate);
       dentObj->Set(
