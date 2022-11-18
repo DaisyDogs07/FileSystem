@@ -1507,7 +1507,9 @@ class FileSystem {
     struct INode* current = isAbsolute
       ? inodes[0]
       : cwd.inode;
-    struct INode* currParent = current;
+    struct INode* currParent = isAbsolute
+      ? inodes[0]
+      : cwd.parent;
     int err = 0;
     char name[NAME_MAX + 1];
     size_t nameLen = 0;
