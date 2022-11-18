@@ -54,8 +54,7 @@ class FileSystem {
       cwd.inode = fd->inode;
     }
     struct INode* inode;
-    struct INode* parent = NULL;
-    int res = GetINode(path, &inode, &parent, !(flags & AT_SYMLINK_NOFOLLOW));
+    int res = GetINode(path, &inode, NULL, !(flags & AT_SYMLINK_NOFOLLOW));
     cwd.inode = origCwd;
     if (res != 0)
       return res;
@@ -256,25 +255,24 @@ class FileSystem {
         return -ENOTDIR;
     }
     struct INode* oldInode;
-    struct INode* parent;
-    int res = GetINode(oldPath, &oldInode, &parent);
+    int res = GetINode(oldPath, &oldInode);
     if (res != 0)
       return res;
     struct INode* origCwd = cwd.inode;
     if (newDirFd != AT_FDCWD)
       cwd.inode = fd->inode;
     struct INode* newInode;
-    parent = NULL;
-    res = GetINode(newPath, &newInode, &parent);
+    struct INode* newParent = NULL;
+    res = GetINode(newPath, &newInode, &newParent);
     cwd.inode = origCwd;
-    if (!parent)
+    if (!newParent)
       return res;
     if (res == 0)
       return -EEXIST;
     const char* absPath = AbsolutePath(newPath);
     const char* name = GetLast(absPath);
     delete absPath;
-    if (parent->size > std::numeric_limits<off_t>::max() - (strlen(name) * 2)) {
+    if (newParent->size > std::numeric_limits<off_t>::max() - (strlen(name) * 2)) {
       delete name;
       return -ENOSPC;
     }
@@ -288,8 +286,8 @@ class FileSystem {
     x->data[oldPathLen] = '\0';
     x->size = oldPathLen;
     PushINode(x);
-    parent->PushDent(name, x);
-    parent->ctime = parent->mtime = x->btime;
+    newParent->PushDent(name, x);
+    newParent->ctime = newParent->mtime = x->btime;
     return 0;
   }
   int Symlink(const char* oldPath, const char* newPath) {
@@ -309,8 +307,7 @@ class FileSystem {
       cwd.inode = fd->inode;
     }
     struct INode* inode;
-    struct INode* parent;
-    int res = GetINode(path, &inode, &parent);
+    int res = GetINode(path, &inode);
     cwd.inode = origCwd;
     if (res != 0)
       return res;
@@ -383,18 +380,17 @@ class FileSystem {
     if (oldDirFd != AT_FDCWD)
       cwd.inode = oldFd->inode;
     struct INode* oldInode;
-    struct INode* parent;
-    int res = GetINode(oldPath, &oldInode, &parent, flags & AT_SYMLINK_FOLLOW);
+    int res = GetINode(oldPath, &oldInode, NULL, flags & AT_SYMLINK_FOLLOW);
     cwd.inode = origCwd;
     if (res != 0)
       return res;
     if (newDirFd != AT_FDCWD)
       cwd.inode = newFd->inode;
     struct INode* newInode;
-    parent = NULL;
-    res = GetINode(newPath, &newInode, &parent);
+    struct INode* newParent = NULL;
+    res = GetINode(newPath, &newInode, &newParent);
     cwd.inode = origCwd;
-    if (!parent)
+    if (!newParent)
       return res;
     if (res == 0)
       return -EEXIST;
@@ -403,15 +399,15 @@ class FileSystem {
     const char* absPath = AbsolutePath(newPath);
     const char* name = GetLast(absPath);
     delete absPath;
-    if (parent->size > std::numeric_limits<off_t>::max() - (strlen(name) * 2)) {
+    if (newParent->size > std::numeric_limits<off_t>::max() - (strlen(name) * 2)) {
       delete name;
       return -ENOSPC;
     }
-    parent->PushDent(name, oldInode);
+    newParent->PushDent(name, oldInode);
     ++oldInode->nlink;
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
-    oldInode->ctime = parent->ctime = parent->mtime = ts;
+    oldInode->ctime = newParent->ctime = newParent->mtime = ts;
     return 0;
   }
   int Link(const char* oldPath, const char* newPath) {
@@ -984,8 +980,7 @@ class FileSystem {
     if (length < 0)
       return -EINVAL;
     struct INode* inode;
-    struct INode* parent;
-    int res = GetINode(path, &inode, &parent, true);
+    int res = GetINode(path, &inode, NULL, true);
     if (res != 0)
       return res;
     if (S_ISDIR(inode->mode))
@@ -1015,8 +1010,7 @@ class FileSystem {
       cwd.inode = fd->inode;
     }
     struct INode* inode;
-    struct INode* parent;
-    int res = GetINode(path, &inode, &parent);
+    int res = GetINode(path, &inode);
     cwd.inode = origCwd;
     if (res != 0)
       return res;
@@ -1078,8 +1072,7 @@ class FileSystem {
   int Stat(const char* path, struct stat* buf) {
     std::lock_guard<std::mutex> lock(mtx);
     struct INode* inode;
-    struct INode* parent;
-    int res = GetINode(path, &inode, &parent, true);
+    int res = GetINode(path, &inode, NULL, true);
     if (res != 0)
       return res;
     FillStat(inode, buf);
@@ -1088,8 +1081,7 @@ class FileSystem {
   int LStat(const char* path, struct stat* buf) {
     std::lock_guard<std::mutex> lock(mtx);
     struct INode* inode;
-    struct INode* parent;
-    int res = GetINode(path, &inode, &parent);
+    int res = GetINode(path, &inode);
     if (res != 0)
       return res;
     FillStat(inode, buf);
@@ -1107,8 +1099,7 @@ class FileSystem {
       cwd.inode = fd->inode;
     }
     struct INode* inode;
-    struct INode* parent;
-    int res = GetINode(path, &inode, &parent, !(flags & AT_SYMLINK_NOFOLLOW));
+    int res = GetINode(path, &inode, NULL, !(flags & AT_SYMLINK_NOFOLLOW));
     cwd.inode = origCwd;
     if (res != 0)
       return res;
@@ -1127,8 +1118,7 @@ class FileSystem {
       cwd.inode = fd->inode;
     }
     struct INode* inode;
-    struct INode* parent;
-    int res = GetINode(path, &inode, &parent, !(flags & AT_SYMLINK_NOFOLLOW));
+    int res = GetINode(path, &inode, NULL, !(flags & AT_SYMLINK_NOFOLLOW));
     cwd.inode = origCwd;
     if (res != 0)
       return res;
@@ -1164,8 +1154,7 @@ class FileSystem {
       cwd.inode = fd->inode;
     }
     struct INode* inode;
-    struct INode* parent;
-    int res = GetINode(path, &inode, &parent, true);
+    int res = GetINode(path, &inode, NULL, true);
     cwd.inode = origCwd;
     if (res != 0)
       return res;
@@ -1502,7 +1491,13 @@ class FileSystem {
         return fds[i];
     return NULL;
   }
-  int GetINode(const char* path, struct INode** inode, struct INode** parent, bool followResolved = false, int followCount = 0) {
+  int GetINode(
+    const char* path,
+    struct INode** inode,
+    struct INode** parent = NULL,
+    bool followResolved = false,
+    int followCount = 0
+  ) {
     size_t pathLen = strlen(path);
     if (pathLen == 0)
       return -ENOENT;
@@ -1512,9 +1507,7 @@ class FileSystem {
     struct INode* current = isAbsolute
       ? inodes[0]
       : cwd.inode;
-    struct INode* currParent = isAbsolute
-      ? inodes[0]
-      : cwd.parent;
+    struct INode* currParent = current;
     int err = 0;
     char name[NAME_MAX + 1];
     size_t nameLen = 0;
@@ -1558,11 +1551,13 @@ class FileSystem {
         name[nameLen] = '\0';
       }
     }
-    *parent = currParent;
+    if (parent)
+      *parent = currParent;
     if (err)
       return err;
     if (nameLen != 0) {
-      *parent = current;
+      if (parent)
+        *parent = current;
       for (off_t i = 0; i != current->dentCount; ++i)
         if (strcmp(current->dents[i].name, name) == 0) {
           current = current->dents[i].inode;
