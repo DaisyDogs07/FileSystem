@@ -662,6 +662,8 @@ class FileSystem {
   }
   ssize_t PRead(unsigned int fdNum, char* buf, size_t count, off_t offset) {
     std::lock_guard<std::mutex> lock(mtx);
+    if (offset < 0)
+      return -EINVAL;
     Fd* fd;
     if (!(fd = GetFd(fdNum)) || fd->flags & O_WRONLY)
       return -EBADF;
@@ -687,6 +689,8 @@ class FileSystem {
   }
   ssize_t PReadv(unsigned int fdNum, struct iovec* iov, int iovcnt, off_t offset) {
     std::lock_guard<std::mutex> lock(mtx);
+    if (offset < 0)
+      return -EINVAL;
     Fd* fd;
     if (!(fd = GetFd(fdNum)) || fd->flags & O_WRONLY)
       return -EBADF;
@@ -825,6 +829,8 @@ class FileSystem {
   }
   ssize_t PWrite(unsigned int fdNum, const char* buf, size_t count, off_t offset) {
     std::lock_guard<std::mutex> lock(mtx);
+    if (offset < 0)
+      return -EINVAL;
     Fd* fd;
     if (!(fd = GetFd(fdNum)) || !(fd->flags & (O_WRONLY | O_RDWR)))
       return -EBADF;
@@ -853,6 +859,8 @@ class FileSystem {
   }
   ssize_t PWritev(unsigned int fdNum, struct iovec* iov, int iovcnt, off_t offset) {
     std::lock_guard<std::mutex> lock(mtx);
+    if (offset < 0)
+      return -EINVAL;
     Fd* fd;
     if (!(fd = GetFd(fdNum)) || !(fd->flags & (O_WRONLY | O_RDWR)))
       return -EBADF;
