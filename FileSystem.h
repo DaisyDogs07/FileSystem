@@ -1197,7 +1197,6 @@ class FileSystem {
    *   inodeCount
    *   inodes:
    *     id
-   *     dentCount
    *     size
    *     nlink
    *     mode
@@ -1206,6 +1205,7 @@ class FileSystem {
    *     mtime
    *     atime
    *     target (if symlink)
+   *     dentCount (if directory)
    *     dents (if directory):
    *       inode index
    *       name
@@ -1223,7 +1223,6 @@ class FileSystem {
       struct INode* inode = inodes[i];
       struct DumpedINode dumped;
       dumped.id = inode->id;
-      dumped.dentCount = inode->dentCount;
       dumped.size = inode->size;
       dumped.nlink = inode->nlink;
       dumped.mode = inode->mode;
@@ -1239,6 +1238,8 @@ class FileSystem {
           return false;
       }
       if (S_ISDIR(inode->mode)) {
+        if (write(fd, &inode->dentCount, sizeof(off_t)) != sizeof(off_t))
+          return false;
         for (off_t j = 0; j != inode->dentCount; ++j) {
           struct INode::Dent* dent = &inode->dents[j];
           if (write(fd, &dent->inode->ndx, sizeof(ino_t)) != sizeof(ino_t)) {
@@ -1276,7 +1277,6 @@ class FileSystem {
         return NULL;
       }
       inode->id = dumped.id;
-      inode->dentCount = dumped.dentCount;
       inode->size = dumped.size;
       inode->nlink = dumped.nlink;
       inode->mode = dumped.mode;
@@ -1296,6 +1296,10 @@ class FileSystem {
         inode->target = strdup(target);
       } else inode->target = NULL;
       if (S_ISDIR(inode->mode)) {
+        if (read(fd, &inode->dentCount, sizeof(off_t)) != sizeof(off_t)) {
+          close(fd);
+          return NULL;
+        }
         inode->dents = (struct INode::Dent*)malloc(inode->dentCount * sizeof(struct INode::Dent));
         for (off_t j = 0; j != inode->dentCount; ++j) {
           struct INode::Dent* dent = &inode->dents[j];
@@ -1401,7 +1405,6 @@ class FileSystem {
   };
   struct DumpedINode {
     ino_t id;
-    off_t dentCount;
     off_t size;
     nlink_t nlink;
     mode_t mode;
