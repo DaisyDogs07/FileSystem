@@ -33,9 +33,14 @@ class FileSystem {
     PushINode(root);
     cwd = { strdup("/"), root, root };
   }
+  FileSystem(const FileSystem& fs) {
+    memcpy(this, &fs, sizeof(FileSystem));
+  }
   ~FileSystem() {
     while (inodeCount--)
       delete inodes[inodeCount];
+    while (fdCount--)
+      delete fds[fdCount];
     delete inodes;
     delete fds;
   }
@@ -46,7 +51,7 @@ class FileSystem {
       return -EINVAL;
     struct INode* origCwd = cwd.inode;
     if (dirFd != AT_FDCWD) {
-      Fd* fd;
+      struct Fd* fd;
       if (!(fd = GetFd(dirFd)))
         return -EBADF;
       if (!S_ISDIR(fd->inode->mode))
@@ -84,7 +89,7 @@ class FileSystem {
       return -EINVAL;
     struct INode* origCwd = cwd.inode;
     if (dirFd != AT_FDCWD) {
-      Fd* fd;
+      struct Fd* fd;
       if (!(fd = GetFd(dirFd)))
         return -EBADF;
       if (!S_ISDIR(fd->inode->mode))
@@ -165,7 +170,7 @@ class FileSystem {
       return -EINVAL;
     struct INode* origCwd = cwd.inode;
     if (dirFd != AT_FDCWD) {
-      Fd* fd;
+      struct Fd* fd;
       if (!(fd = GetFd(dirFd)))
         return -EBADF;
       if (!S_ISDIR(fd->inode->mode))
@@ -205,7 +210,7 @@ class FileSystem {
       return -EDQUOT;
     struct INode* origCwd = cwd.inode;
     if (dirFd != AT_FDCWD) {
-      Fd* fd;
+      struct Fd* fd;
       if (!(fd = GetFd(dirFd)))
         return -EBADF;
       if (!S_ISDIR(fd->inode->mode))
@@ -247,7 +252,7 @@ class FileSystem {
     std::lock_guard<std::mutex> lock(mtx);
     if (inodeCount == std::numeric_limits<ino_t>::max())
       return -EDQUOT;
-    Fd* fd;
+    struct Fd* fd;
     if (newDirFd != AT_FDCWD) {
       if (!(fd = GetFd(newDirFd)))
         return -EBADF;
@@ -299,7 +304,7 @@ class FileSystem {
       return -EINVAL;
     struct INode* origCwd = cwd.inode;
     if (dirFd != AT_FDCWD) {
-      Fd* fd;
+      struct Fd* fd;
       if (!(fd = GetFd(dirFd)))
         return -EBADF;
       if (!S_ISDIR(fd->inode->mode))
@@ -324,7 +329,7 @@ class FileSystem {
   }
   int GetDents(unsigned int fdNum, struct linux_dirent* dirp, unsigned int count) {
     std::lock_guard<std::mutex> lock(mtx);
-    Fd* fd;
+    struct Fd* fd;
     if (!(fd = GetFd(fdNum)))
       return -EBADF;
     struct INode* inode = fd->inode;
@@ -362,8 +367,8 @@ class FileSystem {
     std::lock_guard<std::mutex> lock(mtx);
     if (flags & ~AT_SYMLINK_FOLLOW)
       return -EINVAL;
-    Fd* oldFd;
-    Fd* newFd;
+    struct Fd* oldFd;
+    struct Fd* newFd;
     if (oldDirFd != AT_FDCWD) {
       if (!(oldFd = GetFd(oldDirFd)))
         return -EBADF;
@@ -417,7 +422,7 @@ class FileSystem {
     std::lock_guard<std::mutex> lock(mtx);
     if (flags & ~AT_REMOVEDIR)
       return -EINVAL;
-    Fd* fd;
+    struct Fd* fd;
     struct INode* origCwd = cwd.inode;
     if (dirFd != AT_FDCWD) {
       if (!(fd = GetFd(dirFd)))
@@ -481,8 +486,8 @@ class FileSystem {
     delete last;
     if (isDot)
       return -EBUSY;
-    Fd* oldFd;
-    Fd* newFd;
+    struct Fd* oldFd;
+    struct Fd* newFd;
     if (oldDirFd != AT_FDCWD) {
       if (!(oldFd = GetFd(oldDirFd)))
         return -EBADF;
@@ -565,7 +570,7 @@ class FileSystem {
     std::lock_guard<std::mutex> lock(mtx);
     if (offset < 0)
       return -EINVAL;
-    Fd* fd;
+    struct Fd* fd;
     if (!(fd = GetFd(fdNum)))
       return -EBADF;
     switch (whence) {
@@ -587,7 +592,7 @@ class FileSystem {
   }
   ssize_t Read(unsigned int fdNum, char* buf, size_t count) {
     std::lock_guard<std::mutex> lock(mtx);
-    Fd* fd;
+    struct Fd* fd;
     if (!(fd = GetFd(fdNum)) || fd->flags & O_WRONLY)
       return -EBADF;
     struct INode* inode = fd->inode;
@@ -613,7 +618,7 @@ class FileSystem {
   }
   ssize_t Readv(unsigned int fdNum, struct iovec* iov, int iovcnt) {
     std::lock_guard<std::mutex> lock(mtx);
-    Fd* fd;
+    struct Fd* fd;
     if (!(fd = GetFd(fdNum)) || fd->flags & O_WRONLY)
       return -EBADF;
     struct INode* inode = fd->inode;
@@ -664,7 +669,7 @@ class FileSystem {
     std::lock_guard<std::mutex> lock(mtx);
     if (offset < 0)
       return -EINVAL;
-    Fd* fd;
+    struct Fd* fd;
     if (!(fd = GetFd(fdNum)) || fd->flags & O_WRONLY)
       return -EBADF;
     struct INode* inode = fd->inode;
@@ -691,7 +696,7 @@ class FileSystem {
     std::lock_guard<std::mutex> lock(mtx);
     if (offset < 0)
       return -EINVAL;
-    Fd* fd;
+    struct Fd* fd;
     if (!(fd = GetFd(fdNum)) || fd->flags & O_WRONLY)
       return -EBADF;
     struct INode* inode = fd->inode;
@@ -739,7 +744,7 @@ class FileSystem {
   }
   ssize_t Write(unsigned int fdNum, const char* buf, size_t count) {
     std::lock_guard<std::mutex> lock(mtx);
-    Fd* fd;
+    struct Fd* fd;
     if (!(fd = GetFd(fdNum)) || !(fd->flags & (O_WRONLY | O_RDWR)))
       return -EBADF;
     if (count == 0)
@@ -771,7 +776,7 @@ class FileSystem {
   }
   ssize_t Writev(unsigned int fdNum, struct iovec* iov, int iovcnt) {
     std::lock_guard<std::mutex> lock(mtx);
-    Fd* fd;
+    struct Fd* fd;
     if (!(fd = GetFd(fdNum)) || !(fd->flags & (O_WRONLY | O_RDWR)))
       return -EBADF;
     if (iovcnt == 0)
@@ -831,7 +836,7 @@ class FileSystem {
     std::lock_guard<std::mutex> lock(mtx);
     if (offset < 0)
       return -EINVAL;
-    Fd* fd;
+    struct Fd* fd;
     if (!(fd = GetFd(fdNum)) || !(fd->flags & (O_WRONLY | O_RDWR)))
       return -EBADF;
     if (count == 0)
@@ -861,7 +866,7 @@ class FileSystem {
     std::lock_guard<std::mutex> lock(mtx);
     if (offset < 0)
       return -EINVAL;
-    Fd* fd;
+    struct Fd* fd;
     if (!(fd = GetFd(fdNum)) || !(fd->flags & (O_WRONLY | O_RDWR)))
       return -EBADF;
     if (iovcnt == 0)
@@ -915,8 +920,8 @@ class FileSystem {
   }
   ssize_t SendFile(unsigned int outFd, unsigned int inFd, off_t* offset, size_t count) {
     std::lock_guard<std::mutex> lock(mtx);
-    Fd* fdIn;
-    Fd* fdOut;
+    struct Fd* fdIn;
+    struct Fd* fdOut;
     if ((!(fdIn = GetFd(inFd)) || fdIn->flags & O_WRONLY) ||
         (!(fdOut = GetFd(outFd)) || !(fdOut->flags & (O_WRONLY | O_RDWR))))
       return -EBADF;
@@ -964,7 +969,7 @@ class FileSystem {
     std::lock_guard<std::mutex> lock(mtx);
     if (length < 0)
       return -EINVAL;
-    Fd* fd;
+    struct Fd* fd;
     if (!(fd = GetFd(fdNum)))
       return -EBADF;
     struct INode* inode = fd->inode;
@@ -1012,7 +1017,7 @@ class FileSystem {
     std::lock_guard<std::mutex> lock(mtx);
     struct INode* origCwd = cwd.inode;
     if (dirFd != AT_FDCWD) {
-      Fd* fd;
+      struct Fd* fd;
       if (!(fd = GetFd(dirFd)))
         return -EBADF;
       cwd.inode = fd->inode;
@@ -1028,7 +1033,7 @@ class FileSystem {
   }
   int FChMod(unsigned int fdNum, mode_t mode) {
     std::lock_guard<std::mutex> lock(mtx);
-    Fd* fd;
+    struct Fd* fd;
     if (!(fd = GetFd(fdNum)))
       return -EBADF;
     struct INode* inode = fd->inode;
@@ -1071,7 +1076,7 @@ class FileSystem {
   }
   int FStat(unsigned int fdNum, struct stat* buf) {
     std::lock_guard<std::mutex> lock(mtx);
-    Fd* fd;
+    struct Fd* fd;
     if (!(fd = GetFd(fdNum)))
       return -EBADF;
     FillStat(fd->inode, buf);
@@ -1101,7 +1106,7 @@ class FileSystem {
       return -EINVAL;
     struct INode* origCwd = cwd.inode;
     if (dirFd != AT_FDCWD) {
-      Fd* fd;
+      struct Fd* fd;
       if (!(fd = GetFd(dirFd)))
         return -EBADF;
       cwd.inode = fd->inode;
@@ -1120,7 +1125,7 @@ class FileSystem {
       return -EINVAL;
     struct INode* origCwd = cwd.inode;
     if (dirFd != AT_FDCWD) {
-      Fd* fd;
+      struct Fd* fd;
       if (!(fd = GetFd(dirFd)))
         return -EBADF;
       cwd.inode = fd->inode;
@@ -1156,7 +1161,7 @@ class FileSystem {
     }
     struct INode* origCwd = cwd.inode;
     if (fdNum != AT_FDCWD) {
-      Fd* fd;
+      struct Fd* fd;
       if (!(fd = GetFd(fdNum)))
         return -EBADF;
       cwd.inode = fd->inode;
@@ -1430,7 +1435,7 @@ class FileSystem {
   Cwd cwd;
   struct INode** inodes = {};
   ino_t inodeCount = 0;
-  Fd** fds = {};
+  struct Fd** fds = {};
   int fdCount = 0;
   std::mutex mtx;
   void PushINode(struct INode* inode) {
@@ -1473,10 +1478,10 @@ class FileSystem {
         fdNum = i;
         break;
       }
-    fds = reinterpret_cast<Fd**>(
-      realloc(fds, sizeof(Fd*) * (fdCount + 1))
+    fds = reinterpret_cast<struct Fd**>(
+      realloc(fds, sizeof(struct Fd*) * (fdCount + 1))
     );
-    Fd* fd = new Fd;
+    struct Fd* fd = new Fd;
     fd->inode = inode;
     fd->flags = flags;
     fd->fd = fdNum;
@@ -1488,15 +1493,15 @@ class FileSystem {
       if (fds[i]->fd == fd) {
         delete fds[i];
         if (i != fdCount - 1)
-          memmove(fds + i, fds + i + 1, sizeof(Fd*) * (fdCount - i));
-        fds = reinterpret_cast<Fd**>(
-          realloc(fds, sizeof(Fd*) * --fdCount)
+          memmove(fds + i, fds + i + 1, sizeof(struct Fd*) * (fdCount - i));
+        fds = reinterpret_cast<struct Fd**>(
+          realloc(fds, sizeof(struct Fd*) * --fdCount)
         );
         return 0;
       }
     return -EBADF;
   }
-  Fd* GetFd(unsigned int fdNum) {
+  struct Fd* GetFd(unsigned int fdNum) {
     for (int i = 0; i != fdCount; ++i)
       if (fds[i]->fd == fdNum)
         return fds[i];
