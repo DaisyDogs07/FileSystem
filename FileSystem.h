@@ -245,7 +245,7 @@ class FileSystem {
   int MkDir(const char* path, mode_t mode) {
     return MkDirAt(AT_FDCWD, path, mode);
   }
-  int SymlinkAt(const char* oldPath, int newDirFd, const char* newPath) {
+  int SymLinkAt(const char* oldPath, int newDirFd, const char* newPath) {
     std::lock_guard<std::mutex> lock(mtx);
     if (inodeCount == std::numeric_limits<ino_t>::max())
       return -EDQUOT;
@@ -292,8 +292,8 @@ class FileSystem {
     newParent->ctime = newParent->mtime = x->btime;
     return 0;
   }
-  int Symlink(const char* oldPath, const char* newPath) {
-    return SymlinkAt(oldPath, AT_FDCWD, newPath);
+  int SymLink(const char* oldPath, const char* newPath) {
+    return SymLinkAt(oldPath, AT_FDCWD, newPath);
   }
   int ReadLinkAt(int dirFd, const char* path, char* buf, int bufLen) {
     std::lock_guard<std::mutex> lock(mtx);
