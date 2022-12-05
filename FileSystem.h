@@ -33,9 +33,6 @@ class FileSystem {
     PushINode(root);
     cwd = { strdup("/"), root, root };
   }
-  FileSystem(const FileSystem& fs) {
-    memcpy(this, &fs, sizeof(FileSystem));
-  }
   ~FileSystem() {
     while (inodeCount--)
       delete inodes[inodeCount];
