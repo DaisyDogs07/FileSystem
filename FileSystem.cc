@@ -300,7 +300,7 @@ void FileSystemMkDir(const FunctionCallbackInfo<Value>& args) {
     )
   );
 }
-void FileSystemSymlinkAt(const FunctionCallbackInfo<Value>& args) {
+void FileSystemSymLinkAt(const FunctionCallbackInfo<Value>& args) {
   Isolate* isolate = args.GetIsolate();
   Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
   THROWIFNOTFS(self, "FileSystem.prototype.symlinkat");
@@ -312,14 +312,14 @@ void FileSystemSymlinkAt(const FunctionCallbackInfo<Value>& args) {
     self->GetInternalField(0).As<External>()->Value()
   );
   THROWIFERR(
-    fs->SymlinkAt(
+    fs->SymLinkAt(
       *String::Utf8Value(isolate, args[0].As<String>()),
       Int32Val(args[1]),
       *String::Utf8Value(isolate, args[2].As<String>())
     )
   );
 }
-void FileSystemSymlink(const FunctionCallbackInfo<Value>& args) {
+void FileSystemSymLink(const FunctionCallbackInfo<Value>& args) {
   Isolate* isolate = args.GetIsolate();
   Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
   THROWIFNOTFS(self, "FileSystem.prototype.symlink");
@@ -330,7 +330,7 @@ void FileSystemSymlink(const FunctionCallbackInfo<Value>& args) {
     self->GetInternalField(0).As<External>()->Value()
   );
   THROWIFERR(
-    fs->Symlink(
+    fs->SymLink(
       *String::Utf8Value(isolate, args[0].As<String>()),
       *String::Utf8Value(isolate, args[1].As<String>())
     )
@@ -1501,8 +1501,8 @@ void DefineTemplateFunctions(Isolate* isolate, Local<ObjectTemplate> tmpl) {
   DefineFunction(isolate, tmpl, "mknod",      FileSystemMkNod,      2);
   DefineFunction(isolate, tmpl, "mkdirat",    FileSystemMkDirAt,    3);
   DefineFunction(isolate, tmpl, "mkdir",      FileSystemMkDir,      2);
-  DefineFunction(isolate, tmpl, "symlinkat",  FileSystemSymlinkAt,  3);
-  DefineFunction(isolate, tmpl, "symlink",    FileSystemSymlink,    2);
+  DefineFunction(isolate, tmpl, "symlinkat",  FileSystemSymLinkAt,  3);
+  DefineFunction(isolate, tmpl, "symlink",    FileSystemSymLink,    2);
   DefineFunction(isolate, tmpl, "readlinkat", FileSystemReadLinkAt, 2);
   DefineFunction(isolate, tmpl, "readlink",   FileSystemReadLink,   1);
   DefineFunction(isolate, tmpl, "getdents",   FileSystemGetDents,   1);
