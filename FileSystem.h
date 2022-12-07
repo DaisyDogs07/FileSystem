@@ -1659,7 +1659,6 @@ class FileSystem {
     buf->st_atim = inode->atime;
     buf->st_mtim = inode->mtime;
     buf->st_ctim = inode->ctime;
-    buf->st_blocks = inode->size / 512;
   }
   static void FillStatx(struct INode* inode, struct statx* buf, int mask) {
     memset(buf, '\0', sizeof(struct statx));
@@ -1690,7 +1689,5 @@ class FileSystem {
       buf->stx_btime.tv_sec = inode->btime.tv_sec;
       buf->stx_btime.tv_nsec = inode->btime.tv_nsec;
     }
-    if (mask & STATX_BLOCKS)
-      buf->stx_blocks = inode->size / 512;
   }
 };
