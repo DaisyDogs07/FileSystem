@@ -339,7 +339,7 @@ class FileSystem {
     do {
       struct INode::Dent d = inode->dents[fd->seekOff];
       size_t nameLen = strlen(d.name);
-#define ALIGN(x, a) (((x) + ((int)(a) - 1)) & ~((int)(a) - 1))
+#define ALIGN(x, a) (((x) + ((a) - 1)) & ~((a) - 1))
       unsigned short reclen = ALIGN(__builtin_offsetof(struct linux_dirent, d_name) + nameLen + 2, sizeof(long));
 #undef ALIGN
       if (nread + reclen > count)
