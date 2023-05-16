@@ -74,7 +74,7 @@ void FileSystemConstructor(const FunctionCallbackInfo<Value>& args) {
         ) \
       ); \
       return; \
-    }\
+    } \
   } while (0)
 #define THROWERR(code) \
   do { \
