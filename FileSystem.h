@@ -1253,8 +1253,10 @@ class FileSystem {
     if (fd < 0)
       return false;
     if (write(fd, "\x7FVFS", 4) != 4 ||
-        write(fd, &inodeCount, sizeof(ino_t)) != sizeof(ino_t))
+        write(fd, &inodeCount, sizeof(ino_t)) != sizeof(ino_t)) {
+      close(fd);
       return false;
+    }
     for (ino_t i = 0; i != inodeCount; ++i) {
       struct INode* inode = inodes[i];
       struct DumpedINode dumped;
@@ -1266,24 +1268,33 @@ class FileSystem {
       dumped.ctime = inode->ctime;
       dumped.mtime = inode->mtime;
       dumped.atime = inode->atime;
-      if (write(fd, &dumped, sizeof(struct DumpedINode)) != sizeof(struct DumpedINode))
+      if (write(fd, &dumped, sizeof(struct DumpedINode)) != sizeof(struct DumpedINode)) {
+        close(fd);
         return false;
+      }
       if (S_ISLNK(inode->mode)) {
         size_t targetLen = strlen(inode->target) + 1;
-        if (write(fd, inode->target, targetLen) != targetLen)
+        if (write(fd, inode->target, targetLen) != targetLen) {
+          close(fd);
           return false;
+        }
       }
       if (S_ISDIR(inode->mode)) {
-        if (write(fd, &inode->dentCount, sizeof(off_t)) != sizeof(off_t))
+        if (write(fd, &inode->dentCount, sizeof(off_t)) != sizeof(off_t)) {
+          close(fd);
           return false;
+        }
         for (off_t j = 0; j != inode->dentCount; ++j) {
           struct INode::Dent* dent = &inode->dents[j];
           if (write(fd, &dent->inode->ndx, sizeof(ino_t)) != sizeof(ino_t)) {
+            close(fd);
             return false;
           }
           size_t nameLen = strlen(dent->name) + 1;
-          if (write(fd, dent->name, nameLen) != nameLen)
+          if (write(fd, dent->name, nameLen) != nameLen) {
+            close(fd);
             return false;
+          }
         }
       } else if (inode->size != 0) {
         ssize_t written = 0;
@@ -1292,8 +1303,10 @@ class FileSystem {
           if (amount > 0x7ffff000)
             amount = 0x7ffff000;
           ssize_t count = write(fd, inode->data + written, amount);
-          if (count < 0)
+          if (count < 0) {
+            close(fd);
             return false;
+          }
           written += count;
         }
       }
