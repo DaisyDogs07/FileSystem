@@ -15,10 +15,10 @@
 #include <unistd.h>
 
 struct linux_dirent {
-  ino_t d_ino;
-  off_t d_off;
-  unsigned short d_reclen;
-  char d_name[1];
+	unsigned long	d_ino;
+	unsigned long	d_off;
+	unsigned short d_reclen;
+	char d_name[1];
 };
 
 class FileSystem {
@@ -31,7 +31,10 @@ class FileSystem {
     root->dents[1] = { "..", root };
     root->dentCount = root->nlink = 2;
     PushINode(root);
-    cwd = { strdup("/"), root, root };
+    cwd = new Cwd;
+    cwd->path = strdup("/");
+    cwd->inode = root;
+    cwd->parent = root;
   }
   ~FileSystem() {
     while (inodeCount--)
@@ -40,24 +43,25 @@ class FileSystem {
       delete fds[fdCount];
     delete inodes;
     delete fds;
+    delete cwd;
   }
 
-  int FAccessAt(int dirFd, const char* path, int mode, int flags) {
+  int FAccessAt2(int dirFd, const char* path, int mode, int flags) {
     std::lock_guard<std::mutex> lock(mtx);
-    if (mode & ~(F_OK | R_OK | W_OK | X_OK) || flags & ~AT_SYMLINK_NOFOLLOW)
+    if (mode & ~S_IRWXO || flags & ~AT_SYMLINK_NOFOLLOW)
       return -EINVAL;
-    struct INode* origCwd = cwd.inode;
+    struct INode* origCwd = cwd->inode;
     if (dirFd != AT_FDCWD) {
       struct Fd* fd;
       if (!(fd = GetFd(dirFd)))
         return -EBADF;
       if (!S_ISDIR(fd->inode->mode))
         return -ENOTDIR;
-      cwd.inode = fd->inode;
+      cwd->inode = fd->inode;
     }
     struct INode* inode;
     int res = GetINode(path, &inode, NULL, !(flags & AT_SYMLINK_NOFOLLOW));
-    cwd.inode = origCwd;
+    cwd->inode = origCwd;
     if (res != 0)
       return res;
     int check = 0;
@@ -71,8 +75,11 @@ class FileSystem {
       return -EACCES;
     return 0;
   }
+  int FAccessAt(int dirFd, const char* path, int mode) {
+    return FAccessAt2(dirFd, path, mode, 0);
+  }
   int Access(const char* path, int mode) {
-    return FAccessAt(AT_FDCWD, path, mode, 0);
+    return FAccessAt2(AT_FDCWD, path, mode, 0);
   }
   int OpenAt(int dirFd, const char* path, int flags, mode_t mode) {
     std::lock_guard<std::mutex> lock(mtx);
@@ -84,14 +91,14 @@ class FileSystem {
       mode |= S_IFREG;
     } else if (mode != 0)
       return -EINVAL;
-    struct INode* origCwd = cwd.inode;
+    struct INode* origCwd = cwd->inode;
     if (dirFd != AT_FDCWD) {
       struct Fd* fd;
       if (!(fd = GetFd(dirFd)))
         return -EBADF;
       if (!S_ISDIR(fd->inode->mode))
         return -ENOTDIR;
-      cwd.inode = fd->inode;
+      cwd->inode = fd->inode;
     }
     if (flags & O_CREAT && flags & O_EXCL)
       flags |= O_NOFOLLOW;
@@ -100,7 +107,7 @@ class FileSystem {
     struct INode* inode;
     struct INode* parent = NULL;
     int res = GetINode(path, &inode, &parent, !(flags & O_NOFOLLOW));
-    cwd.inode = origCwd;
+    cwd->inode = origCwd;
     if (!parent)
       return res;
     if (res == 0) {
@@ -157,28 +164,44 @@ class FileSystem {
     std::lock_guard<std::mutex> lock(mtx);
     return RemoveFd(fd);
   }
+  int CloseRange(unsigned int fd, unsigned int maxFd, unsigned int flags) {
+    std::lock_guard<std::mutex> lock(mtx);
+    if (flags != 0 || fd > maxFd)
+      return -EINVAL;
+    int lastFd = fdCount;
+    for (int i = 0; i != fdCount; ++i)
+      if (fds[i]->fd > lastFd)
+        lastFd = i;
+    if (maxFd > lastFd)
+      maxFd = lastFd;
+    while (fd <= maxFd)
+      RemoveFd(fd++);
+    return 0;
+  }
   int MkNodAt(int dirFd, const char* path, mode_t mode, dev_t) {
     std::lock_guard<std::mutex> lock(mtx);
     if (inodeCount == std::numeric_limits<ino_t>::max())
       return -EDQUOT;
     if (!(mode & S_IFMT))
       mode |= S_IFREG;
+    else if (S_ISDIR(mode))
+      return -EPERM;
     else if (!S_ISREG(mode))
       return -EINVAL;
-    struct INode* origCwd = cwd.inode;
+    struct INode* origCwd = cwd->inode;
     if (dirFd != AT_FDCWD) {
       struct Fd* fd;
       if (!(fd = GetFd(dirFd)))
         return -EBADF;
       if (!S_ISDIR(fd->inode->mode))
         return -ENOTDIR;
-      cwd.inode = fd->inode;
+      cwd->inode = fd->inode;
     }
     struct INode* inode;
     struct INode* parent = NULL;
     int res = GetINode(path, &inode, &parent);
-    cwd.inode = origCwd;
-    if (!parent)
+    cwd->inode = origCwd;
+    if (!parent || res != -ENOENT)
       return res;
     if (res == 0)
       return -EEXIST;
@@ -190,7 +213,7 @@ class FileSystem {
       return -ENOSPC;
     }
     struct INode* x = new INode;
-    x->mode = (mode & ~S_IFMT) | S_IFREG;
+    x->mode = mode;
     x->data = new char;
     x->nlink = 1;
     PushINode(x);
@@ -205,20 +228,20 @@ class FileSystem {
     std::lock_guard<std::mutex> lock(mtx);
     if (inodeCount == std::numeric_limits<ino_t>::max())
       return -EDQUOT;
-    struct INode* origCwd = cwd.inode;
+    struct INode* origCwd = cwd->inode;
     if (dirFd != AT_FDCWD) {
       struct Fd* fd;
       if (!(fd = GetFd(dirFd)))
         return -EBADF;
       if (!S_ISDIR(fd->inode->mode))
         return -ENOTDIR;
-      cwd.inode = fd->inode;
+      cwd->inode = fd->inode;
     }
     struct INode* inode;
     struct INode* parent = NULL;
     int res = GetINode(path, &inode, &parent);
-    cwd.inode = origCwd;
-    if (!parent)
+    cwd->inode = origCwd;
+    if (!parent || res != -ENOENT)
       return res;
     if (res == 0)
       return -EEXIST;
@@ -260,17 +283,19 @@ class FileSystem {
     int res = GetINode(oldPath, &oldInode);
     if (res != 0)
       return res;
-    struct INode* origCwd = cwd.inode;
+    struct INode* origCwd = cwd->inode;
     if (newDirFd != AT_FDCWD)
-      cwd.inode = fd->inode;
+      cwd->inode = fd->inode;
     struct INode* newInode;
     struct INode* newParent = NULL;
     res = GetINode(newPath, &newInode, &newParent);
-    cwd.inode = origCwd;
+    cwd->inode = origCwd;
     if (!newParent)
       return res;
     if (res == 0)
       return -EEXIST;
+    if (res != -ENOENT)
+      return res;
     const char* absPath = AbsolutePath(newPath);
     const char* name = GetLast(absPath);
     delete absPath;
@@ -299,18 +324,18 @@ class FileSystem {
     std::lock_guard<std::mutex> lock(mtx);
     if (bufLen <= 0)
       return -EINVAL;
-    struct INode* origCwd = cwd.inode;
+    struct INode* origCwd = cwd->inode;
     if (dirFd != AT_FDCWD) {
       struct Fd* fd;
       if (!(fd = GetFd(dirFd)))
         return -EBADF;
       if (!S_ISDIR(fd->inode->mode))
         return -ENOTDIR;
-      cwd.inode = fd->inode;
+      cwd->inode = fd->inode;
     }
     struct INode* inode;
     int res = GetINode(path, &inode);
-    cwd.inode = origCwd;
+    cwd->inode = origCwd;
     if (res != 0)
       return res;
     if (!S_ISLNK(inode->mode))
@@ -378,24 +403,26 @@ class FileSystem {
       if (!S_ISDIR(newFd->inode->mode))
         return -ENOTDIR;
     }
-    struct INode* origCwd = cwd.inode;
+    struct INode* origCwd = cwd->inode;
     if (oldDirFd != AT_FDCWD)
-      cwd.inode = oldFd->inode;
+      cwd->inode = oldFd->inode;
     struct INode* oldInode;
     int res = GetINode(oldPath, &oldInode, NULL, flags & AT_SYMLINK_FOLLOW);
-    cwd.inode = origCwd;
+    cwd->inode = origCwd;
     if (res != 0)
       return res;
     if (newDirFd != AT_FDCWD)
-      cwd.inode = newFd->inode;
+      cwd->inode = newFd->inode;
     struct INode* newInode;
     struct INode* newParent = NULL;
     res = GetINode(newPath, &newInode, &newParent);
-    cwd.inode = origCwd;
+    cwd->inode = origCwd;
     if (!newParent)
       return res;
     if (res == 0)
       return -EEXIST;
+    if (res != -ENOENT)
+      return res;
     if (S_ISDIR(oldInode->mode))
       return -EPERM;
     const char* absPath = AbsolutePath(newPath);
@@ -420,18 +447,18 @@ class FileSystem {
     if (flags & ~AT_REMOVEDIR)
       return -EINVAL;
     struct Fd* fd;
-    struct INode* origCwd = cwd.inode;
+    struct INode* origCwd = cwd->inode;
     if (dirFd != AT_FDCWD) {
       if (!(fd = GetFd(dirFd)))
         return -EBADF;
       if (!S_ISDIR(fd->inode->mode))
         return -ENOTDIR;
-      cwd.inode = fd->inode;
+      cwd->inode = fd->inode;
     }
     struct INode* inode;
     struct INode* parent;
     int res = GetINode(path, &inode, &parent);
-    cwd.inode = origCwd;
+    cwd->inode = origCwd;
     if (res != 0)
       return res;
     if (flags & AT_REMOVEDIR) {
@@ -446,7 +473,7 @@ class FileSystem {
         return -EBUSY;
     if (flags & AT_REMOVEDIR) {
       const char* last = GetLast(path);
-      bool isDot = strcmp(last, ".") == 0;
+      bool isDot = strcmp(last, ".") == 0;  
       delete last;
       if (isDot)
         return -EINVAL;
@@ -474,7 +501,7 @@ class FileSystem {
   int RmDir(const char* path) {
     return UnlinkAt(AT_FDCWD, path, AT_REMOVEDIR);
   }
-  int RenameAt(int oldDirFd, const char* oldPath, int newDirFd, const char* newPath, unsigned int flags) {
+  int RenameAt2(int oldDirFd, const char* oldPath, int newDirFd, const char* newPath, unsigned int flags) {
     std::lock_guard<std::mutex> lock(mtx);
     if (flags & ~RENAME_NOREPLACE)
       return -EINVAL;
@@ -497,22 +524,22 @@ class FileSystem {
       if (!S_ISDIR(newFd->inode->mode))
         return -ENOTDIR;
     }
-    struct INode* origCwd = cwd.inode;
+    struct INode* origCwd = cwd->inode;
     if (oldDirFd != AT_FDCWD)
-      cwd.inode = oldFd->inode;
+      cwd->inode = oldFd->inode;
     struct INode* oldInode;
     struct INode* oldParent;
     int res = GetINode(oldPath, &oldInode, &oldParent);
-    cwd.inode = origCwd;
+    cwd->inode = origCwd;
     if (res != 0)
       return res;
     if (newDirFd != AT_FDCWD)
-      cwd.inode = newFd->inode;
+      cwd->inode = newFd->inode;
     struct INode* newInode = NULL;
     struct INode* newParent = NULL;
     res = GetINode(newPath, &newInode, &newParent);
-    cwd.inode = origCwd;
-    if (!newParent)
+    cwd->inode = origCwd;
+    if (!newParent || (!newInode && res != -ENOENT))
       return res;
     if (oldInode == newInode)
       return 0;
@@ -523,7 +550,7 @@ class FileSystem {
         if (newInode->dentCount > 2)
           return -ENOTEMPTY;
       }
-      if (oldInode == inodes[0] || oldInode == cwd.inode)
+      if (oldInode == inodes[0] || oldInode == cwd->inode)
         return -EBUSY;
     } else if (newInode && S_ISDIR(newInode->mode))
       return -EISDIR;
@@ -560,8 +587,11 @@ class FileSystem {
     newParent->ctime = newParent->mtime = ts;
     return 0;
   }
+  int RenameAt(int oldDirFd, const char* oldPath, int newDirFd, const char* newPath) {
+    return RenameAt2(oldDirFd, oldPath, newDirFd, newPath, 0);
+  }
   int Rename(const char* oldPath, const char* newPath) {
-    return RenameAt(AT_FDCWD, oldPath, AT_FDCWD, newPath, 0);
+    return RenameAt2(AT_FDCWD, oldPath, AT_FDCWD, newPath, 0);
   }
   off_t LSeek(unsigned int fdNum, off_t offset, unsigned int whence) {
     std::lock_guard<std::mutex> lock(mtx);
@@ -1012,16 +1042,16 @@ class FileSystem {
   }
   int FChModAt(int dirFd, const char* path, mode_t mode) {
     std::lock_guard<std::mutex> lock(mtx);
-    struct INode* origCwd = cwd.inode;
+    struct INode* origCwd = cwd->inode;
     if (dirFd != AT_FDCWD) {
       struct Fd* fd;
       if (!(fd = GetFd(dirFd)))
         return -EBADF;
-      cwd.inode = fd->inode;
+      cwd->inode = fd->inode;
     }
     struct INode* inode;
     int res = GetINode(path, &inode);
-    cwd.inode = origCwd;
+    cwd->inode = origCwd;
     if (res != 0)
       return res;
     inode->mode = (mode & ~S_IFMT) | (inode->mode & S_IFMT);
@@ -1050,23 +1080,27 @@ class FileSystem {
       return res;
     if (!S_ISDIR(inode->mode))
       return -ENOTDIR;
-    cwd = { AbsolutePath(path), inode, parent };
+    const char* absPath = AbsolutePath(path);
+    cwd = new Cwd;
+    cwd->path = absPath;
+    cwd->inode = inode;
+    cwd->parent = parent;
     return 0;
   }
   int GetCwd(char* buf, size_t size) {
     std::lock_guard<std::mutex> lock(mtx);
-    if (cwd.inode != inodes[0]) {
+    if (cwd->inode != inodes[0]) {
       struct INode* inode;
       struct INode* parent;
-      int res = GetINode(cwd.path, &inode, &parent, true);
+      int res = GetINode(cwd->path, &inode, &parent, true);
       if (res != 0)
         return res;
     }
-    size_t cwdLen = strlen(cwd.path);
+    size_t cwdLen = strlen(cwd->path);
     if (size <= cwdLen)
       return -ERANGE;
     if (buf) {
-      memcpy(buf, cwd.path, cwdLen);
+      memcpy(buf, cwd->path, cwdLen);
       buf[cwdLen] = '\0';
     }
     return cwdLen;
@@ -1101,16 +1135,16 @@ class FileSystem {
     std::lock_guard<std::mutex> lock(mtx);
     if (flags & ~AT_SYMLINK_NOFOLLOW || mask & ~STATX_ALL)
       return -EINVAL;
-    struct INode* origCwd = cwd.inode;
+    struct INode* origCwd = cwd->inode;
     if (dirFd != AT_FDCWD) {
       struct Fd* fd;
       if (!(fd = GetFd(dirFd)))
         return -EBADF;
-      cwd.inode = fd->inode;
+      cwd->inode = fd->inode;
     }
     struct INode* inode;
     int res = GetINode(path, &inode, NULL, !(flags & AT_SYMLINK_NOFOLLOW));
-    cwd.inode = origCwd;
+    cwd->inode = origCwd;
     if (res != 0)
       return res;
     FillStatx(inode, buf, mask);
@@ -1120,16 +1154,16 @@ class FileSystem {
     std::lock_guard<std::mutex> lock(mtx);
     if (flags & ~AT_SYMLINK_NOFOLLOW)
       return -EINVAL;
-    struct INode* origCwd = cwd.inode;
+    struct INode* origCwd = cwd->inode;
     if (dirFd != AT_FDCWD) {
       struct Fd* fd;
       if (!(fd = GetFd(dirFd)))
         return -EBADF;
-      cwd.inode = fd->inode;
+      cwd->inode = fd->inode;
     }
     struct INode* inode;
     int res = GetINode(path, &inode, NULL, !(flags & AT_SYMLINK_NOFOLLOW));
-    cwd.inode = origCwd;
+    cwd->inode = origCwd;
     if (res != 0)
       return res;
     struct timespec ts;
@@ -1156,16 +1190,16 @@ class FileSystem {
           times[1].tv_usec < 0 || times[1].tv_usec >= 1000000)
         return -EINVAL;
     }
-    struct INode* origCwd = cwd.inode;
+    struct INode* origCwd = cwd->inode;
     if (fdNum != AT_FDCWD) {
       struct Fd* fd;
       if (!(fd = GetFd(fdNum)))
         return -EBADF;
-      cwd.inode = fd->inode;
+      cwd->inode = fd->inode;
     }
     struct INode* inode;
     int res = GetINode(path, &inode, NULL, true);
-    cwd.inode = origCwd;
+    cwd->inode = origCwd;
     if (res != 0)
       return res;
     struct timespec ts;
@@ -1251,8 +1285,18 @@ class FileSystem {
           if (write(fd, dent->name, nameLen) != nameLen)
             return false;
         }
-      } else if (inode->size != 0 && write(fd, inode->data, inode->size) != inode->size)
-        return false;
+      } else if (inode->size != 0) {
+        ssize_t written = 0;
+        while (written != inode->size) {
+          ssize_t amount = inode->size - written;
+          if (amount > 0x7ffff000)
+            amount = 0x7ffff000;
+          ssize_t count = write(fd, inode->data + written, amount);
+          if (count < 0)
+            return false;
+          written += count;
+        }
+      }
     }
     close(fd);
     return true;
@@ -1323,11 +1367,21 @@ class FileSystem {
       } else {
         inode->dents = NULL;
         inode->data = new char[inode->size + 1];
-        if (inode->size != 0 && read(fd, inode->data, inode->size) != inode->size) {
-            close(fd);
-            return NULL;
+        if (inode->size != 0) {
+          ssize_t nread = 0;
+          while (nread != inode->size) {
+            ssize_t amount = inode->size - nread;
+            if (amount > 0x7ffff000)
+              amount = 0x7ffff000;
+            ssize_t count = read(fd, inode->data + nread, amount);
+            if (count < 0) {
+              close(fd);
+              return NULL;
+            }
+            nread += count;
           }
-        inode->data[inode->size] = '\0';
+          inode->data[inode->size] = '\0';
+        }
       }
       inodes[i] = inode;
     }
@@ -1346,7 +1400,11 @@ class FileSystem {
     fs->inodes = inodes;
     fs->inodeCount = inodeCount;
     fs->fds = {};
-    fs->cwd = { strdup("/"), inodes[0], inodes[0] };
+    struct Cwd* cwd = new Cwd;
+    cwd->path = strdup("/");
+    cwd->inode = inodes[0];
+    cwd->parent = inodes[0];
+    fs->cwd = cwd;
     return fs;
   }
 
@@ -1429,7 +1487,7 @@ class FileSystem {
     struct INode* inode;
     struct INode* parent;
   };
-  Cwd cwd;
+  struct Cwd* cwd;
   struct INode** inodes = {};
   ino_t inodeCount = 0;
   struct Fd** fds = {};
@@ -1519,10 +1577,10 @@ class FileSystem {
     bool isAbsolute = path[0] == '/';
     struct INode* current = isAbsolute
       ? inodes[0]
-      : cwd.inode;
+      : cwd->inode;
     struct INode* currParent = isAbsolute
       ? inodes[0]
-      : cwd.parent;
+      : cwd->parent;
     int err = 0;
     char name[NAME_MAX + 1];
     size_t nameLen = 0;
@@ -1595,36 +1653,33 @@ class FileSystem {
     return 0;
   }
   static const char* GetLast(const char* path) {
-    size_t pathLen = strlen(path);
-    char* name = new char[NAME_MAX + 1];
-    size_t nameLen = 0;
-    for (size_t i = pathLen; i <= pathLen; --i) {
-      if (path[i] == '/') {
-        if (nameLen != 0)
-          break;
-      } else {
-        memmove(name + 1, name, nameLen++);
-        name[0] = path[i];
-      }
+    int pathLen = strlen(path);
+    char name[NAME_MAX + 1];
+    int nameNdx = NAME_MAX;
+    name[nameNdx--] = '\0';
+    int i = pathLen;
+    while (path[i] == '/')
+      --i;
+    while (i >= 0) {
+      if (path[i] == '/')
+        break;
+      name[nameNdx--] = path[i--];
     }
-    name[nameLen] = '\0';
-    return reinterpret_cast<char*>(
-      realloc(name, nameLen + 1)
-    );
+    return strdup(name + nameNdx + 1);
   }
   const char* AbsolutePath(const char* path) {
-    char* absPath = new char[PATH_MAX];
-    size_t absPathLen = 0;
+    char absPath[PATH_MAX];
+    int absPathLen = 0;
     if (path[0] != '/') {
-      size_t cwdPathLen = strlen(cwd.path);
+      int cwdPathLen = strlen(cwd->path);
       if (cwdPathLen != 1) {
-        memcpy(absPath, cwd.path, cwdPathLen);
+        memcpy(absPath, cwd->path, cwdPathLen);
         absPath[cwdPathLen] = '/';
         absPathLen = cwdPathLen + 1;
       } else absPath[absPathLen++] = '/';
     }
-    size_t pathLen = strlen(path);
-    for (size_t i = 0; i != pathLen; ++i) {
+    int pathLen = strlen(path);
+    for (int i = 0; i != pathLen; ++i) {
       if (path[i] == '/') {
         if (absPath[absPathLen - 1] != '/')
           absPath[absPathLen++] = '/';
@@ -1646,9 +1701,7 @@ class FileSystem {
     if (absPath[absPathLen - 1] == '/')
       --absPathLen;
     absPath[absPathLen] = '\0';
-    return reinterpret_cast<char*>(
-      realloc(absPath, absPathLen + 1)
-    );
+    return strdup(absPath);
   }
   static void FillStat(struct INode* inode, struct stat* buf) {
     memset(buf, '\0', sizeof(struct stat));

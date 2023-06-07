@@ -95,10 +95,10 @@ void FileSystemConstructor(const FunctionCallbackInfo<Value>& args) {
       THROWERR(tmp); \
   } while (0)
 
-void FileSystemFAccessAt(const FunctionCallbackInfo<Value>& args) {
+void FileSystemFAccessAt2(const FunctionCallbackInfo<Value>& args) {
   Isolate* isolate = args.GetIsolate();
   Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
-  THROWIFNOTFS(self, "FileSystem.prototype.faccessat");
+  THROWIFNOTFS(self, "FileSystem.prototype.faccessat2");
   assert(args.Length() == 4);
   assert(IsNumeric(args[0]));
   assert(args[1]->IsString());
@@ -108,11 +108,30 @@ void FileSystemFAccessAt(const FunctionCallbackInfo<Value>& args) {
     self->GetInternalField(0).As<External>()->Value()
   );
   THROWIFERR(
-    fs->FAccessAt(
+    fs->FAccessAt2(
       Int32Val(args[0]),
       *String::Utf8Value(isolate, args[1].As<String>()),
       Int32Val(args[2]),
       Uint32Val(args[3])
+    )
+  );
+}
+void FileSystemFAccessAt(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "FileSystem.prototype.faccessat");
+  assert(args.Length() == 3);
+  assert(IsNumeric(args[0]));
+  assert(args[1]->IsString());
+  assert(IsNumeric(args[2]));
+  FileSystem* fs = reinterpret_cast<FileSystem*>(
+    self->GetInternalField(0).As<External>()->Value()
+  );
+  THROWIFERR(
+    fs->FAccessAt(
+      Int32Val(args[0]),
+      *String::Utf8Value(isolate, args[1].As<String>()),
+      Int32Val(args[2])
     )
   );
 }
@@ -223,6 +242,24 @@ void FileSystemClose(const FunctionCallbackInfo<Value>& args) {
   THROWIFERR(
     fs->Close(
       Int32Val(args[0])
+    )
+  );
+}
+void FileSystemCloseRange(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "FileSystem.prototype.close_range");
+  assert(args.Length() == 2);
+  assert(IsNumeric(args[0]));
+  assert(IsNumeric(args[1]));
+  FileSystem* fs = reinterpret_cast<FileSystem*>(
+    self->GetInternalField(0).As<External>()->Value()
+  );
+  THROWIFERR(
+    fs->CloseRange(
+      Int32Val(args[0]),
+      Int32Val(args[1]),
+      0
     )
   );
 }
@@ -538,10 +575,10 @@ void FileSystemRmDir(const FunctionCallbackInfo<Value>& args) {
     )
   );
 }
-void FileSystemRenameAt(const FunctionCallbackInfo<Value>& args) {
+void FileSystemRenameAt2(const FunctionCallbackInfo<Value>& args) {
   Isolate* isolate = args.GetIsolate();
   Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
-  THROWIFNOTFS(self, "FileSystem.prototype.renameat");
+  THROWIFNOTFS(self, "FileSystem.prototype.renameat2");
   assert(args.Length() == 5);
   assert(IsNumeric(args[0]));
   assert(args[1]->IsString());
@@ -552,12 +589,33 @@ void FileSystemRenameAt(const FunctionCallbackInfo<Value>& args) {
     self->GetInternalField(0).As<External>()->Value()
   );
   THROWIFERR(
-    fs->RenameAt(
+    fs->RenameAt2(
       Int32Val(args[0]),
       *String::Utf8Value(isolate, args[1].As<String>()),
       Int32Val(args[2]),
       *String::Utf8Value(isolate, args[3].As<String>()),
       Int32Val(args[4])
+    )
+  );
+}
+void FileSystemRenameAt(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "FileSystem.prototype.renameat");
+  assert(args.Length() == 4);
+  assert(IsNumeric(args[0]));
+  assert(args[1]->IsString());
+  assert(IsNumeric(args[2]));
+  assert(args[3]->IsString());
+  FileSystem* fs = reinterpret_cast<FileSystem*>(
+    self->GetInternalField(0).As<External>()->Value()
+  );
+  THROWIFERR(
+    fs->RenameAt(
+      Int32Val(args[0]),
+      *String::Utf8Value(isolate, args[1].As<String>()),
+      Int32Val(args[2]),
+      *String::Utf8Value(isolate, args[3].As<String>())
     )
   );
 }
@@ -1491,54 +1549,57 @@ void DefineFunction(
 }
 void DefineTemplateFunctions(Isolate* isolate, Local<ObjectTemplate> tmpl) {
   tmpl->SetInternalFieldCount(2);
-  DefineFunction(isolate, tmpl, "faccessat",  FileSystemFAccessAt,  4);
-  DefineFunction(isolate, tmpl, "access",     FileSystemAccess,     2);
-  DefineFunction(isolate, tmpl, "openat",     FileSystemOpenAt,     4);
-  DefineFunction(isolate, tmpl, "open",       FileSystemOpen,       3);
-  DefineFunction(isolate, tmpl, "creat",      FileSystemCreat,      2);
-  DefineFunction(isolate, tmpl, "close",      FileSystemClose,      1);
-  DefineFunction(isolate, tmpl, "mknodat",    FileSystemMkNodAt,    3);
-  DefineFunction(isolate, tmpl, "mknod",      FileSystemMkNod,      2);
-  DefineFunction(isolate, tmpl, "mkdirat",    FileSystemMkDirAt,    3);
-  DefineFunction(isolate, tmpl, "mkdir",      FileSystemMkDir,      2);
-  DefineFunction(isolate, tmpl, "symlinkat",  FileSystemSymLinkAt,  3);
-  DefineFunction(isolate, tmpl, "symlink",    FileSystemSymLink,    2);
-  DefineFunction(isolate, tmpl, "readlinkat", FileSystemReadLinkAt, 2);
-  DefineFunction(isolate, tmpl, "readlink",   FileSystemReadLink,   1);
-  DefineFunction(isolate, tmpl, "getdents",   FileSystemGetDents,   1);
-  DefineFunction(isolate, tmpl, "linkAt",     FileSystemLinkAt,     5);
-  DefineFunction(isolate, tmpl, "link",       FileSystemLink,       2);
-  DefineFunction(isolate, tmpl, "unlinkat",   FileSystemUnlinkAt,   3);
-  DefineFunction(isolate, tmpl, "unlink",     FileSystemUnlink,     1);
-  DefineFunction(isolate, tmpl, "rmdir",      FileSystemRmDir,      1);
-  DefineFunction(isolate, tmpl, "renameat",   FileSystemRenameAt,   4);
-  DefineFunction(isolate, tmpl, "rename",     FileSystemRename,     2);
-  DefineFunction(isolate, tmpl, "lseek",      FileSystemLSeek,      3);
-  DefineFunction(isolate, tmpl, "read",       FileSystemRead,       2);
-  DefineFunction(isolate, tmpl, "readv",      FileSystemReadv,      2);
-  DefineFunction(isolate, tmpl, "pread",      FileSystemPRead,      3);
-  DefineFunction(isolate, tmpl, "preadv",     FileSystemPReadv,     3);
-  DefineFunction(isolate, tmpl, "write",      FileSystemWrite,      2);
-  DefineFunction(isolate, tmpl, "writev",     FileSystemWritev,     2);
-  DefineFunction(isolate, tmpl, "pwrite",     FileSystemPWrite,     3);
-  DefineFunction(isolate, tmpl, "pwritev",    FileSystemPWritev,    3);
-  DefineFunction(isolate, tmpl, "sendfile",   FileSystemSendFile,   4);
-  DefineFunction(isolate, tmpl, "ftruncate",  FileSystemFTruncate,  2);
-  DefineFunction(isolate, tmpl, "truncate",   FileSystemTruncate,   2);
-  DefineFunction(isolate, tmpl, "fchmodat",   FileSystemFChModAt,   3);
-  DefineFunction(isolate, tmpl, "fchmod",     FileSystemFChMod,     2);
-  DefineFunction(isolate, tmpl, "chmod",      FileSystemChMod,      2);
-  DefineFunction(isolate, tmpl, "chdir",      FileSystemChDir,      1);
-  DefineFunction(isolate, tmpl, "getcwd",     FileSystemGetCwd,     0);
-  DefineFunction(isolate, tmpl, "fstat",      FileSystemFStat,      1);
-  DefineFunction(isolate, tmpl, "stat",       FileSystemStat,       1);
-  DefineFunction(isolate, tmpl, "lstat",      FileSystemLStat,      1);
-  DefineFunction(isolate, tmpl, "statx",      FileSystemStatx,      4);
-  DefineFunction(isolate, tmpl, "utimensat",  FileSystemUTimeNsAt,  4);
-  DefineFunction(isolate, tmpl, "futimesat",  FileSystemFUTimesAt,  3);
-  DefineFunction(isolate, tmpl, "utimes",     FileSystemUTimes,     2);
-  DefineFunction(isolate, tmpl, "utime",      FileSystemUTime,      2);
-  DefineFunction(isolate, tmpl, "dumpTo",     FileSystemDumpTo,     1);
+  DefineFunction(isolate, tmpl, "faccessat2",  FileSystemFAccessAt2, 4);
+  DefineFunction(isolate, tmpl, "faccessat",   FileSystemFAccessAt,  3);
+  DefineFunction(isolate, tmpl, "access",      FileSystemAccess,     2);
+  DefineFunction(isolate, tmpl, "openat",      FileSystemOpenAt,     4);
+  DefineFunction(isolate, tmpl, "open",        FileSystemOpen,       3);
+  DefineFunction(isolate, tmpl, "creat",       FileSystemCreat,      2);
+  DefineFunction(isolate, tmpl, "close",       FileSystemClose,      1);
+  DefineFunction(isolate, tmpl, "close_range", FileSystemCloseRange, 2);
+  DefineFunction(isolate, tmpl, "mknodat",     FileSystemMkNodAt,    3);
+  DefineFunction(isolate, tmpl, "mknod",       FileSystemMkNod,      2);
+  DefineFunction(isolate, tmpl, "mkdirat",     FileSystemMkDirAt,    3);
+  DefineFunction(isolate, tmpl, "mkdir",       FileSystemMkDir,      2);
+  DefineFunction(isolate, tmpl, "symlinkat",   FileSystemSymLinkAt,  3);
+  DefineFunction(isolate, tmpl, "symlink",     FileSystemSymLink,    2);
+  DefineFunction(isolate, tmpl, "readlinkat",  FileSystemReadLinkAt, 2);
+  DefineFunction(isolate, tmpl, "readlink",    FileSystemReadLink,   1);
+  DefineFunction(isolate, tmpl, "getdents",    FileSystemGetDents,   1);
+  DefineFunction(isolate, tmpl, "linkAt",      FileSystemLinkAt,     5);
+  DefineFunction(isolate, tmpl, "link",        FileSystemLink,       2);
+  DefineFunction(isolate, tmpl, "unlinkat",    FileSystemUnlinkAt,   3);
+  DefineFunction(isolate, tmpl, "unlink",      FileSystemUnlink,     1);
+  DefineFunction(isolate, tmpl, "rmdir",       FileSystemRmDir,      1);
+  DefineFunction(isolate, tmpl, "renameat2",   FileSystemRenameAt2,  5);
+  DefineFunction(isolate, tmpl, "renameat",    FileSystemRenameAt,   4);
+  DefineFunction(isolate, tmpl, "rename",      FileSystemRename,     2);
+  DefineFunction(isolate, tmpl, "lseek",       FileSystemLSeek,      3);
+  DefineFunction(isolate, tmpl, "read",        FileSystemRead,       2);
+  DefineFunction(isolate, tmpl, "readv",       FileSystemReadv,      2);
+  DefineFunction(isolate, tmpl, "pread",       FileSystemPRead,      3);
+  DefineFunction(isolate, tmpl, "preadv",      FileSystemPReadv,     3);
+  DefineFunction(isolate, tmpl, "write",       FileSystemWrite,      2);
+  DefineFunction(isolate, tmpl, "writev",      FileSystemWritev,     2);
+  DefineFunction(isolate, tmpl, "pwrite",      FileSystemPWrite,     3);
+  DefineFunction(isolate, tmpl, "pwritev",     FileSystemPWritev,    3);
+  DefineFunction(isolate, tmpl, "sendfile",    FileSystemSendFile,   4);
+  DefineFunction(isolate, tmpl, "ftruncate",   FileSystemFTruncate,  2);
+  DefineFunction(isolate, tmpl, "truncate",    FileSystemTruncate,   2);
+  DefineFunction(isolate, tmpl, "fchmodat",    FileSystemFChModAt,   3);
+  DefineFunction(isolate, tmpl, "fchmod",      FileSystemFChMod,     2);
+  DefineFunction(isolate, tmpl, "chmod",       FileSystemChMod,      2);
+  DefineFunction(isolate, tmpl, "chdir",       FileSystemChDir,      1);
+  DefineFunction(isolate, tmpl, "getcwd",      FileSystemGetCwd,     0);
+  DefineFunction(isolate, tmpl, "fstat",       FileSystemFStat,      1);
+  DefineFunction(isolate, tmpl, "stat",        FileSystemStat,       1);
+  DefineFunction(isolate, tmpl, "lstat",       FileSystemLStat,      1);
+  DefineFunction(isolate, tmpl, "statx",       FileSystemStatx,      4);
+  DefineFunction(isolate, tmpl, "utimensat",   FileSystemUTimeNsAt,  4);
+  DefineFunction(isolate, tmpl, "futimesat",   FileSystemFUTimesAt,  3);
+  DefineFunction(isolate, tmpl, "utimes",      FileSystemUTimes,     2);
+  DefineFunction(isolate, tmpl, "utime",       FileSystemUTime,      2);
+  DefineFunction(isolate, tmpl, "dumpTo",      FileSystemDumpTo,     1);
 }
 
 NODE_MODULE_INIT() {

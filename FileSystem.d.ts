@@ -87,12 +87,14 @@ declare module "FileSystem" {
     static F_OK: number;
 
     constructor();
-    faccessat(dirFd: number | BigInt, path: string, mode: number | BigInt, flags: number | BigInt): void;
+    faccessat2(dirFd: number | BigInt, path: string, mode: number | BigInt, flags: number | BigInt): void;
+    faccessat(dirFd: number | BigInt, path: string, mode: number | BigInt): void;
     access(path: string, mode: number | BigInt): void;
     openat(dirFd: number | BigInt, path: string, flags: number | BigInt, mode: number | BigInt): number;
     open(path: string, flags: number | BigInt, mode: number | BigInt): number;
     creat(path: string, mode: number | BigInt): number;
     close(fd: number | BigInt): void;
+    close_range(fd: number | BigInt, maxFd: number | BigInt): void;
     mknodat(dirFd: number | BigInt, path: string, mode: number | BigInt): void;
     mknod(path: string, mode: number | BigInt): void;
     mkdirat(dirFd: number | BigInt, path: string, mode: number | BigInt): void;
@@ -107,7 +109,8 @@ declare module "FileSystem" {
     unlinkat(dirFd: number | BigInt, path: string, flags: number | BigInt): void;
     unlink(path: string): void;
     rmdir(path: string): void;
-    renameat(oldDirFd: number | BigInt, oldPath: string, newDirFd: number | BigInt, newPath: string, flags: number | BigInt): void;
+    renameat2(oldDirFd: number | BigInt, oldPath: string, newDirFd: number | BigInt, newPath: string, flags: number | BigInt): void;
+    renameat(oldDirFd: number | BigInt, oldPath: string, newDirFd: number | BigInt, newPath: string): void;
     rename(oldPath: string, newPath: string): void;
     lseek(fd: number | BigInt, offset: number | BigInt, whence: number | BigInt): BigInt;
     read(fd: number | BigInt, count: number | BigInt): Buffer;
