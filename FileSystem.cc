@@ -1515,6 +1515,8 @@ void DefineConstants(Isolate* isolate, Local<FunctionTemplate> func) {
   DefineFlag(STATX_NLINK);
   DefineFlag(STATX_SIZE);
   DefineFlag(STATX_TYPE);
+  DefineFlag(UTIME_NOW);
+  DefineFlag(UTIME_OMIT);
   DefineFlag(R_OK);
   DefineFlag(W_OK);
   DefineFlag(X_OK);

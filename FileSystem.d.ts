@@ -81,6 +81,8 @@ declare module "FileSystem" {
     static STATX_NLINK: number;
     static STATX_SIZE: number;
     static STATX_TYPE: number;
+    static UTIME_NOW: number;
+    static UTIME_OMIT: number;
     static R_OK: number;
     static W_OK: number;
     static X_OK: number;
