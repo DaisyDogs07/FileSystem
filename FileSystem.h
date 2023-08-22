@@ -169,14 +169,9 @@ class FileSystem {
     std::lock_guard<std::mutex> lock(mtx);
     if (flags != 0 || fd > maxFd)
       return -EINVAL;
-    int lastFd = fdCount;
     for (int i = 0; i != fdCount; ++i)
-      if (fds[i]->fd > lastFd)
-        lastFd = i;
-    if (maxFd > lastFd)
-      maxFd = lastFd;
-    while (fd <= maxFd)
-      RemoveFd(fd++);
+      if (fds[i]->fd > fd && fds[i]->fd < maxFd)
+        RemoveFd(fds[i]->fd);
     return 0;
   }
   int MkNodAt(int dirFd, const char* path, mode_t mode, dev_t) {
@@ -1327,7 +1322,7 @@ class FileSystem {
       close(fd);
       return NULL;
     }
-    struct INode** inodes = (struct INode**)malloc(inodeCount * sizeof(struct INode*));
+    struct INode** inodes = (struct INode**)malloc(sizeof(struct INode*) * inodeCount);
     for (ino_t i = 0; i != inodeCount; ++i) {
       struct INode* inode = (struct INode*)malloc(sizeof(struct INode));
       inode->ndx = i;
@@ -1360,7 +1355,7 @@ class FileSystem {
           close(fd);
           return NULL;
         }
-        inode->dents = (struct INode::Dent*)malloc(inode->dentCount * sizeof(struct INode::Dent));
+        inode->dents = (struct INode::Dent*)malloc(sizeof(struct INode::Dent) * inode->dentCount);
         for (off_t j = 0; j != inode->dentCount; ++j) {
           struct INode::Dent* dent = &inode->dents[j];
           if (read(fd, &dent->inode, sizeof(ino_t)) != sizeof(ino_t)) {
@@ -1522,21 +1517,17 @@ class FileSystem {
     inodes[inodeCount++] = inode;
   }
   void RemoveINode(struct INode* inode) {
-    for (ino_t i = 0; i != inodeCount; ++i) {
-      if (inodes[i] == inode) {
-        delete inode;
-        if (i != inodeCount - 1) {
-          memmove(inodes + i, inodes + i + 1, sizeof(struct INode*) * (inodeCount - i));
-          do {
-            --inodes[i++]->ndx;
-          } while (i != inodeCount - 1);
-        }
-        inodes = reinterpret_cast<struct INode**>(
-          realloc(inodes, sizeof(struct INode*) * --inodeCount)
-        );
-        break;
-      }
+    ino_t i = inode->ndx;
+    delete inode;
+    if (i != inodeCount - 1) {
+      memmove(inodes + i, inodes + i + 1, sizeof(struct INode*) * (inodeCount - i));
+      do {
+        --inodes[i++]->ndx;
+      } while (i != inodeCount - 1);
     }
+    inodes = reinterpret_cast<struct INode**>(
+      realloc(inodes, sizeof(struct INode*) * --inodeCount)
+    );
   }
   int PushFd(struct INode* inode, int flags) {
     if (fdCount == std::numeric_limits<int>::max())
