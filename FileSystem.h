@@ -1693,7 +1693,7 @@ class FileSystem {
           if (path[i + 2] == '/' || i + 2 == pathLen) {
             --absPathLen;
             while (absPathLen > 0 && absPath[--absPathLen - 1] != '/');
-            if (path[i + 2] == '\0')
+            if (i + 2 == pathLen)
               ++i;
             else i += 2;
           }
