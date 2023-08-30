@@ -602,6 +602,8 @@ class FileSystem {
       return 0;
     if (flags & RENAME_NOREPLACE && newInode)
       return -EEXIST;
+    if (flags & RENAME_EXCHANGE && !newInode)
+      return -ENOENT;
     if (S_ISDIR(oldInode->mode)) {
       if (newInode) {
         if (!S_ISDIR(newInode->mode))
@@ -616,14 +618,14 @@ class FileSystem {
     if (IsInDir(oldParent, newParent))
       return -EINVAL;
     if (flags & RENAME_EXCHANGE) {
-      for (int i = 0; i != oldParent->dentCount; ++i)
+      for (off_t i = 0; i != oldParent->dentCount; ++i)
         if (oldParent->dents[i].inode == oldInode) {
-          oldParent->dents[i].inode = newInode;
-          break;
-        }
-      for (int i = 0; i != newParent->dentCount; ++i)
-        if (newParent->dents[i].inode == newInode) {
-          newParent->dents[i].inode = oldInode;
+          for (off_t j = 0; j != newParent->dentCount; ++j)
+            if (newParent->dents[j].inode == newInode) {
+              oldParent->dents[i].inode = newInode;
+              newParent->dents[j].inode = oldInode;
+              break;
+            }
           break;
         }
     } else {
