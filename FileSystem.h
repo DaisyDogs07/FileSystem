@@ -628,7 +628,6 @@ class FileSystem {
       return -ENOMEM;
     }
     if (flags & RENAME_EXCHANGE) {
-      // exchange inodes of both directory entries
       for (int i = 0; i != oldParent->dentCount; ++i)
         if (oldParent->dents[i].inode == oldInode) {
           oldParent->dents[i].inode = newInode;
@@ -1729,9 +1728,15 @@ class FileSystem {
       }
     if (!TryRealloc(&inodes, sizeof(struct INode*) * (inodeCount + 1)))
       return false;
-    inode->ndx = inodeCount;
+    if (id != inodeCount) {
+      memmove(&inodes[id + 1], &inodes[id], sizeof(struct INode*) * (inodeCount - id));
+      for (ino_t i = id + 1; i != inodeCount + 1; ++i)
+        ++inodes[i]->ndx;
+    }
+    inode->ndx = id;
     inode->id = id;
-    inodes[inodeCount++] = inode;
+    inodes[id] = inode;
+    ++inodeCount;
     return true;
   }
   void RemoveINode(struct INode* inode) {
