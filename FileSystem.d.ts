@@ -49,6 +49,7 @@ declare module "FileSystem" {
     static O_RDONLY: number;
     static O_WRONLY: number;
     static O_RDWR: number;
+    static RENAME_EXCHANGE: number;
     static RENAME_NOREPLACE: number;
     static S_IFMT: number;
     static S_IFREG: number;

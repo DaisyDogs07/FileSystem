@@ -1483,6 +1483,7 @@ void DefineConstants(Isolate* isolate, Local<FunctionTemplate> func) {
   DefineFlag(O_RDONLY);
   DefineFlag(O_WRONLY);
   DefineFlag(O_RDWR);
+  DefineFlag(RENAME_EXCHANGE);
   DefineFlag(RENAME_NOREPLACE);
   DefineFlag(S_IFMT);
   DefineFlag(S_IFREG);
