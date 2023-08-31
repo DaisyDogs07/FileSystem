@@ -3,15 +3,11 @@
 #endif
 #include <sys/stat.h>
 #include <dirent.h>
-#include <errno.h>
 #include <fcntl.h>
-#include <limits>
 #include <mutex>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdint.h>
 #include <string.h>
-#include <time.h>
 #include <utime.h>
 #include <unistd.h>
 
