@@ -617,29 +617,31 @@ class FileSystem {
       return -EISDIR;
     if (IsInDir(oldParent, newParent))
       return -EINVAL;
+    const char* oldName = GetAbsoluteLast(oldPath);
+    if (!oldName)
+      return -ENOMEM;
+    const char* newName = GetAbsoluteLast(newPath);
+    if (!newName) {
+      delete oldName;
+      return -ENOMEM;
+    }
     if (flags & RENAME_EXCHANGE) {
       for (off_t i = 0; i != oldParent->dentCount; ++i)
-        if (oldParent->dents[i].inode == oldInode) {
+        if (strcmp(oldParent->dents[i].name, oldName) == 0) {
           for (off_t j = 0; j != newParent->dentCount; ++j)
-            if (newParent->dents[j].inode == newInode) {
+            if (strcmp(newParent->dents[j].name, newName) == 0) {
               oldParent->dents[i].inode = newInode;
               newParent->dents[j].inode = oldInode;
               break;
             }
           break;
         }
+      delete oldName;
+      delete newName;
     } else {
-      const char* newName = GetAbsoluteLast(newPath);
-      if (!newName)
-        return -ENOMEM;
       if (newParent->size > std::numeric_limits<off_t>::max() - (strlen(newName) * 2)) {
         delete newName;
         return -ENOSPC;
-      }
-      const char* oldName = GetAbsoluteLast(oldPath);
-      if (!oldName) {
-        delete newName;
-        return -ENOMEM;
       }
       oldParent->RemoveDent(oldName);
       delete oldName;
