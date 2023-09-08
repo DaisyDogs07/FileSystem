@@ -5,17 +5,15 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <mutex>
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <utime.h>
 #include <unistd.h>
 
 struct linux_dirent {
-	unsigned long	d_ino;
-	unsigned long	d_off;
-	unsigned short d_reclen;
-	char d_name[1];
+  unsigned long	d_ino;
+  unsigned long	d_off;
+  unsigned short d_reclen;
+  char d_name[1];
 };
 
 class FileSystem {
@@ -136,7 +134,7 @@ class FileSystem {
           delete name;
           return -EIO;
         }
-        if (!TryAlloc(&x->data) ||
+        if (!x->AllocRanges() ||
             !PushINode(x)) {
           delete name;
           delete x;
@@ -159,12 +157,8 @@ class FileSystem {
     } else {
       if (flags & O_DIRECTORY)
         return -ENOTDIR;
-      if (flags & O_TRUNC && inode->size != 0) {
-        inode->data = reinterpret_cast<char*>(
-          realloc(inode->data, 1)
-        );
-        inode->size = 0;
-      }
+      if (flags & O_TRUNC && inode->size != 0)
+        inode->TruncateData(0);
     }
     return PushFd(inode, flags);
   }
@@ -226,7 +220,7 @@ class FileSystem {
       delete name;
       return -EIO;
     }
-    if (!TryAlloc(&x->data) ||
+    if (!x->AllocRanges() ||
         !PushINode(x)) {
       delete name;
       delete x;
@@ -342,12 +336,19 @@ class FileSystem {
       return -EIO;
     }
     size_t oldPathLen = strlen(oldPath);
-    if (!TryAlloc(&x->data, oldPathLen + 1) ||
+    if (!x->AllocRanges()) {
+      delete name;
+      delete x;
+      return -EIO;
+    }
+    struct INode::DataRange* range = x->AllocData(0, oldPathLen);
+    if (!range ||
         !PushINode(x)) {
       delete name;
       delete x;
       return -EIO;
     }
+    memcpy(range->data, oldPath, oldPathLen);
     if (!newParent->PushDent(name, x)) {
       RemoveINode(x);
       delete name;
@@ -356,8 +357,6 @@ class FileSystem {
     x->mode = 0777 | S_IFLNK;
     x->target = AbsolutePath(oldPath);
     x->nlink = 1;
-    memcpy(x->data, oldPath, oldPathLen);
-    x->data[oldPathLen] = '\0';
     x->size = oldPathLen;
     newParent->ctime = newParent->mtime = x->btime;
     return 0;
@@ -387,7 +386,7 @@ class FileSystem {
       return -EINVAL;
     if (inode->size < bufLen)
       bufLen = inode->size;
-    memcpy(buf, inode->data, bufLen);
+    memcpy(buf, inode->dataRanges[0]->data, bufLen);
     clock_gettime(CLOCK_REALTIME, &inode->atime);
     return bufLen;
   }
@@ -679,6 +678,7 @@ class FileSystem {
     struct Fd* fd;
     if (!(fd = GetFd(fdNum)))
       return -EBADF;
+    struct INode* inode = fd->inode;
     switch (whence) {
       case SEEK_SET:
         return fd->seekOff = offset;
@@ -687,14 +687,57 @@ class FileSystem {
           return -EOVERFLOW;
         return fd->seekOff += offset;
       case SEEK_END:
-        if (S_ISDIR(fd->inode->mode))
+        if (S_ISDIR(inode->mode))
           return -EINVAL;
-        if (fd->inode->size > std::numeric_limits<off_t>::max() - offset)
+        if (inode->size > std::numeric_limits<off_t>::max() - offset)
           return -EOVERFLOW;
-        return fd->seekOff = fd->inode->size + offset;
-      default:
-        return -EINVAL;
+        return fd->seekOff = inode->size + offset;
+      case SEEK_DATA: {
+        struct INode::HoleRange hole = inode->GetHoleAt(fd->seekOff);
+        if (hole.size != -1) {
+          if (hole.offset > std::numeric_limits<off_t>::max() - (hole.size + offset))
+            return -EOVERFLOW;
+          return fd->seekOff = hole.offset + hole.size + offset;
+        }
+        struct INode::DataRange* range = inode->GetRangeAt(fd->seekOff);
+        if (range) {
+          struct INode::HoleRange nextHole = inode->GetHoleAt(range->offset + range->size);
+          if (nextHole.size != -1) {
+            struct INode::DataRange* nextRange = inode->GetRangeAt(nextHole.offset + nextHole.size);
+            if (nextRange) {
+              if (nextRange->offset > std::numeric_limits<off_t>::max() - offset)
+                return -EOVERFLOW;
+              return fd->seekOff = nextRange->offset + offset;
+            }
+          }
+        }
+        return fd->seekOff = inode->size;
+      }
+      case SEEK_HOLE: {
+        struct INode::DataRange* range = inode->GetRangeAt(fd->seekOff);
+        if (range) {
+          if (range->offset > std::numeric_limits<off_t>::max() - (range->size + offset))
+            return -EOVERFLOW;
+          return fd->seekOff = range->offset + range->size + offset;
+        }
+        struct INode::HoleRange hole = inode->GetHoleAt(fd->seekOff);
+        if (hole.size != -1) {
+          struct INode::DataRange* nextRange = inode->GetRangeAt(hole.offset + hole.size);
+          if (nextRange) {
+            struct INode::HoleRange nextHole = inode->GetHoleAt(nextRange->offset + nextRange->size);
+            if (nextHole.size != -1) {
+              if (nextHole.offset > std::numeric_limits<off_t>::max() - offset)
+                return -EOVERFLOW;
+              return fd->seekOff = nextHole.offset + offset;
+            }
+          }
+        }
+        if (inode->size > std::numeric_limits<off_t>::max() - offset)
+          return -EOVERFLOW;
+        return fd->seekOff = inode->size;
+      }
     }
+    return -EINVAL;
   }
   ssize_t Read(unsigned int fdNum, char* buf, size_t count) {
     std::lock_guard<std::mutex> lock(mtx);
@@ -715,7 +758,32 @@ class FileSystem {
     off_t end = inode->size - fd->seekOff;
     if (end < count)
       count = end;
-    memcpy(buf, inode->data + fd->seekOff, count);
+    for (size_t i = 0, amountRead = 0; amountRead != count;) {
+      struct INode::DataRange* range = inode->dataRanges[i];
+      if (fd->seekOff > range->offset) {
+        ++i;
+        continue;
+      }
+      if (amountRead + fd->seekOff < range->offset) {
+        size_t amount = range->offset - (fd->seekOff + amountRead);
+        if (amount > count - amountRead)
+          amount = count - amountRead;
+        memset(buf + amountRead, '\0', amount);
+        amountRead += amount;
+      } else {
+        size_t amount = (range->offset + range->size) - (fd->seekOff + amountRead);
+        if (amount > count - amountRead)
+          amount = count - amountRead;
+        memcpy(buf + amountRead, range->data + (fd->seekOff + amountRead) - range->offset, amount);
+        amountRead += amount;
+        if (++i == inode->dataRangeCount && amountRead != count) {
+          size_t amount = count - amountRead;
+          memset(buf + amountRead, '\0', amount);
+          amountRead += amount;
+          break;
+        }
+      }
+    }
     buf[count] = '\0';
     fd->seekOff += count;
     if (!(fd->flags & O_NOATIME))
@@ -757,16 +825,46 @@ class FileSystem {
     if (end < totalLen)
       totalLen = end;
     ssize_t count = 0;
-    for (int i = 0; i != iovcnt; ++i) {
-      ssize_t len = (ssize_t)iov[i].iov_len;
-      if (len == 0)
+    for (size_t i = 0, iovIdx = 0, amountRead = 0; iovIdx != iovcnt && amountRead != totalLen;) {
+      struct INode::DataRange* range = inode->dataRanges[i];
+      if (fd->seekOff > range->offset) {
+        ++i;
         continue;
-      memcpy(iov[i].iov_base, inode->data + fd->seekOff + count, len);
-      count += len;
-      if (count == totalLen)
-        break;
+      }
+      struct iovec curr = iov[iovIdx];
+      if (amountRead + fd->seekOff < range->offset) {
+        size_t amount = range->offset - (fd->seekOff + amountRead);
+        if (amount > curr.iov_len - amountRead)
+          amount = curr.iov_len - amountRead;
+        else if (amount > totalLen - amountRead)
+          amount = totalLen - amountRead;
+        memset(curr.iov_base + amountRead, '\0', amount);
+        amountRead += amount;
+        count += amount;
+      } else {
+        size_t amount = (range->offset + range->size) - (fd->seekOff + amountRead);
+        if (amount > curr.iov_len - amountRead)
+          amount = curr.iov_len - amountRead;
+        else if (amount > totalLen - amountRead)
+          amount = totalLen - amountRead;
+        memcpy(curr.iov_base + amountRead, range->data + (fd->seekOff + amountRead) - range->offset, amount);
+        amountRead += amount;
+        count += amount;
+        if (++i == inode->dataRangeCount && amountRead != totalLen) {
+          size_t amount = totalLen - amountRead;
+          memset(curr.iov_base + amountRead, '\0', amount);
+          amountRead += amount;
+          count += amount;
+          break;
+        }
+      }
+      if (amountRead == curr.iov_len) {
+        ++iovIdx;
+        fd->seekOff += amountRead;
+        totalLen -= amountRead;
+        amountRead = 0;
+      }
     }
-    fd->seekOff += count;
     if (!(fd->flags & O_NOATIME))
       clock_gettime(CLOCK_REALTIME, &inode->atime);
     return count;
@@ -792,8 +890,32 @@ class FileSystem {
     off_t end = inode->size - offset;
     if (end < count)
       count = end;
-    memcpy(buf, inode->data + offset, count);
-    buf[count] = '\0';
+    for (size_t i = 0, amountRead = 0; amountRead != count;) {
+      struct INode::DataRange* range = inode->dataRanges[i];
+      if (offset > range->offset) {
+        ++i;
+        continue;
+      }
+      if (amountRead + offset < range->offset) {
+        size_t amount = range->offset - (offset + amountRead);
+        if (amount > count - amountRead)
+          amount = count - amountRead;
+        memset(buf + amountRead, '\0', amount);
+        amountRead += amount;
+      } else {
+        size_t amount = (range->offset + range->size) - (offset + amountRead);
+        if (amount > count - amountRead)
+          amount = count - amountRead;
+        memcpy(buf + amountRead, range->data + (offset + amountRead) - range->offset, amount);
+        amountRead += amount;
+        if (++i == inode->dataRangeCount && amountRead != count) {
+          size_t amount = count - amountRead;
+          memset(buf + amountRead, '\0', amount);
+          amountRead += amount;
+          break;
+        }
+      }
+    }
     if (!(fd->flags & O_NOATIME))
       clock_gettime(CLOCK_REALTIME, &inode->atime);
     return count;
@@ -835,14 +957,45 @@ class FileSystem {
     if (end < totalLen)
       totalLen = end;
     ssize_t count = 0;
-    for (int i = 0; i != iovcnt; ++i) {
-      ssize_t len = (ssize_t)iov[i].iov_len;
-      if (len == 0)
+    for (size_t i = 0, iovIdx = 0, amountRead = 0; iovIdx != iovcnt && amountRead != totalLen;) {
+      struct INode::DataRange* range = inode->dataRanges[i];
+      if (offset > range->offset) {
+        ++i;
         continue;
-      memcpy(iov[i].iov_base, inode->data + offset + count, len);
-      count += len;
-      if (count == totalLen)
-        break;
+      }
+      struct iovec curr = iov[iovIdx];
+      if (amountRead + offset < range->offset) {
+        size_t amount = range->offset - (offset + amountRead);
+        if (amount > curr.iov_len - amountRead)
+          amount = curr.iov_len - amountRead;
+        else if (amount > totalLen - amountRead)
+          amount = totalLen - amountRead;
+        memset(curr.iov_base + amountRead, '\0', amount);
+        amountRead += amount;
+        count += amount;
+      } else {
+        size_t amount = (range->offset + range->size) - (offset + amountRead);
+        if (amount > curr.iov_len - amountRead)
+          amount = curr.iov_len - amountRead;
+        else if (amount > totalLen - amountRead)
+          amount = totalLen - amountRead;
+        memcpy(curr.iov_base + amountRead, range->data + (offset + amountRead) - range->offset, amount);
+        amountRead += amount;
+        count += amount;
+        if (++i == inode->dataRangeCount && amountRead != totalLen) {
+          size_t amount = totalLen - amountRead;
+          memset(curr.iov_base + amountRead, '\0', amount);
+          amountRead += amount;
+          count += amount;
+          break;
+        }
+      }
+      if (amountRead == curr.iov_len) {
+        ++iovIdx;
+        fd->seekOff += amountRead;
+        totalLen -= amountRead;
+        amountRead = 0;
+      }
     }
     if (!(fd->flags & O_NOATIME))
       clock_gettime(CLOCK_REALTIME, &inode->atime);
@@ -865,14 +1018,12 @@ class FileSystem {
       : fd->seekOff;
     if (seekOff > std::numeric_limits<off_t>::max() - count)
       return -EFBIG;
-    if (seekOff + count > inode->size) {
-      if (!TryRealloc(&inode->data, seekOff + count + 1))
-        return -EIO;
-      if (inode->size < seekOff)
-        memset(inode->data + inode->size, '\0', seekOff - inode->size);
+    struct INode::DataRange* range = inode->AllocData(seekOff, count);
+    if (!range)
+      return -EIO;
+    memcpy(range->data + (seekOff - range->offset), buf, count);
+    if (seekOff + count > inode->size)
       inode->size = seekOff + count;
-    }
-    memcpy(inode->data + seekOff, buf, count);
     fd->seekOff += count;
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
@@ -913,23 +1064,21 @@ class FileSystem {
       : fd->seekOff;
     if (seekOff > std::numeric_limits<off_t>::max() - totalLen)
       return -EFBIG;
-    if (seekOff + totalLen > inode->size) {
-      if (!TryRealloc(&inode->data, seekOff + totalLen + 1))
-        return -EIO;
-      if (inode->size < seekOff)
-        memset(inode->data + inode->size, '\0', seekOff - inode->size);
-      inode->size = seekOff + totalLen;
-    }
+    struct INode::DataRange* range = inode->AllocData(seekOff, totalLen);
+    if (!range)
+      return -EIO;
     ssize_t count = 0;
     for (int i = 0; i != iovcnt; ++i) {
       ssize_t len = (ssize_t)iov[i].iov_len;
       if (len == 0)
         continue;
-      memcpy(inode->data + seekOff + count, iov[i].iov_base, len);
+      memcpy(range->data + (seekOff - range->offset) + count, iov[i].iov_base, len);
       count += len;
       if (count == totalLen)
         break;
     }
+    if (seekOff + count > inode->size)
+      inode->size = seekOff + count;
     fd->seekOff += count;
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
@@ -952,14 +1101,12 @@ class FileSystem {
     struct INode* inode = fd->inode;
     if (offset > std::numeric_limits<off_t>::max() - count)
       return -EFBIG;
-    if (offset + count > inode->size) {
-      if (!TryRealloc(&inode->data, offset + count + 1))
-        return -EIO;
-      if (inode->size < offset)
-        memset(inode->data + inode->size, '\0', offset - inode->size);
+    struct INode::DataRange* range = inode->AllocData(offset, count);
+    if (!range)
+      return -EIO;
+    memcpy(range->data + (offset - range->offset), buf, count);
+    if (offset + count > inode->size)
       inode->size = offset + count;
-    }
-    memcpy(inode->data + offset, buf, count);
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
     inode->mtime = inode->ctime = ts;
@@ -998,23 +1145,21 @@ class FileSystem {
     struct INode* inode = fd->inode;
     if (offset > std::numeric_limits<off_t>::max() - totalLen)
       return -EFBIG;
-    if (offset + totalLen > inode->size) {
-      if (!TryRealloc(&inode->data, offset + totalLen + 1))
-        return -EIO;
-      if (inode->size < offset)
-        memset(inode->data + inode->size, '\0', offset - inode->size);
-      inode->size = offset + totalLen;
-    }
+    struct INode::DataRange* range = inode->AllocData(offset, totalLen);
+    if (!range)
+      return -EIO;
     ssize_t count = 0;
     for (int i = 0; i != iovcnt; ++i) {
       ssize_t len = (ssize_t)iov[i].iov_len;
       if (len == 0)
         continue;
-      memcpy(inode->data + offset + count, iov[i].iov_base, len);
+      memcpy(range->data + (offset - range->offset) + count, iov[i].iov_base, len);
       count += len;
       if (count == totalLen)
         break;
     }
+    if (offset + count > inode->size)
+      inode->size = offset + count;
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
     inode->mtime = inode->ctime = ts;
@@ -1036,8 +1181,8 @@ class FileSystem {
     } else off = fdIn->seekOff;
     if (count == 0)
       return 0;
-    if (count > std::numeric_limits<int>::max())
-      count = std::numeric_limits<int>::max();
+    if (count > 0x7ffff000)
+      count = 0x7ffff000;
     struct INode* inodeIn = fdIn->inode;
     struct INode* inodeOut = fdOut->inode;
     if (fdOut->seekOff > std::numeric_limits<off_t>::max() - count)
@@ -1050,15 +1195,66 @@ class FileSystem {
     if (!offset)
       fdIn->seekOff += count;
     else *offset += count;
-    if (fdOut->seekOff + count > inodeOut->size) {
-      if (!TryRealloc(&inodeOut->data, fdOut->seekOff + count + 1))
-        return -EIO;
-      if (inodeOut->size < fdOut->seekOff)
-        memset(inodeOut->data + inodeOut->size, '\0', fdOut->seekOff - inodeOut->size);
-      inodeOut->size = fdOut->seekOff + count;
+    for (size_t i = 0, amountRead = 0; amountRead != count;) {
+      struct INode::DataRange* range = inodeIn->dataRanges[i];
+      if (fdOut->seekOff > range->offset) {
+        ++i;
+        continue;
+      }
+      if (amountRead + fdOut->seekOff < range->offset) {
+        struct INode::DataRange* rangeOut = inodeOut->GetRangeAt(fdOut->seekOff + amountRead);
+        if (!rangeOut) {
+          struct INode::HoleRange holeRange = inodeOut->GetHoleAt(fdOut->seekOff + amountRead);
+          size_t amount;
+          if (holeRange.size == 0)
+            amount = range->offset - (fdOut->seekOff + amountRead);
+          else {
+            amount = holeRange.size;
+            if (amount > range->offset - (fdOut->seekOff + amountRead))
+              amount = range->offset - (fdOut->seekOff + amountRead);
+          }
+          if (amount > count - amountRead)
+            amount = count - amountRead;
+          amountRead += amount;
+          continue;
+        }
+        size_t amount = rangeOut->size;
+        if (amount > count - amountRead)
+          amount = count - amountRead;
+        memset(rangeOut->data + (fdOut->seekOff + amountRead) - rangeOut->offset, '\0', amount);
+        amountRead += amount;
+      } else {
+        size_t amount = range->size;
+        if (amount > count - amountRead)
+          amount = count - amountRead;
+        struct INode::DataRange* rangeOut = inodeOut->AllocData(fdOut->seekOff + amountRead, amount);
+        if (!rangeOut)
+          return -EIO;
+        memcpy(rangeOut->data + (fdOut->seekOff + amountRead) - rangeOut->offset, range->data + (fdOut->seekOff + amountRead) - range->offset, amount);
+        amountRead += amount;
+        if (++i == inodeIn->dataRangeCount && amountRead != count) {
+          struct INode::DataRange* rangeOut = inodeOut->GetRangeAt(fdOut->seekOff + amountRead);
+          if (!rangeOut) {
+            struct INode::HoleRange holeRange = inodeOut->GetHoleAt(fdOut->seekOff + amountRead);
+            if (holeRange.size == 0) {
+              inodeOut->size = fdOut->seekOff + count;
+              break;
+            }
+            size_t amount = holeRange.size;
+            if (amount > count - amountRead)
+              amount = count - amountRead;
+            amountRead += amount;
+            continue;
+          }
+          size_t amount = rangeOut->size;
+          if (amount > count - amountRead)
+            amount = count - amountRead;
+          memset(rangeOut->data + (fdOut->seekOff + amountRead) - rangeOut->offset, '\0', amount);
+          amountRead += amount;
+          break;
+        }
+      }
     }
-    memcpy(inodeOut->data + fdOut->seekOff, inodeIn->data + off, count);
-    fdOut->seekOff += count;
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
     if (!(fdIn->flags & O_NOATIME))
@@ -1078,11 +1274,7 @@ class FileSystem {
       return -EINVAL;
     if (fd->flags & O_APPEND)
       return -EPERM;
-    if (!TryRealloc(&inode->data, length + 1))
-      return -EIO;
-    if (inode->size < length)
-      memset(inode->data + inode->size, '\0', length - inode->size);
-    inode->size = length;
+    inode->TruncateData(length);
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
     inode->ctime = inode->mtime = ts;
@@ -1102,11 +1294,7 @@ class FileSystem {
       return -EINVAL;
     if (!(inode->mode & 0222))
       return -EACCES;
-    if (!TryRealloc(&inode->data, length + 1))
-      return -EIO;
-    if (inode->size < length)
-      memset(inode->data + inode->size, '\0', length - inode->size);
-    inode->size = length;
+    inode->TruncateData(length);
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
     inode->ctime = inode->mtime = ts;
@@ -1315,11 +1503,16 @@ class FileSystem {
    *     mtime
    *     atime
    *     target (if symlink)
+   *     data (if symlink)
    *     dentCount (if directory)
    *     dents (if directory):
    *       inode index
    *       name
-   *     data (if not directory)
+   *     dataRangeCount (if regular)
+   *     dataRanges (if regular):
+   *       offset
+   *       size
+   *       data
    */
   bool DumpToFile(const char* filename) {
     std::lock_guard<std::mutex> lock(mtx);
@@ -1352,6 +1545,11 @@ class FileSystem {
           close(fd);
           return false;
         }
+        off_t dataLen = inode->size;
+        if (write(fd, inode->dataRanges[0]->data, dataLen) != dataLen) {
+          close(fd);
+          return false;
+        }
       }
       if (S_ISDIR(inode->mode)) {
         if (write(fd, &inode->dentCount, sizeof(off_t)) != sizeof(off_t)) {
@@ -1371,17 +1569,32 @@ class FileSystem {
           }
         }
       } else if (inode->size != 0) {
-        ssize_t written = 0;
-        while (written != inode->size) {
-          ssize_t amount = inode->size - written;
-          if (amount > 0x7ffff000)
-            amount = 0x7ffff000;
-          ssize_t count = write(fd, inode->data + written, amount);
-          if (count < 0) {
+        if (write(fd, &inode->dataRangeCount, sizeof(off_t)) != sizeof(off_t)) {
+          close(fd);
+          return false;
+        }
+        for (off_t j = 0; j != inode->dataRangeCount; ++j) {
+          struct INode::DataRange* range = inode->dataRanges[j];
+          if (write(fd, &range->offset, sizeof(off_t)) != sizeof(off_t)) {
             close(fd);
             return false;
           }
-          written += count;
+          if (write(fd, &range->size, sizeof(off_t)) != sizeof(off_t)) {
+            close(fd);
+            return false;
+          }
+          ssize_t written = 0;
+          while (written != range->size) {
+            size_t amount = range->size - written;
+            if (amount > 0x7ffff000)
+              amount = 0x7ffff000;
+            ssize_t count = write(fd, range->data + written, amount);
+            if (count < 0) {
+              close(fd);
+              return false;
+            }
+            written += count;
+          }
         }
       }
     }
@@ -1462,6 +1675,34 @@ class FileSystem {
           free(inode);
           return NULL;
         }
+        char data[PATH_MAX];
+        size_t dataLen = 0;
+        do {
+          if (read(fd, &data[dataLen], 1) != 1) {
+            close(fd);
+            free((void*)inode->target);
+            for (ino_t j = 0; j != i; ++j) {
+              inodes[j]->~INode();
+              free(inodes[j]);
+            }
+            free(inodes);
+            free(inode);
+            return NULL;
+          }
+        } while (data[dataLen++] != '\0');
+        if (!inode->AllocRanges() ||
+            !inode->AllocData(0, dataLen)) {
+          close(fd);
+          free((void*)inode->target);
+          for (ino_t j = 0; j != i; ++j) {
+            inodes[j]->~INode();
+            free(inodes[j]);
+          }
+          free(inodes);
+          free(inode);
+          return NULL;
+        }
+        memcpy(inode->dataRanges[0]->data, data, dataLen);
       } else inode->target = NULL;
       if (S_ISDIR(inode->mode)) {
         if (read(fd, &inode->dentCount, sizeof(off_t)) != sizeof(off_t)) {
@@ -1532,11 +1773,11 @@ class FileSystem {
             return NULL;
           }
         }
-        inode->data = NULL;
+        inode->dataRangeCount = 0;
+        inode->dataRanges = NULL;
       } else {
         inode->dents = NULL;
-        inode->data = (char*)malloc(inode->size + 1);
-        if (!inode->data) {
+        if (!inode->AllocRanges()) {
           close(fd);
           if (inode->target)
             free((void*)inode->target);
@@ -1549,17 +1790,23 @@ class FileSystem {
           return NULL;
         }
         if (inode->size != 0) {
-          ssize_t nread = 0;
-          while (nread != inode->size) {
-            ssize_t amount = inode->size - nread;
-            if (amount > 0x7ffff000)
-              amount = 0x7ffff000;
-            ssize_t count = read(fd, inode->data + nread, amount);
-            if (count < 0) {
+          off_t dataRangeCount;
+          if (read(fd, &dataRangeCount, sizeof(off_t)) != sizeof(off_t)) {
+            close(fd);
+            for (ino_t j = 0; j != i; ++j) {
+              inodes[j]->~INode();
+              free(inodes[j]);
+            }
+            free(inodes);
+            free(inode);
+            return NULL;
+          }
+          for (off_t j = 0; j != dataRangeCount; ++j) {
+            off_t offset;
+            off_t size;
+            if (read(fd, &offset, sizeof(off_t)) != sizeof(off_t) ||
+                read(fd, &size, sizeof(off_t)) != sizeof(off_t)) {
               close(fd);
-              free(inode->data);
-              if (inode->target)
-                free((void*)inode->target);
               for (ino_t j = 0; j != i; ++j) {
                 inodes[j]->~INode();
                 free(inodes[j]);
@@ -1568,9 +1815,36 @@ class FileSystem {
               free(inode);
               return NULL;
             }
-            nread += count;
+            struct INode::DataRange* range = inode->AllocData(offset, size);
+            if (!range) {
+              close(fd);
+              for (ino_t j = 0; j != i; ++j) {
+                inodes[j]->~INode();
+                free(inodes[j]);
+              }
+              free(inodes);
+              free(inode);
+              return NULL;
+            }
+            ssize_t nread = 0;
+            while (nread != size) {
+              size_t amount = size - nread;
+              if (amount > 0x7ffff000)
+                amount = 0x7ffff000;
+              ssize_t count = read(fd, range->data + nread, amount);
+              if (count < 0) {
+                close(fd);
+                for (ino_t j = 0; j != i; ++j) {
+                  inodes[j]->~INode();
+                  free(inodes[j]);
+                }
+                free(inodes);
+                free(inode);
+                return NULL;
+              }
+              nread += count;
+            }
           }
-          inode->data[inode->size] = '\0';
         }
       }
       inodes[i] = inode;
@@ -1641,8 +1915,11 @@ class FileSystem {
       ctime = mtime = atime = btime;
     }
     ~INode() {
-      if (data)
-        delete data;
+      if (dataRanges) {
+        for (off_t i = 0; i != dataRangeCount; ++i)
+          delete dataRanges[i];
+        delete dataRanges;
+      }
       if (target)
         delete target;
       if (dents) {
@@ -1680,7 +1957,171 @@ class FileSystem {
           break;
         }
     }
-    char* data = NULL;
+    struct DataRange {
+      ~DataRange() {
+        if (data)
+          delete data;
+      }
+      off_t offset = 0;
+      off_t size = 0;
+      char* data = NULL;
+    };
+    struct DataRange** dataRanges = NULL;
+    off_t dataRangeCount = 0;
+
+    bool AllocRanges() {
+      struct DataRange** ranges = new DataRange*[1];
+      if (!ranges)
+        return false;
+      dataRanges = ranges;
+      dataRangeCount = 0;
+      return true;
+    }
+
+    struct DataRange* GetRangeAt(off_t offset, off_t* index = NULL) {
+      for (off_t i = 0; i != dataRangeCount; ++i) {
+        struct DataRange* range = dataRanges[i];
+        if (offset >= range->offset &&
+            offset < range->offset + range->size) {
+          if (index)
+            *index = i;
+          return range;
+        }
+      }
+      return NULL;
+    }
+
+    struct HoleRange {
+      off_t offset = 0;
+      off_t size = -1;
+    };
+
+    struct HoleRange GetHoleAt(off_t offset) {
+      struct HoleRange hole;
+      if (dataRangeCount == 0) {
+        hole.offset = 0;
+        hole.size = size;
+        return hole;
+      }
+      if (offset >= dataRanges[dataRangeCount - 1]->offset + dataRanges[dataRangeCount - 1]->size) {
+        struct DataRange* range = dataRanges[dataRangeCount - 1];
+        hole.offset = range->offset + range->size;
+        hole.size = size - hole.offset;
+        return hole;
+      }
+      if (offset < dataRanges[0]->offset) {
+        hole.offset = 0;
+        hole.size = dataRanges[0]->offset;
+        return hole;
+      }
+      for (off_t i = 0; i != dataRangeCount - 1; ++i) {
+        struct DataRange* range = dataRanges[i];
+        if (offset >= range->offset + range->size &&
+            offset < dataRanges[i + 1]->offset) {
+          hole.offset = range->offset + range->size;
+          hole.size = dataRanges[i + 1]->offset - hole.offset;
+          return hole;
+        }
+      }
+      return hole;
+    }
+
+    struct DataRange* AllocData(off_t offset, off_t length) {
+      off_t rangeIdx = 0;
+      struct DataRange* range = GetRangeAt(offset, &rangeIdx);
+      if (!range) {
+        struct HoleRange hole = GetHoleAt(offset);
+        if (!TryAlloc(&range) ||
+            !TryAlloc(&range->data))
+          return NULL;
+        if (!TryRealloc(&dataRanges, dataRangeCount + 1)) {
+          delete range;
+          return NULL;
+        }
+        range->offset = offset;
+        range->size = length;
+        off_t i = 0;
+        for (; i != dataRangeCount; ++i) {
+          struct DataRange* range2 = dataRanges[i];
+          if (range2->offset > offset) {
+            rangeIdx = i;
+            memmove(dataRanges + i + 1, dataRanges + i, sizeof(struct DataRange*) * (dataRangeCount - i));
+            break;
+          }
+        }
+        dataRanges[i] = range;
+        ++dataRangeCount;
+      }
+      off_t newRangeLength = range->size;
+      if (offset + length > range->offset + range->size)
+        newRangeLength += (offset + length) - (range->offset + range->size);
+      for (off_t i = rangeIdx + 1; i < dataRangeCount; ++i) {
+        struct DataRange* range2 = dataRanges[i];
+        if (offset + newRangeLength >= range2->offset &&
+            offset + newRangeLength < range2->offset + range2->size) {
+          newRangeLength = (range2->offset + range2->size) - range->offset;
+          break;
+        }
+      }
+      if (!TryRealloc(&range->data, newRangeLength))
+        return NULL;
+      range->size = newRangeLength;
+      if (offset + length > size)
+        size = offset + length;
+      for (off_t i = rangeIdx + 1; i < dataRangeCount; ++i) {
+        struct DataRange* range2 = dataRanges[i];
+        if (offset + length >= range2->offset &&
+            offset + length < range2->offset + range2->size)
+          memcpy(range->data + (range2->offset - range->offset), range2->data, range2->size);
+      }
+      for (off_t i = rangeIdx + 1; i < dataRangeCount;) {
+        struct DataRange* range2 = dataRanges[i];
+        if (offset + length >= range2->offset &&
+            offset + length < range2->offset + range2->size) {
+          delete range2;
+          if (i != dataRangeCount - 1)
+            memmove(dataRanges + i, dataRanges + i + 1, sizeof(struct DataRange*) * (dataRangeCount - i));
+          dataRanges = reinterpret_cast<struct DataRange**>(
+            realloc(dataRanges, sizeof(struct DataRange*) * --dataRangeCount)
+          );
+        } else ++i;
+      }
+      return range;
+    }
+    void TruncateData(off_t length) {
+      size = length;
+      if (length == 0) {
+        for (off_t i = 0; i != dataRangeCount; ++i)
+          delete dataRanges[i];
+        dataRanges = reinterpret_cast<struct DataRange**>(
+          realloc(dataRanges, sizeof(struct DataRange*))
+        );
+        dataRangeCount = 0;
+        return;
+      }
+      if (length > size)
+        return;
+      for (off_t i = 0; i != dataRangeCount; ++i) {
+        struct DataRange* range = dataRanges[i];
+        if (length >= range->offset &&
+            length < range->offset + range->size) {
+          range->data = reinterpret_cast<char*>(
+            realloc(range->data, length - range->offset)
+          );
+          range->size = length - range->offset;
+          break;
+        } else if (length < range->offset) {
+          delete range;
+          if (i != dataRangeCount - 1)
+            memmove(dataRanges + i, dataRanges + i + 1, sizeof(struct DataRange*) * (dataRangeCount - i));
+          dataRanges = reinterpret_cast<struct DataRange**>(
+            realloc(dataRanges, sizeof(struct DataRange*) * --dataRangeCount)
+          );
+          break;
+        }
+      }
+      return;
+    }
     off_t size = 0;
     nlink_t nlink = 0;
     mode_t mode;

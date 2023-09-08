@@ -1504,6 +1504,8 @@ void DefineConstants(Isolate* isolate, Local<FunctionTemplate> func) {
   DefineFlag(SEEK_SET);
   DefineFlag(SEEK_CUR);
   DefineFlag(SEEK_END);
+  DefineFlag(SEEK_DATA);
+  DefineFlag(SEEK_HOLE);
   DefineFlag(STATX_ALL);
   DefineFlag(STATX_ATIME);
   DefineFlag(STATX_BASIC_STATS);
