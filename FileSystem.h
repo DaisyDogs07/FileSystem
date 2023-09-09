@@ -2461,7 +2461,11 @@ class FileSystem {
   }
   static void FillStatx(struct INode* inode, struct statx* buf, int mask) {
     memset(buf, '\0', sizeof(struct statx));
-    buf->stx_mask = mask & STATX_ALL;
+    buf->stx_mask = mask & (
+      STATX_INO   | STATX_TYPE  | STATX_MODE  |
+      STATX_NLINK | STATX_SIZE  | STATX_ATIME |
+      STATX_MTIME | STATX_CTIME | STATX_BTIME
+    );
     if (mask & STATX_INO)
       buf->stx_ino = inode->id;
     if (mask & STATX_TYPE)
