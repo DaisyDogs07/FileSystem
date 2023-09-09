@@ -88,8 +88,7 @@ class FileSystem {
     if (flags & ~(O_RDONLY | O_WRONLY | O_RDWR | O_CREAT | O_EXCL | O_APPEND | O_TRUNC | O_TMPFILE | O_DIRECTORY | O_NOFOLLOW | O_NOATIME))
       return -EINVAL;
     if (flags & O_TMPFILE) {
-      if (flags & O_CREAT || !(flags & (O_WRONLY | O_RDWR)) ||
-          mode == 0)
+      if (flags & O_CREAT || !(flags & (O_WRONLY | O_RDWR)) || mode == 0)
         return -EINVAL;
       struct INode* inode;
       if (!TryAlloc(&inode))
