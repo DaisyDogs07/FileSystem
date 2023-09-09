@@ -546,7 +546,7 @@ class FileSystem {
       const char* last = GetLast(path);
       if (!last)
         return -ENOMEM;
-      bool isDot = strcmp(last, ".") == 0;  
+      bool isDot = strcmp(last, ".") == 0;
       delete last;
       if (isDot)
         return -EINVAL;
