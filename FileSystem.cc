@@ -1466,6 +1466,7 @@ void DefineConstants(Isolate* isolate, Local<FunctionTemplate> func) {
       Integer::New(isolate, v) \
     ); \
   } while (0)
+  DefineFlag(AT_EMPTY_PATH);
   DefineFlag(AT_FDCWD);
   DefineFlag(AT_REMOVEDIR);
   DefineFlag(AT_SYMLINK_FOLLOW);
@@ -1480,6 +1481,7 @@ void DefineConstants(Isolate* isolate, Local<FunctionTemplate> func) {
   DefineFlag(O_NOATIME);
   DefineFlag(O_NOFOLLOW);
   DefineFlag(O_TRUNC);
+  DefineFlag(O_TMPFILE);
   DefineFlag(O_RDONLY);
   DefineFlag(O_WRONLY);
   DefineFlag(O_RDWR);
@@ -1571,7 +1573,7 @@ void DefineTemplateFunctions(Isolate* isolate, Local<ObjectTemplate> tmpl) {
   DefineFunction(isolate, tmpl, "readlinkat",  FileSystemReadLinkAt, 2);
   DefineFunction(isolate, tmpl, "readlink",    FileSystemReadLink,   1);
   DefineFunction(isolate, tmpl, "getdents",    FileSystemGetDents,   1);
-  DefineFunction(isolate, tmpl, "linkAt",      FileSystemLinkAt,     5);
+  DefineFunction(isolate, tmpl, "linkat",      FileSystemLinkAt,     5);
   DefineFunction(isolate, tmpl, "link",        FileSystemLink,       2);
   DefineFunction(isolate, tmpl, "unlinkat",    FileSystemUnlinkAt,   3);
   DefineFunction(isolate, tmpl, "unlink",      FileSystemUnlink,     1);

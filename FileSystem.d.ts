@@ -32,6 +32,7 @@ declare module "FileSystem" {
   }
 
   class FileSystem {
+    static AT_EMPTY_PATH: number;
     static AT_FDCWD: number;
     static AT_REMOVEDIR: number;
     static AT_SYMLINK_FOLLOW: number;
@@ -46,6 +47,7 @@ declare module "FileSystem" {
     static O_NOATIME: number;
     static O_NOFOLLOW: number;
     static O_TRUNC: number;
+    static O_TMPFILE: number;
     static O_RDONLY: number;
     static O_WRONLY: number;
     static O_RDWR: number;

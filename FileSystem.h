@@ -46,19 +46,23 @@ class FileSystem {
 
   int FAccessAt2(int dirFd, const char* path, int mode, int flags) {
     std::lock_guard<std::mutex> lock(mtx);
-    if (mode & ~S_IRWXO || flags & ~AT_SYMLINK_NOFOLLOW)
+    if (mode & ~S_IRWXO || flags & ~(AT_SYMLINK_NOFOLLOW | AT_EMPTY_PATH) ||
+        (flags & AT_EMPTY_PATH && path[0] != '\0'))
       return -EINVAL;
     struct INode* origCwd = cwd->inode;
     if (dirFd != AT_FDCWD) {
       struct Fd* fd;
       if (!(fd = GetFd(dirFd)))
         return -EBADF;
-      if (!S_ISDIR(fd->inode->mode))
+      if (!S_ISDIR(fd->inode->mode) && !(flags & AT_EMPTY_PATH))
         return -ENOTDIR;
       cwd->inode = fd->inode;
     }
     struct INode* inode;
-    int res = GetINode(path, &inode, NULL, !(flags & AT_SYMLINK_NOFOLLOW));
+    int res = 0;
+    if (flags & AT_EMPTY_PATH)
+      inode = cwd->inode;
+    else res = GetINode(path, &inode, NULL, !(flags & AT_SYMLINK_NOFOLLOW));
     cwd->inode = origCwd;
     if (res != 0)
       return res;
@@ -81,9 +85,23 @@ class FileSystem {
   }
   int OpenAt(int dirFd, const char* path, int flags, mode_t mode) {
     std::lock_guard<std::mutex> lock(mtx);
-    if (flags & ~(O_RDONLY | O_WRONLY | O_RDWR | O_CREAT | O_EXCL | O_APPEND | O_TRUNC | O_DIRECTORY | O_NOFOLLOW | O_NOATIME))
+    if (flags & ~(O_RDONLY | O_WRONLY | O_RDWR | O_CREAT | O_EXCL | O_APPEND | O_TRUNC | O_TMPFILE | O_DIRECTORY | O_NOFOLLOW | O_NOATIME))
       return -EINVAL;
-    if (flags & O_CREAT) {
+    if (flags & O_TMPFILE) {
+      if (flags & O_CREAT || !(flags & (O_WRONLY | O_RDWR)) ||
+          mode == 0)
+        return -EINVAL;
+      struct INode* inode;
+      if (!TryAlloc(&inode))
+        return -EIO;
+      if (!inode->AllocRanges() ||
+          !PushINode(inode)) {
+        delete inode;
+        return -EIO;
+      }
+      inode->mode = (mode & ~S_IFMT) | S_IFREG;
+      return PushFd(inode, flags);
+    } else if (flags & O_CREAT) {
       if (mode & ~0777)
         return -EINVAL;
       mode |= S_IFREG;
@@ -431,15 +449,19 @@ class FileSystem {
   }
   int LinkAt(int oldDirFd, const char* oldPath, int newDirFd, const char* newPath, int flags) {
     std::lock_guard<std::mutex> lock(mtx);
-    if (flags & ~AT_SYMLINK_FOLLOW)
+    if (flags & ~(AT_SYMLINK_FOLLOW | AT_EMPTY_PATH) ||
+        (flags & AT_EMPTY_PATH && oldPath[0] != '\0'))
       return -EINVAL;
     struct Fd* oldFd;
     struct Fd* newFd;
-    if (oldDirFd != AT_FDCWD) {
+    if (oldDirFd != AT_FDCWD || flags & AT_EMPTY_PATH) {
       if (!(oldFd = GetFd(oldDirFd)))
         return -EBADF;
-      if (!S_ISDIR(oldFd->inode->mode))
-        return -ENOTDIR;
+      if (!S_ISDIR(oldFd->inode->mode)) {
+        if (!(flags & AT_EMPTY_PATH))
+          return -ENOTDIR;
+      } else if (flags & AT_EMPTY_PATH)
+        return -EPERM;
     }
     if (newDirFd != AT_FDCWD) {
       if (!(newFd = GetFd(newDirFd)))
@@ -451,7 +473,10 @@ class FileSystem {
     if (oldDirFd != AT_FDCWD)
       cwd->inode = oldFd->inode;
     struct INode* oldInode;
-    int res = GetINode(oldPath, &oldInode, NULL, flags & AT_SYMLINK_FOLLOW);
+    int res = 0;
+    if (flags & AT_EMPTY_PATH)
+      oldInode = cwd->inode;
+    else res = GetINode(oldPath, &oldInode, NULL, flags & AT_SYMLINK_FOLLOW);
     cwd->inode = origCwd;
     if (res != 0)
       return res;
@@ -1395,7 +1420,8 @@ class FileSystem {
   }
   int Statx(int dirFd, const char* path, int flags, int mask, struct statx* buf) {
     std::lock_guard<std::mutex> lock(mtx);
-    if (flags & ~AT_SYMLINK_NOFOLLOW || mask & ~STATX_ALL)
+    if (flags & ~(AT_SYMLINK_NOFOLLOW | AT_EMPTY_PATH) || mask & ~STATX_ALL ||
+        (flags & AT_EMPTY_PATH && path[0] != '\0'))
       return -EINVAL;
     struct INode* origCwd = cwd->inode;
     if (dirFd != AT_FDCWD) {
@@ -1405,7 +1431,10 @@ class FileSystem {
       cwd->inode = fd->inode;
     }
     struct INode* inode;
-    int res = GetINode(path, &inode, NULL, !(flags & AT_SYMLINK_NOFOLLOW));
+    int res = 0;
+    if (flags & AT_EMPTY_PATH)
+      inode = cwd->inode;
+    else res = GetINode(path, &inode, NULL, !(flags & AT_SYMLINK_NOFOLLOW));
     cwd->inode = origCwd;
     if (res != 0)
       return res;
@@ -1519,13 +1548,20 @@ class FileSystem {
     int fd = creat(filename, 0644);
     if (fd < 0)
       return false;
+    ino_t inodeCnt = inodeCount;
+    for (ino_t i = 0; i != inodeCount; ++i) {
+      if (inodes[i]->nlink == 0)
+        --inodeCnt;
+    }
     if (write(fd, "\x7FVFS", 4) != 4 ||
-        write(fd, &inodeCount, sizeof(ino_t)) != sizeof(ino_t)) {
+        write(fd, &inodeCnt, sizeof(ino_t)) != sizeof(ino_t)) {
       close(fd);
       return false;
     }
     for (ino_t i = 0; i != inodeCount; ++i) {
       struct INode* inode = inodes[i];
+      if (inode->nlink == 0)
+        continue;
       struct DumpedINode dumped;
       dumped.id = inode->id;
       dumped.size = inode->size;
@@ -2220,6 +2256,9 @@ class FileSystem {
   int RemoveFd(unsigned int fd) {
     for (int i = 0; i != fdCount; ++i)
       if (fds[i]->fd == fd) {
+        if (fds[i]->flags & O_TMPFILE &&
+            fds[i]->inode->nlink == 0)
+          delete fds[i]->inode;
         delete fds[i];
         if (i != fdCount - 1)
           memmove(fds + i, fds + i + 1, sizeof(struct Fd*) * (fdCount - i));
