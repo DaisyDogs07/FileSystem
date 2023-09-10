@@ -99,9 +99,12 @@ class FileSystem {
         return -EIO;
       }
       inode->mode = (mode & ~S_IFMT) | S_IFREG;
-      return PushFd(inode, flags);
+      int res = PushFd(inode, flags);
+      if (res < 0)
+        RemoveINode(inode);
+      return res;
     } else if (flags & O_CREAT) {
-      if (mode & ~0777)
+      if (flags & O_DIRECTORY || mode & ~0777)
         return -EINVAL;
       mode |= S_IFREG;
     } else if (mode != 0)
@@ -165,7 +168,13 @@ class FileSystem {
         x->mode = mode;
         x->nlink = 1;
         parent->ctime = parent->mtime = x->btime;
-        inode = x;
+        int res = PushFd(x, flags);
+        if (res < 0) {
+          parent->RemoveDent(name);
+          RemoveINode(x);
+          delete name;
+        }
+        return res;
       } else return res;
     }
     if (S_ISDIR(inode->mode)) {
