@@ -662,18 +662,18 @@ class FileSystem {
         delete newName;
         return -ENOSPC;
       }
-      oldParent->RemoveDent(oldName);
-      delete oldName;
-      if (S_ISDIR(oldInode->mode))
-        --oldParent->nlink;
-      if (newInode)
-        newParent->RemoveDent(newName);
       if (!newParent->PushDent(newName, oldInode)) {
         delete newName;
         return -EIO;
       }
-      if (S_ISDIR(oldInode->mode))
+      oldParent->RemoveDent(oldName);
+      delete oldName;
+      if (newInode)
+        newParent->RemoveDent(newName);
+      if (S_ISDIR(oldInode->mode)) {
+        --oldParent->nlink;
         ++newParent->nlink;
+      }
     }
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
