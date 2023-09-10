@@ -2258,7 +2258,7 @@ class FileSystem {
     for (int i = 0; i != fdCount; ++i)
       if (fds[i]->fd == fd) {
         if (fds[i]->inode->nlink == 0)
-          delete fds[i]->inode;
+          RemoveINode(fds[i]->inode);
         delete fds[i];
         if (i != fdCount - 1)
           memmove(fds + i, fds + i + 1, sizeof(struct Fd*) * (fdCount - i));
