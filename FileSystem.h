@@ -359,8 +359,7 @@ class FileSystem {
       return -EIO;
     }
     struct INode::DataRange* range = x->AllocData(0, oldPathLen);
-    if (!range ||
-        !PushINode(x)) {
+    if (!range || !PushINode(x)) {
       delete name;
       delete x;
       return -EIO;
