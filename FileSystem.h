@@ -2126,6 +2126,8 @@ class FileSystem {
     void TruncateData(off_t length) {
       size = length;
       if (length == 0) {
+        if (dataRangeCount == 0)
+          return;
         for (off_t i = 0; i != dataRangeCount; ++i)
           delete dataRanges[i];
         dataRanges = reinterpret_cast<struct DataRange**>(
