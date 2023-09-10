@@ -2124,8 +2124,10 @@ class FileSystem {
       return range;
     }
     void TruncateData(off_t length) {
+      if (length == size)
+        return;
       size = length;
-      if (length >= size)
+      if (length > size)
         return;
       if (length == 0) {
         for (off_t i = 0; i != dataRangeCount; ++i)
