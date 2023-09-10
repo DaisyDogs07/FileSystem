@@ -87,7 +87,7 @@ class FileSystem {
     std::lock_guard<std::mutex> lock(mtx);
     if (flags & ~(O_RDONLY | O_WRONLY | O_RDWR | O_CREAT | O_EXCL | O_APPEND | O_TRUNC | O_TMPFILE | O_DIRECTORY | O_NOFOLLOW | O_NOATIME))
       return -EINVAL;
-    if (flags & O_TMPFILE) {
+    if ((flags & O_TMPFILE) == O_TMPFILE) {
       if (flags & O_CREAT || !(flags & (O_WRONLY | O_RDWR)) || mode == 0)
         return -EINVAL;
       struct INode* inode;
@@ -2255,8 +2255,7 @@ class FileSystem {
   int RemoveFd(unsigned int fd) {
     for (int i = 0; i != fdCount; ++i)
       if (fds[i]->fd == fd) {
-        if (fds[i]->flags & O_TMPFILE &&
-            fds[i]->inode->nlink == 0)
+        if (fds[i]->inode->nlink == 0)
           delete fds[i]->inode;
         delete fds[i];
         if (i != fdCount - 1)
