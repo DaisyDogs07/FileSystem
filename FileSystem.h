@@ -1810,8 +1810,8 @@ class FileSystem {
         }
         inode->dataRangeCount = 0;
         inode->dataRanges = NULL;
-      } else if (S_ISREG(inode->mode)) {
-        inode->dents = NULL;
+      } else inode->dents = NULL;
+      if (S_ISREG(inode->mode)) {
         if (!inode->AllocRanges()) {
           close(fd);
           if (inode->target)
