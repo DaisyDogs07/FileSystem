@@ -1264,7 +1264,7 @@ class FileSystem {
           return -EIO;
         memcpy(rangeOut->data + (fdOut->seekOff + amountRead) - rangeOut->offset, range->data + (fdOut->seekOff + amountRead) - range->offset, amount);
         amountRead += amount;
-        if (++i == inodeIn->dataRangeCount && amountRead != count) {
+        if (i == inodeIn->dataRangeCount - 1 && amountRead != count) {
           struct INode::DataRange* rangeOut = inodeOut->GetRangeAt(fdOut->seekOff + amountRead);
           if (!rangeOut) {
             struct INode::HoleRange holeRange = inodeOut->GetHoleAt(fdOut->seekOff + amountRead);
@@ -1284,7 +1284,7 @@ class FileSystem {
           memset(rangeOut->data + (fdOut->seekOff + amountRead) - rangeOut->offset, '\0', amount);
           amountRead += amount;
           break;
-        }
+        } else ++i;
       }
     }
     struct timespec ts;
