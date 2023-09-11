@@ -2211,7 +2211,7 @@ class FileSystem {
     if (!TryRealloc(&inodes, sizeof(struct INode*) * (inodeCount + 1)))
       return false;
     if (id != inodeCount) {
-      memmove(&inodes[id + 1], &inodes[id], sizeof(struct INode*) * (inodeCount - id));
+      memmove(inodes + id + 1, inodes + id, sizeof(struct INode*) * (inodeCount - id));
       for (ino_t i = id + 1; i != inodeCount + 1; ++i)
         ++inodes[i]->ndx;
     }
