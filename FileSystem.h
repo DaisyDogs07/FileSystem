@@ -2146,7 +2146,7 @@ class FileSystem {
         dataRangeCount = 0;
         return;
       }
-      for (off_t i = 0; i != dataRangeCount; ++i) {
+      for (off_t i = dataRangeCount - 1; i >= 0; --i) {
         struct DataRange* range = dataRanges[i];
         if (length > range->offset &&
             length < range->offset + range->size) {
@@ -2157,15 +2157,11 @@ class FileSystem {
           break;
         } else if (length <= range->offset) {
           delete range;
-          if (i != dataRangeCount - 1)
-            memmove(dataRanges + i, dataRanges + i + 1, sizeof(struct DataRange*) * (dataRangeCount - i));
           dataRanges = reinterpret_cast<struct DataRange**>(
             realloc(dataRanges, sizeof(struct DataRange*) * --dataRangeCount)
           );
-          break;
         }
       }
-      return;
     }
     off_t size = 0;
     nlink_t nlink = 0;
