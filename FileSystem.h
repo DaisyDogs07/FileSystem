@@ -22,7 +22,7 @@ class FileSystem {
     struct INode* root;
     if (!TryAlloc(&root) ||
         !TryAlloc(&root->dents, 2))
-      std::abort();
+      abort();
     root->mode = 0755 | S_IFDIR;
     root->dents[0] = { ".", root };
     root->dents[1] = { "..", root };
@@ -30,7 +30,7 @@ class FileSystem {
     if (!PushINode(root) ||
         !TryAlloc(&cwd) ||
         !(cwd->path = strdup("/")))
-      std::abort();
+      abort();
     cwd->inode = root;
     cwd->parent = root;
   }
@@ -1227,65 +1227,44 @@ class FileSystem {
     if (!offset)
       fdIn->seekOff += count;
     else *offset += count;
-    for (size_t i = 0, amountRead = 0; amountRead != count;) {
-      struct INode::DataRange* range = inodeIn->dataRanges[i];
-      if (fdOut->seekOff > range->offset) {
-        ++i;
-        continue;
-      }
-      if (amountRead + fdOut->seekOff < range->offset) {
+    if (fdOut->seekOff + count > inodeOut->size)
+      inodeOut->TruncateData(fdOut->seekOff + count);
+    for (size_t amountRead = 0; amountRead != count;) {
+      struct INode::DataRange* rangeIn = inodeIn->GetRangeAt(off + amountRead);
+      if (!rangeIn) {
         struct INode::DataRange* rangeOut = inodeOut->GetRangeAt(fdOut->seekOff + amountRead);
+        struct INode::HoleRange holeIn = inodeIn->GetHoleAt(off + amountRead);
         if (!rangeOut) {
-          struct INode::HoleRange holeRange = inodeOut->GetHoleAt(fdOut->seekOff + amountRead);
-          size_t amount;
-          if (holeRange.size == 0)
-            amount = range->offset - (fdOut->seekOff + amountRead);
-          else {
-            amount = holeRange.size;
-            if (amount > range->offset - (fdOut->seekOff + amountRead))
-              amount = range->offset - (fdOut->seekOff + amountRead);
-          }
+          struct INode::HoleRange holeOut = inodeOut->GetHoleAt(fdOut->seekOff + amountRead);
+          size_t amount = (holeOut.offset + holeOut.size) - (fdOut->seekOff + amountRead);
+          if (amount > (holeIn.offset + holeIn.size) - (off + amountRead))
+            amount = (holeIn.offset + holeIn.size) - (off + amountRead);
           if (amount > count - amountRead)
             amount = count - amountRead;
           amountRead += amount;
           continue;
         }
-        size_t amount = rangeOut->size;
+        size_t amount = (rangeOut->offset + rangeOut->size) - (fdOut->seekOff + amountRead);
+        if (amount > (holeIn.offset + holeIn.size) - (off + amountRead))
+          amount = (holeIn.offset + holeIn.size) - (off + amountRead);
         if (amount > count - amountRead)
           amount = count - amountRead;
         memset(rangeOut->data + (fdOut->seekOff + amountRead) - rangeOut->offset, '\0', amount);
         amountRead += amount;
-      } else {
-        size_t amount = range->size;
-        if (amount > count - amountRead)
-          amount = count - amountRead;
-        struct INode::DataRange* rangeOut = inodeOut->AllocData(fdOut->seekOff + amountRead, amount);
-        if (!rangeOut)
-          return -EIO;
-        memcpy(rangeOut->data + (fdOut->seekOff + amountRead) - rangeOut->offset, range->data + (fdOut->seekOff + amountRead) - range->offset, amount);
-        amountRead += amount;
-        if (i == inodeIn->dataRangeCount - 1 && amountRead != count) {
-          struct INode::DataRange* rangeOut = inodeOut->GetRangeAt(fdOut->seekOff + amountRead);
-          if (!rangeOut) {
-            struct INode::HoleRange holeRange = inodeOut->GetHoleAt(fdOut->seekOff + amountRead);
-            if (holeRange.size == 0) {
-              inodeOut->size = fdOut->seekOff + count;
-              break;
-            }
-            size_t amount = holeRange.size;
-            if (amount > count - amountRead)
-              amount = count - amountRead;
-            amountRead += amount;
-            continue;
-          }
-          size_t amount = rangeOut->size;
-          if (amount > count - amountRead)
-            amount = count - amountRead;
-          memset(rangeOut->data + (fdOut->seekOff + amountRead) - rangeOut->offset, '\0', amount);
-          amountRead += amount;
-          break;
-        } else ++i;
+        continue;
       }
+      size_t amount = (rangeIn->offset + rangeIn->size) - (off + amountRead);
+      if (amount > count - amountRead)
+        amount = count - amountRead;
+      struct INode::DataRange* rangeOut = inodeOut->AllocData(fdOut->seekOff + amountRead, amount);
+      if (!rangeOut)
+        return -EIO;
+      memcpy(
+        rangeOut->data + (fdOut->seekOff + amountRead) - rangeOut->offset,
+        rangeIn->data + (off + amountRead) - rangeIn->offset,
+        amount
+      );
+      amountRead += amount;
     }
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
