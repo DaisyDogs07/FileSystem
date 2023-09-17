@@ -1920,7 +1920,6 @@ class FileSystem {
       off_t offset = 0;
       off_t size = -1;
     };
-
     struct HoleRange GetHoleAt(off_t offset) {
       struct HoleRange hole;
       if (dataRangeCount == 0) {
@@ -2053,15 +2052,20 @@ class FileSystem {
         if (offset + length >= range2->offset &&
             offset + length < range2->offset + range2->size) {
           memcpy(range->data + (range2->offset - range->offset), range2->data, range2->size);
-          delete range2;
-          if (i != dataRangeCount - 1)
-            memmove(dataRanges + i, dataRanges + i + 1, sizeof(struct DataRange*) * (dataRangeCount - i));
-          dataRanges = reinterpret_cast<struct DataRange**>(
-            realloc(dataRanges, sizeof(struct DataRange*) * --dataRangeCount)
-          );
+          RemoveRange(i);
         } else ++i;
       }
       return range;
+    }
+
+
+    void TruncateRanges(off_t count) {
+      for (off_t i = count; i != dataRangeCount; ++i)
+        delete dataRanges[i];
+      dataRanges = reinterpret_cast<struct DataRange**>(
+        realloc(dataRanges, sizeof(struct DataRange*) * count)
+      );
+      dataRangeCount = count;
     }
     void TruncateData(off_t length) {
       if (length >= size) {
@@ -2081,16 +2085,11 @@ class FileSystem {
         struct DataRange* range = dataRanges[i];
         if (length > range->offset &&
             length < range->offset + range->size) {
-          for (off_t j = i + 1; j != dataRangeCount; ++j)
-            delete dataRanges[j];
+          TruncateRanges(i + 1);
           range->data = reinterpret_cast<char*>(
             realloc(range->data, length - range->offset)
           );
           range->size = length - range->offset;
-          dataRanges = reinterpret_cast<struct DataRange**>(
-            realloc(dataRanges, sizeof(struct DataRange*) * (i + 1))
-          );
-          dataRangeCount = i + 1;
           break;
         }
       }
