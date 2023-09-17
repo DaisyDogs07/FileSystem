@@ -869,18 +869,19 @@ void FileSystemPWrite(const FunctionCallbackInfo<Value>& args) {
   Isolate* isolate = args.GetIsolate();
   Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
   THROWIFNOTFS(self, "FileSystem.prototype.pwrite");
-  assert(args.Length() == 2 || args.Length() == 3);
+  assert(args.Length() == 3 || args.Length() == 4);
   assert(IsNumeric(args[0]));
-  assert(IsNumeric(args[1]));
-  if (args.Length() == 3)
-    assert(IsNumeric(args[2]));
+  assert(IsStrOrBuf(args[1]));
+  assert(IsNumeric(args[2]);
+  if (args.Length() == 4)
+    assert(IsNumeric(args[3]));
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
   ssize_t res = fs->PWrite(
     Uint32Val(args[0]),
     StringVal(args[1]),
-    args.Length() == 3
+    args.Length() == 4
       ? Int64Val(args[3])
       : StringLen(args[1]),
     Uint64Val(args[2])
