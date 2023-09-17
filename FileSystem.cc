@@ -872,7 +872,7 @@ void FileSystemPWrite(const FunctionCallbackInfo<Value>& args) {
   assert(args.Length() == 3 || args.Length() == 4);
   assert(IsNumeric(args[0]));
   assert(IsStrOrBuf(args[1]));
-  assert(IsNumeric(args[2]);
+  assert(IsNumeric(args[2]));
   if (args.Length() == 4)
     assert(IsNumeric(args[3]));
   FileSystem* fs = reinterpret_cast<FileSystem*>(
