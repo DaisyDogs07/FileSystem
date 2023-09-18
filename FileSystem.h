@@ -1725,6 +1725,8 @@ class FileSystem {
         inode->dentCount = 0;
       }
       if (S_ISREG(inode->mode)) {
+        inode->dataRangeCount = 0;
+        inode->dataRanges = NULL;
         if (inode->size != 0) {
           off_t dataRangeCount;
           if (read(fd, &dataRangeCount, sizeof(off_t)) != sizeof(off_t)) {
@@ -2021,7 +2023,16 @@ class FileSystem {
     struct DataRange* AllocData(off_t offset, off_t length) {
       off_t rangeIdx = 0;
       bool createdRange = false;
-      struct DataRange* range = GetRangeAt(offset, &rangeIdx);
+      struct DataRange* range = NULL;
+      for (off_t i = 0; i != dataRangeCount; ++i) {
+        struct DataRange* range2 = dataRanges[i];
+        if (offset >= range2->offset &&
+            offset <= range2->offset + range2->size) {
+          rangeIdx = i;
+          range = range2;
+          break;
+        }
+      }
       if (!range) {
         range = InsertRange(offset, length, &rangeIdx);
         if (!range)
@@ -2033,8 +2044,8 @@ class FileSystem {
         newRangeLength += (offset + length) - (range->offset + range->size);
       for (off_t i = rangeIdx + 1; i < dataRangeCount; ++i) {
         struct DataRange* range2 = dataRanges[i];
-        if (offset + newRangeLength >= range2->offset &&
-            offset + newRangeLength < range2->offset + range2->size) {
+        if (range->offset + newRangeLength >= range2->offset &&
+            range->offset + newRangeLength <= range2->offset + range2->size) {
           newRangeLength = (range2->offset + range2->size) - range->offset;
           break;
         }
