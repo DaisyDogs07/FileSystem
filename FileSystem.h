@@ -1737,6 +1737,16 @@ class FileSystem {
             free(inode);
             return NULL;
           }
+          inode->dataRanges = (struct INode::DataRange**)malloc(sizeof(struct INode::DataRange*) * dataRangeCount);
+          if (!inode->dataRanges) {
+            close(fd);
+            for (ino_t j = 0; j != i; ++j)
+              delete inodes[j];
+            free(inodes);
+            free(inode);
+            return NULL;
+          }
+          inode->dataRangeCount = dataRangeCount;
           for (off_t j = 0; j != dataRangeCount; ++j) {
             off_t offset;
             off_t size;
@@ -1749,9 +1759,21 @@ class FileSystem {
               free(inode);
               return NULL;
             }
-            struct INode::DataRange* range = inode->AllocData(offset, size);
+            struct INode::DataRange* range = (struct INode::DataRange*)malloc(sizeof(struct INode::DataRange));
             if (!range) {
               close(fd);
+              for (ino_t j = 0; j != i; ++j)
+                delete inodes[j];
+              free(inodes);
+              free(inode);
+              return NULL;
+            }
+            range->offset = offset;
+            range->size = size;
+            range->data = new char[size];
+            if (!range->data) {
+              close(fd);
+              free(range);
               for (ino_t j = 0; j != i; ++j)
                 delete inodes[j];
               free(inodes);
@@ -1766,6 +1788,7 @@ class FileSystem {
               ssize_t count = read(fd, range->data + nread, amount);
               if (count != amount) {
                 close(fd);
+                delete range;
                 for (ino_t j = 0; j != i; ++j)
                   delete inodes[j];
                 free(inodes);
@@ -1774,6 +1797,7 @@ class FileSystem {
               }
               nread += count;
             }
+            inode->dataRanges[j] = range;
           }
         }
       }
