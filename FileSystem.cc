@@ -821,14 +821,19 @@ void FileSystemWrite(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
+  size_t count;
+  if (args.Length() == 3) {
+    size_t strLen = StringLen(args[1]);
+    count = Uint64Val(args[2]);
+    if (count > strLen)
+      count = strLen;
+  } count = StringLen(args[1]);
   ssize_t res;
   THROWIFERR(
     res = fs->Write(
       Uint32Val(args[0]),
       StringVal(args[1]),
-      args.Length() == 3
-        ? Uint64Val(args[2])
-        : StringLen(args[1])
+      count
     )
   );
   args.GetReturnValue().Set(BigInt::New(isolate, res));
@@ -878,16 +883,22 @@ void FileSystemPWrite(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  ssize_t res = fs->PWrite(
-    Uint32Val(args[0]),
-    StringVal(args[1]),
-    args.Length() == 4
-      ? Int64Val(args[3])
-      : StringLen(args[1]),
-    Uint64Val(args[2])
+  size_t count;
+  if (args.Length() == 4) {
+    size_t strLen = StringLen(args[1]);
+    count = Uint64Val(args[3]);
+    if (count > strLen)
+      count = strLen;
+  } else count = StringLen(args[1]);
+  ssize_t res;
+  THROWIFERR(
+    res = fs->PWrite(
+      Uint32Val(args[0]),
+      StringVal(args[1]),
+      count,
+      Uint64Val(args[2])
+    )
   );
-  if (res < 0)
-    THROWERR(res);
   args.GetReturnValue().Set(BigInt::New(isolate, res));
 }
 void FileSystemPWritev(const FunctionCallbackInfo<Value>& args) {
