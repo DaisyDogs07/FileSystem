@@ -2072,7 +2072,8 @@ class FileSystem {
             range->offset + newRangeLength <= range2->offset + range2->size) {
           newRangeLength = (range2->offset + range2->size) - range->offset;
           break;
-        }
+        } else if (range->offset + newRangeLength < range2->offset)
+          break;
       }
       if (!TryRealloc(&range->data, newRangeLength)) {
         if (createdRange)
