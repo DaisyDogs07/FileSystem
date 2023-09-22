@@ -1473,6 +1473,7 @@ class FileSystem {
    *     target (if symlink)
    *     data (if symlink)
    *     dentCount (if directory)
+   *     parent (if directory)
    *     dents (if directory):
    *       inode index
    *       name
@@ -1524,7 +1525,11 @@ class FileSystem {
           close(fd);
           return false;
         }
-        for (off_t j = 0; j != inode->dentCount; ++j) {
+        if (write(fd, &inode->dents[1].inode->ndx, sizeof(ino_t)) != sizeof(ino_t)) {
+          close(fd);
+          return false;
+        }
+        for (off_t j = 2; j != inode->dentCount; ++j) {
           struct INode::Dent* dent = &inode->dents[j];
           if (write(fd, &dent->inode->ndx, sizeof(ino_t)) != sizeof(ino_t)) {
             close(fd);
@@ -1677,11 +1682,22 @@ class FileSystem {
           free(inode);
           return NULL;
         }
-        for (off_t j = 0; j != inode->dentCount; ++j) {
+        inode->dents[0] = { ".", inode };
+        inode->dents[1].name = "..";
+        if (read(fd, &inode->dents[1].inode, sizeof(ino_t)) != sizeof(ino_t)) {
+          close(fd);
+          free(inode->dents);
+          for (ino_t j = 0; j != i; ++j)
+            delete inodes[j];
+          free(inodes);
+          free(inode);
+          return NULL;
+        }
+        for (off_t j = 2; j != inode->dentCount; ++j) {
           struct INode::Dent* dent = &inode->dents[j];
           if (read(fd, &dent->inode, sizeof(ino_t)) != sizeof(ino_t)) {
             close(fd);
-            for (off_t k = 0; k != j; ++k)
+            for (off_t k = 2; k != j; ++k)
               free((void*)inode->dents[k].name);
             free(inode->dents);
             for (ino_t j = 0; j != i; ++j)
@@ -1695,7 +1711,7 @@ class FileSystem {
           do {
             if (read(fd, &name[nameLen], 1) != 1) {
               close(fd);
-              for (off_t k = 0; k != j; ++k)
+              for (off_t k = 2; k != j; ++k)
                 free((void*)inode->dents[k].name);
               free(inode->dents);
               for (ino_t j = 0; j != i; ++j)
@@ -1708,7 +1724,7 @@ class FileSystem {
           dent->name = strdup(name);
           if (!dent->name) {
             close(fd);
-            for (off_t k = 0; k != j; ++k)
+            for (off_t k = 2; k != j; ++k)
               free((void*)inode->dents[k].name);
             free(inode->dents);
             for (ino_t j = 0; j != i; ++j)
@@ -1806,7 +1822,7 @@ class FileSystem {
     for (ino_t i = 0; i != inodeCount; ++i) {
       struct INode* inode = inodes[i];
       if (S_ISDIR(inode->mode)) {
-        for (off_t j = 0; j != inode->dentCount; ++j) {
+        for (off_t j = 1; j != inode->dentCount; ++j) {
           struct INode::Dent* dent = &inode->dents[j];
           if ((ino_t)dent->inode >= inodeCount) {
             close(fd);
