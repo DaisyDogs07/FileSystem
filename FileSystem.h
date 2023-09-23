@@ -1415,11 +1415,11 @@ class FileSystem {
   }
   int FUTimesAt(unsigned int fdNum, const char* path, const struct timeval* times) {
     std::lock_guard<std::mutex> lock(mtx);
-    if (times) {
-      if (times[0].tv_usec < 0 || times[0].tv_usec >= 1000000 ||
-          times[1].tv_usec < 0 || times[1].tv_usec >= 1000000)
-        return -EINVAL;
-    }
+    if (times && (
+        times[0].tv_usec < 0 || times[0].tv_usec >= 1000000 ||
+        times[1].tv_usec < 0 || times[1].tv_usec >= 1000000
+      ))
+      return -EINVAL;
     struct INode* origCwd = cwd->inode;
     if (fdNum != AT_FDCWD) {
       struct Fd* fd;
