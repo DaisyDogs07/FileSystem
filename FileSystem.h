@@ -784,19 +784,19 @@ class FileSystem {
       count = end;
     for (size_t amountRead = 0; amountRead != count;) {
       struct INode::DataRange* range = inode->GetRangeAt(fd->seekOff + amountRead);
+      size_t amount;
       if (!range) {
         struct INode::HoleRange hole = inode->GetHoleAt(fd->seekOff + amountRead);
-        size_t amount = (hole.offset + hole.size) - (fd->seekOff + amountRead);
+        amount = (hole.offset + hole.size) - (fd->seekOff + amountRead);
         if (amount > count - amountRead)
           amount = count - amountRead;
         memset(buf + amountRead, '\0', amount);
-        amountRead += amount;
-        continue;
+      } else {
+        amount = (range->offset + range->size) - (fd->seekOff + amountRead);
+        if (amount > count - amountRead)
+          amount = count - amountRead;
+        memcpy(buf + amountRead, range->data + (fd->seekOff + amountRead) - range->offset, amount);
       }
-      size_t amount = (range->offset + range->size) - (fd->seekOff + amountRead);
-      if (amount > count - amountRead)
-        amount = count - amountRead;
-      memcpy(buf + amountRead, range->data + (fd->seekOff + amountRead) - range->offset, amount);
       amountRead += amount;
     }
     buf[count] = '\0';
@@ -896,19 +896,19 @@ class FileSystem {
       count = end;
     for (size_t amountRead = 0; amountRead != count;) {
       struct INode::DataRange* range = inode->GetRangeAt(offset + amountRead);
+      size_t amount;
       if (!range) {
         struct INode::HoleRange hole = inode->GetHoleAt(offset + amountRead);
-        size_t amount = (hole.offset + hole.size) - (offset + amountRead);
+        amount = (hole.offset + hole.size) - (offset + amountRead);
         if (amount > count - amountRead)
           amount = count - amountRead;
         memset(buf + amountRead, '\0', amount);
-        amountRead += amount;
-        continue;
+      } else {
+        amount = (range->offset + range->size) - (offset + amountRead);
+        if (amount > count - amountRead)
+          amount = count - amountRead;
+        memcpy(buf + amountRead, range->data + (offset + amountRead) - range->offset, amount);
       }
-      size_t amount = (range->offset + range->size) - (offset + amountRead);
-      if (amount > count - amountRead)
-        amount = count - amountRead;
-      memcpy(buf + amountRead, range->data + (offset + amountRead) - range->offset, amount);
       amountRead += amount;
     }
     if (!(fd->flags & O_NOATIME))
