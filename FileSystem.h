@@ -791,13 +791,13 @@ class FileSystem {
           amount = count - amountRead;
         memset(buf + amountRead, '\0', amount);
         amountRead += amount;
-      } else {
-        size_t amount = (range->offset + range->size) - (fd->seekOff + amountRead);
-        if (amount > count - amountRead)
-          amount = count - amountRead;
-        memcpy(buf + amountRead, range->data + (fd->seekOff + amountRead) - range->offset, amount);
-        amountRead += amount;
+        continue;
       }
+      size_t amount = (range->offset + range->size) - (fd->seekOff + amountRead);
+      if (amount > count - amountRead)
+        amount = count - amountRead;
+      memcpy(buf + amountRead, range->data + (fd->seekOff + amountRead) - range->offset, amount);
+      amountRead += amount;
     }
     buf[count] = '\0';
     fd->seekOff += count;
@@ -844,26 +844,25 @@ class FileSystem {
     for (size_t iovIdx = 0, amountRead = 0, count = 0; iovIdx != iovcnt && count != totalLen;) {
       struct iovec curr = iov[iovIdx];
       struct INode::DataRange* range = inode->GetRangeAt(fd->seekOff + count);
+      size_t amount;
       if (!range) {
         struct INode::HoleRange hole = inode->GetHoleAt(fd->seekOff + count);
-        size_t amount = (hole.offset + hole.size) - (fd->seekOff + count);
+        amount = (hole.offset + hole.size) - (fd->seekOff + count);
         if (amount > curr.iov_len - amountRead)
           amount = curr.iov_len - amountRead;
         if (amount > totalLen - count)
           amount = totalLen - count;
         memset((char*)curr.iov_base + amountRead, '\0', amount);
-        amountRead += amount;
-        count += amount;
       } else {
-        size_t amount = (range->offset + range->size) - (fd->seekOff + count);
+        amount = (range->offset + range->size) - (fd->seekOff + count);
         if (amount > curr.iov_len - amountRead)
           amount = curr.iov_len - amountRead;
         if (amount > totalLen - count)
           amount = totalLen - count;
         memcpy((char*)curr.iov_base + amountRead, range->data + (fd->seekOff + count) - range->offset, amount);
-        amountRead += amount;
-        count += amount;
       }
+      amountRead += amount;
+      count += amount;
       if (amountRead == curr.iov_len) {
         ++iovIdx;
         amountRead = 0;
@@ -904,13 +903,13 @@ class FileSystem {
           amount = count - amountRead;
         memset(buf + amountRead, '\0', amount);
         amountRead += amount;
-      } else {
-        size_t amount = (range->offset + range->size) - (offset + amountRead);
-        if (amount > count - amountRead)
-          amount = count - amountRead;
-        memcpy(buf + amountRead, range->data + (offset + amountRead) - range->offset, amount);
-        amountRead += amount;
+        continue;
       }
+      size_t amount = (range->offset + range->size) - (offset + amountRead);
+      if (amount > count - amountRead)
+        amount = count - amountRead;
+      memcpy(buf + amountRead, range->data + (offset + amountRead) - range->offset, amount);
+      amountRead += amount;
     }
     if (!(fd->flags & O_NOATIME))
       clock_gettime(CLOCK_REALTIME, &inode->atime);
@@ -957,26 +956,25 @@ class FileSystem {
     for (size_t iovIdx = 0, amountRead = 0, count = 0; iovIdx != iovcnt && count != totalLen;) {
       struct iovec curr = iov[iovIdx];
       struct INode::DataRange* range = inode->GetRangeAt(offset + count);
+      size_t amount;
       if (!range) {
         struct INode::HoleRange hole = inode->GetHoleAt(offset + count);
-        size_t amount = (hole.offset + hole.size) - (offset + count);
+        amount = (hole.offset + hole.size) - (offset + count);
         if (amount > curr.iov_len - amountRead)
           amount = curr.iov_len - amountRead;
         if (amount > totalLen - count)
           amount = totalLen - count;
         memset((char*)curr.iov_base + amountRead, '\0', amount);
-        amountRead += amount;
-        count += amount;
       } else {
-        size_t amount = (range->offset + range->size) - (offset + count);
+        amount = (range->offset + range->size) - (offset + count);
         if (amount > curr.iov_len - amountRead)
           amount = curr.iov_len - amountRead;
         if (amount > totalLen - count)
           amount = totalLen - count;
         memcpy((char*)curr.iov_base + amountRead, range->data + (offset + count) - range->offset, amount);
-        amountRead += amount;
-        count += amount;
       }
+      amountRead += amount;
+      count += amount;
       if (amountRead == curr.iov_len) {
         ++iovIdx;
         amountRead = 0;
