@@ -1951,7 +1951,8 @@ class FileSystem {
           if (index)
             *index = i;
           return range;
-        }
+        } else if (offset < range->offset)
+          break;
       }
       return NULL;
     }
@@ -1985,7 +1986,8 @@ class FileSystem {
           hole.offset = range->offset + range->size;
           hole.size = dataRanges[i + 1]->offset - hole.offset;
           return hole;
-        }
+        } else if (offset < range->offset + range->size)
+          break;
       }
       return hole;
     }
@@ -2069,7 +2071,8 @@ class FileSystem {
           rangeIdx = i;
           range = range2;
           break;
-        }
+        } else if (offset < range2->offset)
+          break;
       }
       if (!range) {
         range = InsertRange(offset, length, &rangeIdx);
