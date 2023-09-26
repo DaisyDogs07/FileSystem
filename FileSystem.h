@@ -2111,7 +2111,6 @@ class FileSystem {
       return range;
     }
 
-
     void TruncateRanges(off_t count) {
       for (off_t i = count; i != dataRangeCount; ++i)
         delete dataRanges[i];
