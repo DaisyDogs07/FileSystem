@@ -2111,14 +2111,6 @@ class FileSystem {
       return range;
     }
 
-    void TruncateRanges(off_t count) {
-      for (off_t i = count; i != dataRangeCount; ++i)
-        delete dataRanges[i];
-      dataRanges = reinterpret_cast<struct DataRange**>(
-        realloc(dataRanges, sizeof(struct DataRange*) * count)
-      );
-      dataRangeCount = count;
-    }
     void TruncateData(off_t length) {
       if (length >= size) {
         size = length;
@@ -2137,7 +2129,12 @@ class FileSystem {
         struct DataRange* range = dataRanges[i];
         if (length > range->offset &&
             length < range->offset + range->size) {
-          TruncateRanges(i + 1);
+          for (off_t j = i + 1; j != dataRangeCount; ++j)
+            delete dataRanges[j];
+          dataRanges = reinterpret_cast<struct DataRange**>(
+            realloc(dataRanges, sizeof(struct DataRange*) * (i + 1))
+          );
+          dataRangeCount = i + 1;
           range->data = reinterpret_cast<char*>(
             realloc(range->data, length - range->offset)
           );
