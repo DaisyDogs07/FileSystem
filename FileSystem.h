@@ -73,7 +73,7 @@ class FileSystem {
       check |= 0222;
     if (mode & X_OK)
       check |= 0111;
-    if (check != 0 && !(inode->mode & check))
+    if (check != F_OK && !(inode->mode & check))
       return -EACCES;
     return 0;
   }
