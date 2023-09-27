@@ -78,10 +78,10 @@ class FileSystem {
     return 0;
   }
   int FAccessAt(int dirFd, const char* path, int mode) {
-    return FAccessAt2(dirFd, path, mode, 0);
+    return FAccessAt2(dirFd, path, mode, F_OK);
   }
   int Access(const char* path, int mode) {
-    return FAccessAt2(AT_FDCWD, path, mode, 0);
+    return FAccessAt2(AT_FDCWD, path, mode, F_OK);
   }
   int OpenAt(int dirFd, const char* path, int flags, mode_t mode) {
     std::lock_guard<std::mutex> lock(mtx);
