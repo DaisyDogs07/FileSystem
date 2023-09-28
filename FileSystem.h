@@ -1995,17 +1995,11 @@ class FileSystem {
     struct DataRange* InsertRange(off_t offset, off_t size, off_t* index) {
       struct DataRange* range = NULL;
       if (dataRangeCount == 0) {
-        if (!TryAlloc(&dataRanges))
+        if (!TryAlloc(&range))
           return NULL;
-        if (!TryAlloc(&range)) {
-          delete dataRanges;
-          dataRanges = NULL;
-          return NULL;
-        }
-        if (!TryAlloc(&range->data, size)) {
+        if (!TryAlloc(&range->data, size) ||
+            !TryAlloc(&dataRanges, 1)) {
           delete range;
-          delete dataRanges;
-          dataRanges = NULL;
           return NULL;
         }
         range->offset = offset;
@@ -2016,10 +2010,10 @@ class FileSystem {
         return range;
       }
       if (offset > dataRanges[dataRangeCount - 1]->offset) {
-        if (!TryRealloc(&dataRanges, dataRangeCount + 1) ||
-            !TryAlloc(&range))
+        if (!TryAlloc(&range))
           return NULL;
-        if (!TryAlloc(&range->data, size)) {
+        if (!TryAlloc(&range->data, size) ||
+            !TryRealloc(&dataRanges, dataRangeCount + 1)) {
           delete range;
           return NULL;
         }
@@ -2032,10 +2026,10 @@ class FileSystem {
       for (off_t i = 0; i != dataRangeCount; ++i) {
         struct DataRange* range2 = dataRanges[i];
         if (offset < range2->offset) {
-          if (!TryRealloc(&dataRanges, dataRangeCount + 1) ||
-              !TryAlloc(&range))
+          if (!TryAlloc(&range))
             return NULL;
-          if (!TryAlloc(&range->data, size)) {
+          if (!TryAlloc(&range->data, size) ||
+              !TryRealloc(&dataRanges, dataRangeCount + 1)) {
             delete range;
             return NULL;
           }
