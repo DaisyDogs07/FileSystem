@@ -517,9 +517,9 @@ class FileSystem {
     std::lock_guard<std::mutex> lock(mtx);
     if (flags & ~AT_REMOVEDIR)
       return -EINVAL;
-    struct Fd* fd;
     struct INode* origCwd = cwd->inode;
     if (dirFd != AT_FDCWD) {
+      struct Fd* fd;
       if (!(fd = GetFd(dirFd)))
         return -EBADF;
       if (!S_ISDIR(fd->inode->mode))
