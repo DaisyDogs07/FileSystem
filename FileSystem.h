@@ -2054,9 +2054,8 @@ class FileSystem {
         dataRanges[dataRangeCount++] = range;
         return range;
       }
-      for (off_t i = 0; i != dataRangeCount; ++i) {
-        struct DataRange* range2 = dataRanges[i];
-        if (offset < range2->offset) {
+      for (off_t i = 0; i != dataRangeCount; ++i)
+        if (offset < dataRanges[i]->offset) {
           if (!TryAlloc(&range))
             return NULL;
           if (!TryAlloc(&range->data, size) ||
@@ -2072,7 +2071,6 @@ class FileSystem {
           ++dataRangeCount;
           break;
         }
-      }
       return range;
     }
     void RemoveRange(off_t index) {
