@@ -1967,7 +1967,7 @@ class FileSystem {
           isBeforeFirstRange_ = false;
         } else {
           isBeforeFirstRange_ = false;
-          for (off_t i = 0; i != inode->dataRangeCount - 1; ++i) {
+          for (off_t i = 0; i != inode->dataRangeCount; ++i) {
             struct DataRange* range = inode->dataRanges[i];
             if (offset >= range->offset &&
                 offset < range->offset + range->size) {
