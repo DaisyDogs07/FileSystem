@@ -2017,7 +2017,7 @@ class FileSystem {
             return false;
           if (isBeforeFirstRange_)
             isBeforeFirstRange_ = false;
-          ++rangeIdx_;
+          else ++rangeIdx_;
         }
         atData_ = !atData_;
         return true;
