@@ -1960,28 +1960,28 @@ class FileSystem {
           rangeIdx_ = 0;
           atData_ = false;
           isBeforeFirstRange_ = true;
+        } else if (offset >= inode_->dataRanges[inode_->dataRangeCount - 1]->offset + inode_->dataRanges[inode_->dataRangeCount - 1]->size) {
+          rangeIdx_ = inode_->dataRangeCount - 1;
+          atData_ = false;
+          isBeforeFirstRange_ = false;
+        } else if (offset < inode_->dataRanges[0]->offset) {
+          rangeIdx_ = 0;
+          atData_ = false;
+          isBeforeFirstRange_ = true;
         } else {
-          if (offset >= inode_->dataRanges[inode_->dataRangeCount - 1]->offset + inode_->dataRanges[inode_->dataRangeCount - 1]->size) {
-            rangeIdx_ = inode_->dataRangeCount - 1;
-            atData_ = false;
-            isBeforeFirstRange_ = false;
-          } else {
-            for (off_t i = 0; i != inode->dataRangeCount - 1; ++i) {
-              struct DataRange* range = inode->dataRanges[i];
-              if (offset >= range->offset &&
-                  offset < range->offset + range->size) {
-                rangeIdx_ = i;
-                atData_ = true;
-                isBeforeFirstRange_ = false;
-                break;
-              } else if (offset < range->offset) {
-                rangeIdx_ = i;
-                atData_ = false;
-                if (i == 0)
-                  isBeforeFirstRange_ = true;
-                else isBeforeFirstRange_ = false;
-                break;
-              }
+          isBeforeFirstRange_ = false;
+          for (off_t i = 0; i != inode->dataRangeCount - 1; ++i) {
+            struct DataRange* range = inode->dataRanges[i];
+            if (offset >= range->offset &&
+                offset < range->offset + range->size) {
+              rangeIdx_ = i;
+              atData_ = true;
+              isBeforeFirstRange_ = false;
+              break;
+            } else if (offset < range->offset) {
+              rangeIdx_ = i;
+              atData_ = false;
+              break;
             }
           }
         }
