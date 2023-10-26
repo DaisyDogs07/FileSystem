@@ -1961,21 +1961,27 @@ class FileSystem {
           atData_ = false;
           isBeforeFirstRange_ = true;
         } else {
-          for (off_t i = 0; i != inode->dataRangeCount; ++i) {
-            struct DataRange* range = inode->dataRanges[i];
-            if (offset >= range->offset &&
-                offset < range->offset + range->size) {
-              rangeIdx_ = i;
-              atData_ = true;
-              isBeforeFirstRange_ = false;
-              break;
-            } else if (offset < range->offset) {
-              rangeIdx_ = i;
-              atData_ = false;
-              if (i == 0)
-                isBeforeFirstRange_ = true;
-              else isBeforeFirstRange_ = false;
-              break;
+          if (offset >= inode_->dataRanges[inode_->dataRangeCount - 1]->offset + inode_->dataRanges[inode_->dataRangeCount - 1]->size) {
+            rangeIdx_ = inode_->dataRangeCount - 1;
+            atData_ = false;
+            isBeforeFirstRange_ = false;
+          } else {
+            for (off_t i = 0; i != inode->dataRangeCount - 1; ++i) {
+              struct DataRange* range = inode->dataRanges[i];
+              if (offset >= range->offset &&
+                  offset < range->offset + range->size) {
+                rangeIdx_ = i;
+                atData_ = true;
+                isBeforeFirstRange_ = false;
+                break;
+              } else if (offset < range->offset) {
+                rangeIdx_ = i;
+                atData_ = false;
+                if (i == 0)
+                  isBeforeFirstRange_ = true;
+                else isBeforeFirstRange_ = false;
+                break;
+              }
             }
           }
         }
@@ -2002,7 +2008,7 @@ class FileSystem {
         hole.offset = currRange->offset + currRange->size;
         if (rangeIdx_ < inode_->dataRangeCount - 1)
           hole.size = inode_->dataRanges[rangeIdx_ + 1]->offset - hole.offset;
-        else hole.size = inode_->size;
+        else hole.size = inode_->size - hole.offset;
         return hole;
       }
       bool Next() {
