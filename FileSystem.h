@@ -1976,7 +1976,6 @@ class FileSystem {
                 offset < range->offset + range->size) {
               rangeIdx_ = i;
               atData_ = true;
-              isBeforeFirstRange_ = false;
               break;
             } else if (offset < range->offset) {
               rangeIdx_ = i;
