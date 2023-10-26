@@ -717,48 +717,42 @@ class FileSystem {
           return -EOVERFLOW;
         return fd->seekOff = inode->size + offset;
       case SEEK_DATA: {
-        struct INode::HoleRange hole = inode->GetHoleAt(fd->seekOff);
-        if (hole.size != -1) {
+        INode::DataIterator it(inode, fd->seekOff);
+        if (!it.IsInData()) {
+          struct INode::HoleRange hole = it.GetHole();
           if (hole.offset > std::numeric_limits<off_t>::max() - (hole.size + offset))
             return -EOVERFLOW;
           return fd->seekOff = hole.offset + hole.size + offset;
         }
-        struct INode::DataRange* range = inode->GetRangeAt(fd->seekOff);
-        if (range) {
-          struct INode::HoleRange nextHole = inode->GetHoleAt(range->offset + range->size);
-          if (nextHole.size != -1) {
-            struct INode::DataRange* nextRange = inode->GetRangeAt(nextHole.offset + nextHole.size);
-            if (nextRange) {
-              if (nextRange->offset > std::numeric_limits<off_t>::max() - offset)
-                return -EOVERFLOW;
-              return fd->seekOff = nextRange->offset + offset;
-            }
-          }
+        it.Next();
+        if (it.Next()) {
+          struct INode::DataRange* range = it.GetRange();
+          if (range->offset > std::numeric_limits<off_t>::max() - offset)
+            return -EOVERFLOW;
+          return fd->seekOff = range->offset + offset;
         }
-        return fd->seekOff = inode->size;
+        if (inode->size > std::numeric_limits<off_t>::max() - offset)
+          return -EOVERFLOW;
+        return fd->seekOff = inode->size + offset;
       }
       case SEEK_HOLE: {
-        struct INode::DataRange* range = inode->GetRangeAt(fd->seekOff);
-        if (range) {
+        INode::DataIterator it(inode, fd->seekOff);
+        if (it.IsInData()) {
+          struct INode::DataRange* range = it.GetRange();
           if (range->offset > std::numeric_limits<off_t>::max() - (range->size + offset))
             return -EOVERFLOW;
           return fd->seekOff = range->offset + range->size + offset;
         }
-        struct INode::HoleRange hole = inode->GetHoleAt(fd->seekOff);
-        if (hole.size != -1) {
-          struct INode::DataRange* nextRange = inode->GetRangeAt(hole.offset + hole.size);
-          if (nextRange) {
-            struct INode::HoleRange nextHole = inode->GetHoleAt(nextRange->offset + nextRange->size);
-            if (nextHole.size != -1) {
-              if (nextHole.offset > std::numeric_limits<off_t>::max() - offset)
-                return -EOVERFLOW;
-              return fd->seekOff = nextHole.offset + offset;
-            }
-          }
+        if (it.Next()) {
+          it.Next();
+          struct INode::HoleRange hole = it.GetHole();
+          if (hole.offset > std::numeric_limits<off_t>::max() - offset)
+            return -EOVERFLOW;
+          return fd->seekOff = hole.offset + offset;
         }
         if (inode->size > std::numeric_limits<off_t>::max() - offset)
           return -EOVERFLOW;
-        return fd->seekOff = inode->size;
+        return fd->seekOff = inode->size + offset;
       }
     }
     return -EINVAL;
@@ -782,21 +776,23 @@ class FileSystem {
     off_t end = inode->size - fd->seekOff;
     if (end < count)
       count = end;
+    INode::DataIterator it(inode, fd->seekOff);
     for (size_t amountRead = 0; amountRead != count;) {
-      struct INode::DataRange* range = inode->GetRangeAt(fd->seekOff + amountRead);
       size_t amount;
-      if (!range) {
-        struct INode::HoleRange hole = inode->GetHoleAt(fd->seekOff + amountRead);
-        amount = (hole.offset + hole.size) - (fd->seekOff + amountRead);
-        if (amount > count - amountRead)
-          amount = count - amountRead;
-        memset(buf + amountRead, '\0', amount);
-      } else {
+      if (it.IsInData()) {
+        struct INode::DataRange* range = it.GetRange();
         amount = (range->offset + range->size) - (fd->seekOff + amountRead);
         if (amount > count - amountRead)
           amount = count - amountRead;
         memcpy(buf + amountRead, range->data + (fd->seekOff + amountRead) - range->offset, amount);
+      } else {
+        struct INode::HoleRange hole = it.GetHole();
+        amount = (hole.offset + hole.size) - (fd->seekOff + amountRead);
+        if (amount > count - amountRead)
+          amount = count - amountRead;
+        memset(buf + amountRead, '\0', amount);
       }
+      it.Next();
       amountRead += amount;
     }
     buf[count] = '\0';
@@ -841,26 +837,28 @@ class FileSystem {
     off_t end = inode->size - fd->seekOff;
     if (end < totalLen)
       totalLen = end;
-    for (size_t iovIdx = 0, amountRead = 0, count = 0; iovIdx != iovcnt && count != totalLen;) {
+    INode::DataIterator it(inode, fd->seekOff);
+    for (size_t iovIdx = 0, amountRead = 0, count = 0; count != totalLen;) {
       struct iovec curr = iov[iovIdx];
-      struct INode::DataRange* range = inode->GetRangeAt(fd->seekOff + count);
       size_t amount;
-      if (!range) {
-        struct INode::HoleRange hole = inode->GetHoleAt(fd->seekOff + count);
-        amount = (hole.offset + hole.size) - (fd->seekOff + count);
-        if (amount > curr.iov_len - amountRead)
-          amount = curr.iov_len - amountRead;
-        if (amount > totalLen - count)
-          amount = totalLen - count;
-        memset((char*)curr.iov_base + amountRead, '\0', amount);
-      } else {
+      if (it.IsInData()) {
+        struct INode::DataRange* range = it.GetRange();
         amount = (range->offset + range->size) - (fd->seekOff + count);
         if (amount > curr.iov_len - amountRead)
           amount = curr.iov_len - amountRead;
         if (amount > totalLen - count)
           amount = totalLen - count;
         memcpy((char*)curr.iov_base + amountRead, range->data + (fd->seekOff + count) - range->offset, amount);
+      } else {
+        struct INode::HoleRange hole = it.GetHole();
+        amount = (hole.offset + hole.size) - (fd->seekOff + count);
+        if (amount > curr.iov_len - amountRead)
+          amount = curr.iov_len - amountRead;
+        if (amount > totalLen - count)
+          amount = totalLen - count;
+        memset((char*)curr.iov_base + amountRead, '\0', amount);
       }
+      it.Next();
       amountRead += amount;
       count += amount;
       if (amountRead == curr.iov_len) {
@@ -894,21 +892,23 @@ class FileSystem {
     off_t end = inode->size - offset;
     if (end < count)
       count = end;
+    INode::DataIterator it(inode, offset);
     for (size_t amountRead = 0; amountRead != count;) {
-      struct INode::DataRange* range = inode->GetRangeAt(offset + amountRead);
       size_t amount;
-      if (!range) {
-        struct INode::HoleRange hole = inode->GetHoleAt(offset + amountRead);
-        amount = (hole.offset + hole.size) - (offset + amountRead);
-        if (amount > count - amountRead)
-          amount = count - amountRead;
-        memset(buf + amountRead, '\0', amount);
-      } else {
+      if (it.IsInData()) {
+        struct INode::DataRange* range = it.GetRange();
         amount = (range->offset + range->size) - (offset + amountRead);
         if (amount > count - amountRead)
           amount = count - amountRead;
         memcpy(buf + amountRead, range->data + (offset + amountRead) - range->offset, amount);
+      } else {
+        struct INode::HoleRange hole = it.GetHole();
+        amount = (hole.offset + hole.size) - (offset + amountRead);
+        if (amount > count - amountRead)
+          amount = count - amountRead;
+        memset(buf + amountRead, '\0', amount);
       }
+      it.Next();
       amountRead += amount;
     }
     if (!(fd->flags & O_NOATIME))
@@ -953,26 +953,28 @@ class FileSystem {
     off_t end = inode->size - offset;
     if (end < totalLen)
       totalLen = end;
-    for (size_t iovIdx = 0, amountRead = 0, count = 0; iovIdx != iovcnt && count != totalLen;) {
+    INode::DataIterator it(inode, fd->seekOff);
+    for (size_t iovIdx = 0, amountRead = 0, count = 0; count != totalLen;) {
       struct iovec curr = iov[iovIdx];
-      struct INode::DataRange* range = inode->GetRangeAt(offset + count);
       size_t amount;
-      if (!range) {
-        struct INode::HoleRange hole = inode->GetHoleAt(offset + count);
-        amount = (hole.offset + hole.size) - (offset + count);
+      if (it.IsInData()) {
+        struct INode::DataRange* range = it.GetRange();
+        amount = (range->offset + range->size) - (fd->seekOff + count);
+        if (amount > curr.iov_len - amountRead)
+          amount = curr.iov_len - amountRead;
+        if (amount > totalLen - count)
+          amount = totalLen - count;
+        memcpy((char*)curr.iov_base + amountRead, range->data + (fd->seekOff + count) - range->offset, amount);
+      } else {
+        struct INode::HoleRange hole = it.GetHole();
+        amount = (hole.offset + hole.size) - (fd->seekOff + count);
         if (amount > curr.iov_len - amountRead)
           amount = curr.iov_len - amountRead;
         if (amount > totalLen - count)
           amount = totalLen - count;
         memset((char*)curr.iov_base + amountRead, '\0', amount);
-      } else {
-        amount = (range->offset + range->size) - (offset + count);
-        if (amount > curr.iov_len - amountRead)
-          amount = curr.iov_len - amountRead;
-        if (amount > totalLen - count)
-          amount = totalLen - count;
-        memcpy((char*)curr.iov_base + amountRead, range->data + (offset + count) - range->offset, amount);
       }
+      it.Next();
       amountRead += amount;
       count += amount;
       if (amountRead == curr.iov_len) {
@@ -1180,14 +1182,15 @@ class FileSystem {
     else *offset += count;
     if (fdOut->seekOff + count > inodeOut->size)
       inodeOut->TruncateData(fdOut->seekOff + count);
+    INode::DataIterator itIn(inodeIn, off);
+    INode::DataIterator itOut(inodeOut, fdOut->seekOff);
     for (size_t amountRead = 0; amountRead != count;) {
-      struct INode::DataRange* rangeIn = inodeIn->GetRangeAt(off + amountRead);
-      if (!rangeIn) {
-        struct INode::DataRange* rangeOut = inodeOut->GetRangeAt(fdOut->seekOff + amountRead);
-        struct INode::HoleRange holeIn = inodeIn->GetHoleAt(off + amountRead);
-        if (!rangeOut) {
-          struct INode::HoleRange holeOut = inodeOut->GetHoleAt(fdOut->seekOff + amountRead);
-          size_t amount = (holeOut.offset + holeOut.size) - (fdOut->seekOff + amountRead);
+      size_t amount;
+      if (!itIn.IsInData()) {
+        struct INode::HoleRange holeIn = itIn.GetHole();
+        if (!itOut.IsInData()) {
+          struct INode::HoleRange holeOut = itOut.GetHole();
+          amount = (holeOut.offset + holeOut.size) - (fdOut->seekOff + amountRead);
           if (amount > (holeIn.offset + holeIn.size) - (off + amountRead))
             amount = (holeIn.offset + holeIn.size) - (off + amountRead);
           if (amount > count - amountRead)
@@ -1195,7 +1198,8 @@ class FileSystem {
           amountRead += amount;
           continue;
         }
-        size_t amount = (rangeOut->offset + rangeOut->size) - (fdOut->seekOff + amountRead);
+        struct INode::DataRange* rangeOut = itOut.GetRange();
+        amount = (rangeOut->offset + rangeOut->size) - (fdOut->seekOff + amountRead);
         if (amount > (holeIn.offset + holeIn.size) - (off + amountRead))
           amount = (holeIn.offset + holeIn.size) - (off + amountRead);
         if (amount > count - amountRead)
@@ -1204,7 +1208,8 @@ class FileSystem {
         amountRead += amount;
         continue;
       }
-      size_t amount = (rangeIn->offset + rangeIn->size) - (off + amountRead);
+      struct INode::DataRange* rangeIn = itIn.GetRange();
+      amount = (rangeIn->offset + rangeIn->size) - (off + amountRead);
       if (amount > count - amountRead)
         amount = count - amountRead;
       struct INode::DataRange* rangeOut = inodeOut->AllocData(fdOut->seekOff + amountRead, amount);
@@ -1940,57 +1945,83 @@ class FileSystem {
       off_t size = 0;
       char* data = NULL;
     };
-    struct DataRange** dataRanges = NULL;
-    off_t dataRangeCount = 0;
-
-    struct DataRange* GetRangeAt(off_t offset, off_t* index = NULL) {
-      for (off_t i = 0; i != dataRangeCount; ++i) {
-        struct DataRange* range = dataRanges[i];
-        if (offset >= range->offset &&
-            offset < range->offset + range->size) {
-          if (index)
-            *index = i;
-          return range;
-        } else if (offset < range->offset)
-          break;
-      }
-      return NULL;
-    }
-
     struct HoleRange {
       off_t offset = 0;
       off_t size = -1;
     };
-    struct HoleRange GetHoleAt(off_t offset) {
-      struct HoleRange hole;
-      if (dataRangeCount == 0) {
-        hole.offset = 0;
-        hole.size = size;
-        return hole;
+    struct DataRange** dataRanges = NULL;
+    off_t dataRangeCount = 0;
+
+    class DataIterator {
+     public:
+      DataIterator(struct INode* inode, off_t offset) {
+        inode_ = inode;
+        if (inode->dataRangeCount == 0) {
+          rangeIdx_ = 0;
+          atData_ = false;
+          isBeforeFirstRange_ = true;
+        } else {
+          for (off_t i = 0; i != inode->dataRangeCount; ++i) {
+            struct DataRange* range = inode->dataRanges[i];
+            if (offset >= range->offset &&
+                offset < range->offset + range->size) {
+              rangeIdx_ = i;
+              atData_ = true;
+              isBeforeFirstRange_ = false;
+              break;
+            } else if (offset < range->offset) {
+              rangeIdx_ = i;
+              atData_ = false;
+              if (i == 0)
+                isBeforeFirstRange_ = true;
+              else isBeforeFirstRange_ = false;
+              break;
+            }
+          }
+        }
       }
-      if (offset < dataRanges[0]->offset) {
-        hole.offset = 0;
-        hole.size = dataRanges[0]->offset;
-        return hole;
+      bool IsInData() {
+        return atData_;
       }
-      if (offset >= dataRanges[dataRangeCount - 1]->offset + dataRanges[dataRangeCount - 1]->size) {
-        struct DataRange* range = dataRanges[dataRangeCount - 1];
-        hole.offset = range->offset + range->size;
-        hole.size = size - hole.offset;
-        return hole;
+      struct DataRange* GetRange() {
+        if (atData_)
+          return inode_->dataRanges[rangeIdx_];
+        return NULL;
       }
-      for (off_t i = 0; i != dataRangeCount - 1; ++i) {
-        struct DataRange* range = dataRanges[i];
-        if (offset >= range->offset + range->size &&
-            offset < dataRanges[i + 1]->offset) {
-          hole.offset = range->offset + range->size;
-          hole.size = dataRanges[i + 1]->offset - hole.offset;
+      struct HoleRange GetHole() {
+        struct HoleRange hole;
+        if (atData_)
           return hole;
-        } else if (offset < range->offset + range->size)
-          break;
+        if (isBeforeFirstRange_) {
+          if (inode_->dataRangeCount == 0)
+            hole.size = inode_->size;
+          else hole.size = inode_->dataRanges[0]->offset;
+          return hole;
+        }
+        struct DataRange* currRange = inode_->dataRanges[rangeIdx_];
+        hole.offset = currRange->offset + currRange->size;
+        if (rangeIdx_ < inode_->dataRangeCount - 1)
+          hole.size = inode_->dataRanges[rangeIdx_ + 1]->offset - hole.offset;
+        else hole.size = inode_->size;
+        return hole;
       }
-      return hole;
-    }
+      bool Next() {
+        if (!atData_) {
+          if (rangeIdx_ >= inode_->dataRangeCount - 1)
+            return false;
+          if (isBeforeFirstRange_)
+            isBeforeFirstRange_ = false;
+          ++rangeIdx_;
+        }
+        atData_ = !atData_;
+        return true;
+      }
+     private:
+      struct INode* inode_;
+      off_t rangeIdx_;
+      bool atData_;
+      bool isBeforeFirstRange_;
+    };
 
     struct DataRange* InsertRange(off_t offset, off_t size, off_t* index) {
       struct DataRange* range = NULL;
