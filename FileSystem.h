@@ -1956,7 +1956,8 @@ class FileSystem {
      public:
       DataIterator(struct INode* inode, off_t offset) {
         inode_ = inode;
-        if (inode->dataRangeCount == 0) {
+        if (inode->dataRangeCount == 0 ||
+            offset < inode_->dataRanges[0]->offset) {
           rangeIdx_ = 0;
           atData_ = false;
           isBeforeFirstRange_ = true;
@@ -1964,10 +1965,6 @@ class FileSystem {
           rangeIdx_ = inode_->dataRangeCount - 1;
           atData_ = false;
           isBeforeFirstRange_ = false;
-        } else if (offset < inode_->dataRanges[0]->offset) {
-          rangeIdx_ = 0;
-          atData_ = false;
-          isBeforeFirstRange_ = true;
         } else {
           isBeforeFirstRange_ = false;
           for (off_t i = 0; i != inode->dataRangeCount - 1; ++i) {
