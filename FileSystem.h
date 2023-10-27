@@ -783,7 +783,7 @@ class FileSystem {
     if (end < count)
       count = end;
     INode::DataIterator it(inode, fd->seekOff);
-    for (size_t amountRead = 0; amountRead != count;) {
+    for (size_t amountRead = 0; amountRead != count; it.Next()) {
       size_t amount;
       if (it.IsInData()) {
         struct INode::DataRange* range = it.GetRange();
@@ -798,7 +798,6 @@ class FileSystem {
           amount = count - amountRead;
         memset(buf + amountRead, '\0', amount);
       }
-      it.Next();
       amountRead += amount;
     }
     buf[count] = '\0';
@@ -844,7 +843,7 @@ class FileSystem {
     if (end < totalLen)
       totalLen = end;
     INode::DataIterator it(inode, fd->seekOff);
-    for (size_t iovIdx = 0, amountRead = 0, count = 0; count != totalLen;) {
+    for (size_t iovIdx = 0, amountRead = 0, count = 0; count != totalLen; it.Next()) {
       struct iovec curr = iov[iovIdx];
       size_t amount;
       if (it.IsInData()) {
@@ -864,7 +863,6 @@ class FileSystem {
           amount = totalLen - count;
         memset((char*)curr.iov_base + amountRead, '\0', amount);
       }
-      it.Next();
       amountRead += amount;
       count += amount;
       if (amountRead == curr.iov_len) {
@@ -899,7 +897,7 @@ class FileSystem {
     if (end < count)
       count = end;
     INode::DataIterator it(inode, offset);
-    for (size_t amountRead = 0; amountRead != count;) {
+    for (size_t amountRead = 0; amountRead != count; it.Next()) {
       size_t amount;
       if (it.IsInData()) {
         struct INode::DataRange* range = it.GetRange();
@@ -914,7 +912,6 @@ class FileSystem {
           amount = count - amountRead;
         memset(buf + amountRead, '\0', amount);
       }
-      it.Next();
       amountRead += amount;
     }
     if (!(fd->flags & O_NOATIME))
@@ -960,7 +957,7 @@ class FileSystem {
     if (end < totalLen)
       totalLen = end;
     INode::DataIterator it(inode, fd->seekOff);
-    for (size_t iovIdx = 0, amountRead = 0, count = 0; count != totalLen;) {
+    for (size_t iovIdx = 0, amountRead = 0, count = 0; count != totalLen; it.Next()) {
       struct iovec curr = iov[iovIdx];
       size_t amount;
       if (it.IsInData()) {
@@ -980,7 +977,6 @@ class FileSystem {
           amount = totalLen - count;
         memset((char*)curr.iov_base + amountRead, '\0', amount);
       }
-      it.Next();
       amountRead += amount;
       count += amount;
       if (amountRead == curr.iov_len) {
@@ -1197,8 +1193,10 @@ class FileSystem {
         if (!itOut.IsInData()) {
           struct INode::HoleRange holeOut = itOut.GetHole();
           amount = (holeOut.offset + holeOut.size) - (fdOut->seekOff + amountRead);
-          if (amount > (holeIn.offset + holeIn.size) - (off + amountRead))
+          if (amount > (holeIn.offset + holeIn.size) - (off + amountRead)) {
             amount = (holeIn.offset + holeIn.size) - (off + amountRead);
+            itIn.Next();
+          } else itOut.Next();
           if (amount > count - amountRead)
             amount = count - amountRead;
           amountRead += amount;
@@ -1206,8 +1204,10 @@ class FileSystem {
         }
         struct INode::DataRange* rangeOut = itOut.GetRange();
         amount = (rangeOut->offset + rangeOut->size) - (fdOut->seekOff + amountRead);
-        if (amount > (holeIn.offset + holeIn.size) - (off + amountRead))
+        if (amount > (holeIn.offset + holeIn.size) - (off + amountRead)) {
           amount = (holeIn.offset + holeIn.size) - (off + amountRead);
+          itIn.Next();
+        } else itOut.Next();
         if (amount > count - amountRead)
           amount = count - amountRead;
         memset(rangeOut->data + (fdOut->seekOff + amountRead) - rangeOut->offset, '\0', amount);
@@ -1227,6 +1227,10 @@ class FileSystem {
         amount
       );
       amountRead += amount;
+      if (rangeIn->offset + rangeIn->size <= rangeOut->offset + rangeOut->size)
+        itIn.Next();
+      else if (rangeIn->offset + rangeIn->size >= rangeOut->offset + rangeOut->size)
+        itOut.Next();
     }
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
