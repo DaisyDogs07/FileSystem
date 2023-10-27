@@ -1986,14 +1986,10 @@ class FileSystem {
         return atData_;
       }
       struct DataRange* GetRange() {
-        if (atData_)
-          return inode_->dataRanges[rangeIdx_];
-        return NULL;
+        return inode_->dataRanges[rangeIdx_];
       }
       struct HoleRange GetHole() {
         struct HoleRange hole;
-        if (atData_)
-          return hole;
         if (isBeforeFirstRange_) {
           if (inode_->dataRangeCount == 0)
             hole.size = inode_->size;
