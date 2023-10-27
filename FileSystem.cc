@@ -827,7 +827,7 @@ void FileSystemWrite(const FunctionCallbackInfo<Value>& args) {
     count = Uint64Val(args[2]);
     if (count > strLen)
       count = strLen;
-  } count = StringLen(args[1]);
+  } else count = StringLen(args[1]);
   ssize_t res;
   THROWIFERR(
     res = fs->Write(

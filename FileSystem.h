@@ -719,10 +719,15 @@ class FileSystem {
       case SEEK_DATA: {
         INode::DataIterator it(inode, fd->seekOff);
         if (!it.IsInData()) {
-          struct INode::HoleRange hole = it.GetHole();
-          if (hole.offset > std::numeric_limits<off_t>::max() - (hole.size + offset))
+          if (!it.Next()) {
+            if (inode->size > std::numeric_limits<off_t>::max() - offset)
+              return -EOVERFLOW;
+            return fd->seekOff = inode->size + offset;
+          }
+          struct INode::DataRange* range = it.GetRange();
+          if (range->offset > std::numeric_limits<off_t>::max() - offset)
             return -EOVERFLOW;
-          return fd->seekOff = hole.offset + hole.size + offset;
+          return fd->seekOff = range->offset + offset;
         }
         it.Next();
         if (it.Next()) {
@@ -738,10 +743,11 @@ class FileSystem {
       case SEEK_HOLE: {
         INode::DataIterator it(inode, fd->seekOff);
         if (it.IsInData()) {
-          struct INode::DataRange* range = it.GetRange();
-          if (range->offset > std::numeric_limits<off_t>::max() - (range->size + offset))
+          it.Next();
+          struct INode::HoleRange hole = it.GetHole();
+          if (hole.offset > std::numeric_limits<off_t>::max() - offset)
             return -EOVERFLOW;
-          return fd->seekOff = range->offset + range->size + offset;
+          return fd->seekOff = hole.offset + offset;
         }
         if (it.Next()) {
           it.Next();
