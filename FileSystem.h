@@ -1227,10 +1227,7 @@ class FileSystem {
         amount
       );
       amountRead += amount;
-      if (rangeIn->offset + rangeIn->size <= rangeOut->offset + rangeOut->size)
-        itIn.Next();
-      else if (rangeIn->offset + rangeIn->size >= rangeOut->offset + rangeOut->size)
-        itOut.Next();
+      itIn.Next();
     }
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
