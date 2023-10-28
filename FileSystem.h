@@ -1187,7 +1187,7 @@ class FileSystem {
     INode::DataIterator itIn(inodeIn, off);
     INode::DataIterator itOut(inodeOut, fdOut->seekOff);
     for (size_t amountRead = 0; amountRead != count;) {
-      size_t amount;
+      off_t amount;
       if (!itIn.IsInData()) {
         struct INode::HoleRange holeIn = itIn.GetHole();
         if (!itOut.IsInData()) {
@@ -1197,6 +1197,8 @@ class FileSystem {
             amount = (holeIn.offset + holeIn.size) - (off + amountRead);
             itIn.Next();
           } else itOut.Next();
+          if (amount <= 0)
+            continue;
           if (amount > count - amountRead)
             amount = count - amountRead;
           amountRead += amount;
@@ -1208,6 +1210,8 @@ class FileSystem {
           amount = (holeIn.offset + holeIn.size) - (off + amountRead);
           itIn.Next();
         } else itOut.Next();
+        if (amount <= 0)
+          continue;
         if (amount > count - amountRead)
           amount = count - amountRead;
         memset(rangeOut->data + (fdOut->seekOff + amountRead) - rangeOut->offset, '\0', amount);
