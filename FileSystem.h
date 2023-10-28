@@ -2138,7 +2138,9 @@ class FileSystem {
             offset + length < range2->offset + range2->size) {
           memcpy(range->data + (range2->offset - range->offset), range2->data, range2->size);
           RemoveRange(i);
-        } else ++i;
+        } else if (offset + length < range2->offset)
+          break;
+        else ++i;
       }
       return range;
     }
