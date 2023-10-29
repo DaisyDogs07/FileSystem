@@ -2118,10 +2118,8 @@ class FileSystem {
       for (off_t i = rangeIdx + 1; i < dataRangeCount; ++i) {
         struct DataRange* range2 = dataRanges[i];
         if (range->offset + newRangeLength >= range2->offset) {
-          if (range->offset + newRangeLength <= range2->offset + range2->size) {
+          if (newRangeLength < (range2->offset + range2->size) - range->offset)
             newRangeLength = (range2->offset + range2->size) - range->offset;
-            break;
-          }
         } else break;
       }
       if (!TryRealloc(&range->data, newRangeLength)) {
