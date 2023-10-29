@@ -1980,12 +1980,13 @@ class FileSystem {
           isBeforeFirstRange_ = false;
           for (off_t i = 0; i != inode->dataRangeCount; ++i) {
             struct DataRange* range = inode->dataRanges[i];
-            if (offset >= range->offset &&
-                offset < range->offset + range->size) {
-              rangeIdx_ = i;
-              atData_ = true;
-              break;
-            } else if (offset < range->offset) {
+            if (offset >= range->offset) {
+              if (offset < range->offset + range->size) {
+                rangeIdx_ = i;
+                atData_ = true;
+                break;
+              }
+            } else {
               rangeIdx_ = i;
               atData_ = false;
               break;
@@ -2098,13 +2099,13 @@ class FileSystem {
       struct DataRange* range = NULL;
       for (off_t i = 0; i != dataRangeCount; ++i) {
         struct DataRange* range2 = dataRanges[i];
-        if (offset >= range2->offset &&
-            offset <= range2->offset + range2->size) {
-          rangeIdx = i;
-          range = range2;
-          break;
-        } else if (offset < range2->offset)
-          break;
+        if (offset >= range2->offset) {
+          if (offset <= range2->offset + range2->size) {
+            rangeIdx = i;
+            range = range2;
+            break;
+          }
+        } else break;
       }
       if (!range) {
         range = InsertRange(offset, length, &rangeIdx);
@@ -2117,9 +2118,11 @@ class FileSystem {
         newRangeLength += (offset + length) - (range->offset + range->size);
       for (off_t i = rangeIdx + 1; i < dataRangeCount; ++i) {
         struct DataRange* range2 = dataRanges[i];
-        if (range->offset + newRangeLength >= range2->offset) {
-          if (newRangeLength < (range2->offset + range2->size) - range->offset)
+        if (range2->offset < offset + length) {
+          if (newRangeLength < (range2->offset + range2->size) - range->offset) {
             newRangeLength = (range2->offset + range2->size) - range->offset;
+            break;
+          }
         } else break;
       }
       if (!TryRealloc(&range->data, newRangeLength)) {
@@ -2132,7 +2135,7 @@ class FileSystem {
         size = offset + length;
       for (off_t i = rangeIdx + 1; i < dataRangeCount;) {
         struct DataRange* range2 = dataRanges[i];
-        if (offset + length >= range2->offset) {
+        if (range2->offset < offset + length) {
           memcpy(range->data + (range2->offset - range->offset), range2->data, range2->size);
           RemoveRange(i);
         } else break;
