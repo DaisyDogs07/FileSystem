@@ -2132,12 +2132,13 @@ class FileSystem {
       range->size = newRangeLength;
       if (offset + length > size)
         size = offset + length;
-      while (rangeIdx + 1 < dataRangeCount) {
-        struct DataRange* range2 = dataRanges[rangeIdx + 1];
-        if (offset + length >= range2->offset &&
-            offset + length < range2->offset + range2->size) {
-          memcpy(range->data + (range2->offset - range->offset), range2->data, range2->size);
-          RemoveRange(rangeIdx + 1);
+      for (off_t i = rangeIdx + 1; i < dataRangeCount;) {
+        struct DataRange* range2 = dataRanges[i];
+        if (offset + length >= range2->offset) {
+          if (offset + length < range2->offset + range2->size) {
+            memcpy(range->data + (range2->offset - range->offset), range2->data, range2->size);
+            RemoveRange(i);
+          } else ++i;
         } else break;
       }
       return range;
