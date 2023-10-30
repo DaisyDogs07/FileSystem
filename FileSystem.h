@@ -1195,7 +1195,8 @@ class FileSystem {
           } else itOut.Next();
           if (amount <= 0)
             continue;
-          amount = std::min(amount, count - amountRead);
+          if (amount > count - amountRead)
+            amount = count - amountRead;
           amountRead += amount;
           continue;
         }
@@ -1207,7 +1208,8 @@ class FileSystem {
         } else itOut.Next();
         if (amount <= 0)
           continue;
-        amount = std::min(amount, count - amountRead);
+        if (amount > count - amountRead)
+          amount = count - amountRead;
         memset(rangeOut->data + (fdOut->seekOff + amountRead) - rangeOut->offset, '\0', amount);
         amountRead += amount;
         continue;
