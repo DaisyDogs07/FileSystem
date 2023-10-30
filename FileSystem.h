@@ -787,15 +787,11 @@ class FileSystem {
       size_t amount;
       if (it.IsInData()) {
         struct INode::DataRange* range = it.GetRange();
-        amount = (range->offset + range->size) - (fd->seekOff + amountRead);
-        if (amount > count - amountRead)
-          amount = count - amountRead;
+        amount = std::min((range->offset + range->size) - (fd->seekOff + amountRead), count - amountRead);
         memcpy(buf + amountRead, range->data + (fd->seekOff + amountRead) - range->offset, amount);
       } else {
         struct INode::HoleRange hole = it.GetHole();
-        amount = (hole.offset + hole.size) - (fd->seekOff + amountRead);
-        if (amount > count - amountRead)
-          amount = count - amountRead;
+        amount = std::min((hole.offset + hole.size) - (fd->seekOff + amountRead), count - amountRead);
         memset(buf + amountRead, '\0', amount);
       }
       amountRead += amount;
@@ -848,19 +844,21 @@ class FileSystem {
       size_t amount;
       if (it.IsInData()) {
         struct INode::DataRange* range = it.GetRange();
-        amount = (range->offset + range->size) - (fd->seekOff + count);
-        if (amount > curr.iov_len - amountRead)
-          amount = curr.iov_len - amountRead;
-        if (amount > totalLen - count)
-          amount = totalLen - count;
+        amount = std::min(
+          std::min(
+            (range->offset + range->size) - (fd->seekOff + count),
+            curr.iov_len - amountRead),
+          totalLen - count
+        );
         memcpy((char*)curr.iov_base + amountRead, range->data + (fd->seekOff + count) - range->offset, amount);
       } else {
         struct INode::HoleRange hole = it.GetHole();
-        amount = (hole.offset + hole.size) - (fd->seekOff + count);
-        if (amount > curr.iov_len - amountRead)
-          amount = curr.iov_len - amountRead;
-        if (amount > totalLen - count)
-          amount = totalLen - count;
+        amount = std::min(
+          std::min(
+            (hole.offset + hole.size) - (fd->seekOff + count),
+            curr.iov_len - amountRead),
+          totalLen - count
+        );
         memset((char*)curr.iov_base + amountRead, '\0', amount);
       }
       amountRead += amount;
@@ -901,15 +899,11 @@ class FileSystem {
       size_t amount;
       if (it.IsInData()) {
         struct INode::DataRange* range = it.GetRange();
-        amount = (range->offset + range->size) - (offset + amountRead);
-        if (amount > count - amountRead)
-          amount = count - amountRead;
+        amount = std::min((range->offset + range->size) - (offset + amountRead), count - amountRead);
         memcpy(buf + amountRead, range->data + (offset + amountRead) - range->offset, amount);
       } else {
         struct INode::HoleRange hole = it.GetHole();
-        amount = (hole.offset + hole.size) - (offset + amountRead);
-        if (amount > count - amountRead)
-          amount = count - amountRead;
+        amount = std::min((hole.offset + hole.size) - (offset + amountRead), count - amountRead);
         memset(buf + amountRead, '\0', amount);
       }
       amountRead += amount;
@@ -962,19 +956,21 @@ class FileSystem {
       size_t amount;
       if (it.IsInData()) {
         struct INode::DataRange* range = it.GetRange();
-        amount = (range->offset + range->size) - (fd->seekOff + count);
-        if (amount > curr.iov_len - amountRead)
-          amount = curr.iov_len - amountRead;
-        if (amount > totalLen - count)
-          amount = totalLen - count;
+        amount = std::min(
+          std::min(
+            (range->offset + range->size) - (fd->seekOff + count),
+            curr.iov_len - amountRead),
+          totalLen - count
+        );
         memcpy((char*)curr.iov_base + amountRead, range->data + (fd->seekOff + count) - range->offset, amount);
       } else {
         struct INode::HoleRange hole = it.GetHole();
-        amount = (hole.offset + hole.size) - (fd->seekOff + count);
-        if (amount > curr.iov_len - amountRead)
-          amount = curr.iov_len - amountRead;
-        if (amount > totalLen - count)
-          amount = totalLen - count;
+        amount = std::min(
+          std::min(
+            (hole.offset + hole.size) - (fd->seekOff + count),
+            curr.iov_len - amountRead),
+          totalLen - count
+        );
         memset((char*)curr.iov_base + amountRead, '\0', amount);
       }
       amountRead += amount;
@@ -1219,9 +1215,7 @@ class FileSystem {
         continue;
       }
       struct INode::DataRange* rangeIn = itIn.GetRange();
-      amount = (rangeIn->offset + rangeIn->size) - (off + amountRead);
-      if (amount > count - amountRead)
-        amount = count - amountRead;
+      amount = std::min((rangeIn->offset + rangeIn->size) - (off + amountRead), count - amountRead);
       struct INode::DataRange* rangeOut = inodeOut->AllocData(fdOut->seekOff + amountRead, amount);
       if (!rangeOut)
         return -EIO;
@@ -2118,10 +2112,9 @@ class FileSystem {
         newRangeLength += (offset + length) - (range->offset + range->size);
       for (off_t i = rangeIdx + 1; i < dataRangeCount; ++i) {
         struct DataRange* range2 = dataRanges[i];
-        if (range2->offset < offset + length) {
-          if (newRangeLength < (range2->offset + range2->size) - range->offset)
-            newRangeLength = (range2->offset + range2->size) - range->offset;
-        } else break;
+        if (range2->offset < offset + length)
+          newRangeLength = std::max(newRangeLength, (range2->offset + range2->size) - range->offset);
+        else break;
       }
       if (!TryRealloc(&range->data, newRangeLength)) {
         if (createdRange)
