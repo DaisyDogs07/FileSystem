@@ -1226,6 +1226,27 @@ class FileSystem {
       );
       amountRead += amount;
       itIn.Next();
+      off_t rangeOutEnd;
+      if (itOut.IsInData()) {
+        struct INode::DataRange* rangeOut = itOut.GetRange();
+        rangeOutEnd = rangeOut->offset + rangeOut->size;
+      } else {
+        struct INode::HoleRange holeOut = itOut.GetHole();
+        rangeOutEnd = holeOut.offset + holeOut.size;
+      }
+      if (rangeOutEnd < off + amountRead) {
+        while (itOut.Next()) {
+          if (itOut.IsInData()) {
+            struct INode::DataRange* rangeOut = itOut.GetRange();
+            if (rangeOut->offset + rangeOut->size >= off + amountRead)
+              break;
+          } else {
+            struct INode::HoleRange holeOut = itOut.GetHole();
+            if (holeOut.offset + holeOut.size >= off + amountRead)
+              break;
+          }
+        }
+      }
     }
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
