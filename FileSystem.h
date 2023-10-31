@@ -775,8 +775,7 @@ class FileSystem {
       return 0;
     if (!buf)
       return -EFAULT;
-    if (count > 0x7ffff000)
-      count = 0x7ffff000;
+    count = std::min(count, 0x7ffff000UL);
     if (fd->seekOff >= inode->size)
       return 0;
     off_t end = inode->size - fd->seekOff;
@@ -887,8 +886,7 @@ class FileSystem {
       return 0;
     if (!buf)
       return -EFAULT;
-    if (count > 0x7ffff000)
-      count = 0x7ffff000;
+    count = std::min(count, 0x7ffff000UL);
     if (offset >= inode->size)
       return 0;
     off_t end = inode->size - offset;
@@ -991,8 +989,7 @@ class FileSystem {
       return -EBADF;
     if (count == 0)
       return 0;
-    if (count > 0x7ffff000)
-      count = 0x7ffff000;
+    count = std::min(count, 0x7ffff000UL);
     if (!buf)
       return -EFAULT;
     struct INode* inode = fd->inode;
@@ -1077,8 +1074,7 @@ class FileSystem {
       return -EBADF;
     if (count == 0)
       return 0;
-    if (count > 0x7ffff000)
-      count = 0x7ffff000;
+    count = std::min(count, 0x7ffff000UL);
     if (!buf)
       return -EFAULT;
     struct INode* inode = fd->inode;
@@ -1164,8 +1160,7 @@ class FileSystem {
     } else off = fdIn->seekOff;
     if (count == 0)
       return 0;
-    if (count > 0x7ffff000)
-      count = 0x7ffff000;
+    count = std::min(count, 0x7ffff000UL);
     struct INode* inodeIn = fdIn->inode;
     struct INode* inodeOut = fdOut->inode;
     if (fdOut->seekOff > std::numeric_limits<off_t>::max() - count)
@@ -1183,7 +1178,7 @@ class FileSystem {
     INode::DataIterator itIn(inodeIn, off);
     INode::DataIterator itOut(inodeOut, fdOut->seekOff);
     for (size_t amountRead = 0; amountRead != count;) {
-      off_t amount;
+      size_t amount;
       if (!itIn.IsInData()) {
         struct INode::HoleRange holeIn = itIn.GetHole();
         if (!itOut.IsInData()) {
@@ -1193,11 +1188,9 @@ class FileSystem {
             amount = (holeIn.offset + holeIn.size) - (off + amountRead);
             itIn.Next();
           } else itOut.Next();
-          if (amount <= 0)
+          if (amount == 0)
             continue;
-          if (amount > count - amountRead)
-            amount = count - amountRead;
-          amountRead += amount;
+          amountRead += std::min(amount, count - amountRead);
           continue;
         }
         struct INode::DataRange* rangeOut = itOut.GetRange();
@@ -1206,10 +1199,9 @@ class FileSystem {
           amount = (holeIn.offset + holeIn.size) - (off + amountRead);
           itIn.Next();
         } else itOut.Next();
-        if (amount <= 0)
+        if (amount == 0)
           continue;
-        if (amount > count - amountRead)
-          amount = count - amountRead;
+        amount = std::min(amount, count - amountRead);
         memset(rangeOut->data + (fdOut->seekOff + amountRead) - rangeOut->offset, '\0', amount);
         amountRead += amount;
         continue;
