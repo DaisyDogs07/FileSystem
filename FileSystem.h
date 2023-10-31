@@ -1238,13 +1238,13 @@ class FileSystem {
         while (itOut.Next()) {
           if (itOut.IsInData()) {
             struct INode::DataRange* rangeOut = itOut.GetRange();
-            if (rangeOut->offset + rangeOut->size >= off + amountRead)
-              break;
+            rangeOutEnd = rangeOut->offset + rangeOut->size;
           } else {
             struct INode::HoleRange holeOut = itOut.GetHole();
-            if (holeOut.offset + holeOut.size >= off + amountRead)
-              break;
+            rangeOutEnd = holeOut.offset + holeOut.size;
           }
+          if (rangeOutEnd >= off + amountRead)
+            break;
         }
       }
     }
