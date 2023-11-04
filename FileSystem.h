@@ -144,7 +144,7 @@ class FileSystem {
         const char* name = GetAbsoluteLast(path);
         if (!name)
           return -ENOMEM;
-        if (parent->size > std::numeric_limits<off_t>::max() - (strlen(name) * 2)) {
+        if (parent->size > std::numeric_limits<off_t>::max() - strlen(name)) {
           delete name;
           return -ENOSPC;
         }
@@ -235,7 +235,7 @@ class FileSystem {
     const char* name = GetAbsoluteLast(path);
     if (!name)
       return -ENOMEM;
-    if (parent->size > std::numeric_limits<off_t>::max() - (strlen(name) * 2)) {
+    if (parent->size > std::numeric_limits<off_t>::max() - strlen(name)) {
       delete name;
       return -ENOSPC;
     }
@@ -286,7 +286,7 @@ class FileSystem {
     const char* name = GetAbsoluteLast(path);
     if (!name)
       return -ENOMEM;
-    if (parent->size > std::numeric_limits<off_t>::max() - (strlen(name) * 2)) {
+    if (parent->size > std::numeric_limits<off_t>::max() - strlen(name)) {
       delete name;
       return -ENOSPC;
     }
@@ -349,7 +349,7 @@ class FileSystem {
     const char* name = GetAbsoluteLast(newPath);
     if (!name)
       return -ENOMEM;
-    if (newParent->size > std::numeric_limits<off_t>::max() - (strlen(name) * 2)) {
+    if (newParent->size > std::numeric_limits<off_t>::max() - strlen(name)) {
       delete name;
       return -ENOSPC;
     }
@@ -496,7 +496,7 @@ class FileSystem {
     const char* name = GetAbsoluteLast(newPath);
     if (!name)
       return -ENOMEM;
-    if (newParent->size > std::numeric_limits<off_t>::max() - (strlen(name) * 2)) {
+    if (newParent->size > std::numeric_limits<off_t>::max() - strlen(name)) {
       delete name;
       return -ENOSPC;
     }
@@ -658,11 +658,13 @@ class FileSystem {
       delete oldName;
       delete newName;
     } else {
-      if (newParent->size > std::numeric_limits<off_t>::max() - (strlen(newName) * 2)) {
+      if (newParent->size > std::numeric_limits<off_t>::max() - strlen(newName)) {
+        delete oldName;
         delete newName;
         return -ENOSPC;
       }
       if (!newParent->PushDent(newName, oldInode)) {
+        delete oldName;
         delete newName;
         return -EIO;
       }
@@ -725,7 +727,7 @@ class FileSystem {
             return fd->seekOff = inode->size + offset;
           }
           struct INode::DataRange* range = it.GetRange();
-          if (range->offset > std::numeric_limits<off_t>::max() - offset)
+          if (range->offset > std::numeric_limits<typeof(offset)>::max() - offset)
             return -EOVERFLOW;
           return fd->seekOff = range->offset + offset;
         }
