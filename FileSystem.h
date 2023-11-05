@@ -166,14 +166,14 @@ class FileSystem {
         x->mode = mode;
         x->nlink = 1;
         parent->ctime = parent->mtime = x->btime;
-        int res = PushFd(x, flags);
+        res = PushFd(x, flags);
         if (res < 0) {
           parent->RemoveDent(name);
           RemoveINode(x);
           delete name;
         }
-        return res;
-      } else return res;
+      }
+      return res;
     }
     if (S_ISDIR(inode->mode)) {
       if (flags & (O_WRONLY | O_RDWR))
