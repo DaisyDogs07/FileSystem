@@ -727,7 +727,7 @@ class FileSystem {
             return fd->seekOff = inode->size + offset;
           }
           struct INode::DataRange* range = it.GetRange();
-          if (range->offset > std::numeric_limits<typeof(offset)>::max() - offset)
+          if (range->offset > std::numeric_limits<off_t>::max() - offset)
             return -EOVERFLOW;
           return fd->seekOff = range->offset + offset;
         }
@@ -2122,9 +2122,12 @@ class FileSystem {
       off_t newRangeLength = range->size + ((offset + length) - (range->offset + range->size));
       for (off_t i = rangeIdx + 1; i < dataRangeCount; ++i) {
         struct DataRange* range2 = dataRanges[i];
-        if (range2->offset < offset + length)
-          newRangeLength = std::max(newRangeLength, (range2->offset + range2->size) - range->offset);
-        else break;
+        if (range2->offset < offset + length) {
+          if (newRangeLength < (range2->offset - range->offset) + range2->size) {
+            newRangeLength = (range2->offset - range->offset) + range2->size;
+            break;
+          }
+        } else break;
       }
       if (!TryRealloc(&range->data, newRangeLength)) {
         if (createdRange)
@@ -2157,22 +2160,21 @@ class FileSystem {
         dataRangeCount = 0;
         return;
       }
-      for (off_t i = 0; i != dataRangeCount; ++i) {
+      for (off_t i = dataRangeCount - 1; i >= 0; --i) {
         struct DataRange* range = dataRanges[i];
-        if (length > range->offset &&
-            length < range->offset + range->size) {
-          for (off_t j = i + 1; j != dataRangeCount; ++j)
-            delete dataRanges[j];
+        if (length > range->offset) {
           dataRanges = reinterpret_cast<struct DataRange**>(
             realloc(dataRanges, sizeof(struct DataRange*) * (i + 1))
           );
           dataRangeCount = i + 1;
-          range->data = reinterpret_cast<char*>(
-            realloc(range->data, length - range->offset)
-          );
-          range->size = length - range->offset;
+          if (length < range->offset + range->size) {
+            range->size = length - range->offset;
+            range->data = reinterpret_cast<char*>(
+              realloc(range->data, range->size)
+            );
+          }
           break;
-        }
+        } else delete range;
       }
     }
     off_t size = 0;
