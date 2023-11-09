@@ -1983,18 +1983,34 @@ class FileSystem {
           isBeforeFirstRange_ = false;
         } else {
           isBeforeFirstRange_ = false;
-          for (off_t i = 0; i != inode->dataRangeCount; ++i) {
-            struct DataRange* range = inode->dataRanges[i];
+          off_t low = 0;
+          off_t high = inode->dataRangeCount - 1;
+          while (low <= high) {
+            off_t mid = (low + high) / 2;
+            struct DataRange* range = inode->dataRanges[mid];
             if (offset >= range->offset) {
               if (offset < range->offset + range->size) {
-                rangeIdx_ = i;
+                rangeIdx_ = mid;
                 atData_ = true;
                 break;
               }
+              low = mid + 1;
+              struct DataRange* nextRange = inode->dataRanges[low];
+              if (offset >= range->offset + range->size &&
+                  offset < nextRange->offset) {
+                rangeIdx_ = mid;
+                atData_ = false;
+                break;
+              }
             } else {
-              rangeIdx_ = i;
-              atData_ = false;
-              break;
+              high = mid - 1;
+              struct DataRange* prevRange = inode->dataRanges[high];
+              if (offset >= prevRange->offset + prevRange->size &&
+                  offset < range->offset) {
+                rangeIdx_ = mid;
+                atData_ = false;
+                break;
+              }
             }
           }
         }
