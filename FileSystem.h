@@ -2019,6 +2019,9 @@ class FileSystem {
       bool IsInData() {
         return atData_;
       }
+      off_t GetRangeIdx() {
+        return rangeIdx_;
+      }
       struct DataRange* GetRange() {
         return inode_->dataRanges[rangeIdx_];
       }
@@ -2086,31 +2089,23 @@ class FileSystem {
         dataRanges[dataRangeCount++] = range;
         return range;
       }
-      off_t low = 0;
-      off_t high = dataRangeCount - 1;
-      while (low <= high) {
-        off_t mid = (low + high) / 2;
-        struct DataRange* range2 = dataRanges[mid];
-        if (offset >= range2->offset) {
-          if (offset <= range2->offset + range2->size) {
-            if (!TryAlloc(&range))
-              return NULL;
-            if (!TryAlloc(&range->data, size) ||
-                !TryRealloc(&dataRanges, dataRangeCount + 1)) {
-              delete range;
-              return NULL;
-            }
-            range->offset = offset;
-            range->size = size;
-            memmove(dataRanges + mid + 1, dataRanges + mid, sizeof(struct DataRange*) * (dataRangeCount - mid));
-            *index = mid;
-            dataRanges[mid] = range;
-            ++dataRangeCount;
-            break;
+      for (off_t i = 0; i != dataRangeCount; ++i)
+        if (offset < dataRanges[i]->offset) {
+          if (!TryAlloc(&range))
+            return NULL;
+          if (!TryAlloc(&range->data, size) ||
+              !TryRealloc(&dataRanges, dataRangeCount + 1)) {
+            delete range;
+            return NULL;
           }
-          low = mid + 1;
-        } else high = mid - 1;
-      }
+          range->offset = offset;
+          range->size = size;
+          memmove(dataRanges + i + 1, dataRanges + i, sizeof(struct DataRange*) * (dataRangeCount - i));
+          *index = i;
+          dataRanges[i] = range;
+          ++dataRangeCount;
+          break;
+        }
       return range;
     }
     void RemoveRange(off_t index) {
