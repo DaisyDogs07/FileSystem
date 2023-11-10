@@ -2019,9 +2019,6 @@ class FileSystem {
       bool IsInData() {
         return atData_;
       }
-      off_t GetRangeIdx() {
-        return rangeIdx_;
-      }
       struct DataRange* GetRange() {
         return inode_->dataRanges[rangeIdx_];
       }
