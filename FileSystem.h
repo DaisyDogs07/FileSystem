@@ -2089,23 +2089,34 @@ class FileSystem {
         dataRanges[dataRangeCount++] = range;
         return range;
       }
-      for (off_t i = 0; i != dataRangeCount; ++i)
-        if (offset < dataRanges[i]->offset) {
-          if (!TryAlloc(&range))
-            return NULL;
-          if (!TryAlloc(&range->data, size) ||
-              !TryRealloc(&dataRanges, dataRangeCount + 1)) {
-            delete range;
-            return NULL;
+      off_t rangeIdx = 0;
+      {
+        off_t low = 0;
+        off_t high = dataRangeCount - 1;
+        while (low <= high) {
+          off_t mid = (low + high) / 2;
+          struct DataRange* range2 = dataRanges[mid];
+          if (offset >= range2->offset)
+            low = mid + 1;
+          else {
+            high = mid - 1;
+            rangeIdx = mid;
           }
-          range->offset = offset;
-          range->size = size;
-          memmove(dataRanges + i + 1, dataRanges + i, sizeof(struct DataRange*) * (dataRangeCount - i));
-          *index = i;
-          dataRanges[i] = range;
-          ++dataRangeCount;
-          break;
         }
+      }
+      if (!TryAlloc(&range))
+        return NULL;
+      if (!TryAlloc(&range->data, size) ||
+          !TryRealloc(&dataRanges, dataRangeCount + 1)) {
+        delete range;
+        return NULL;
+      }
+      range->offset = offset;
+      range->size = size;
+      memmove(dataRanges + rangeIdx + 1, dataRanges + rangeIdx, sizeof(struct DataRange*) * (dataRangeCount - rangeIdx));
+      *index = rangeIdx;
+      dataRanges[rangeIdx] = range;
+      ++dataRangeCount;
       return range;
     }
     void RemoveRange(off_t index) {
