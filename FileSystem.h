@@ -1,3 +1,4 @@
+#pragma once
 #ifndef __linux__
 #error FileSystem is only available in Linux
 #endif
@@ -2233,11 +2234,19 @@ class FileSystem {
   std::mutex mtx;
   bool PushINode(struct INode* inode) {
     ino_t id = inodeCount;
-    for (ino_t i = 0; i != inodeCount; ++i)
-      if (inodes[i]->id != i) {
-        id = i;
-        break;
+    if (inodeCount != 0) {
+      ino_t low = 0;
+      ino_t high = inodeCount - 1;
+      while (low <= high) {
+        ino_t mid = (low + high) / 2;
+        if (inodes[mid]->id == mid)
+          low = mid + 1;
+        else {
+          id = mid;
+          high = mid - 1;
+        }
       }
+    }
     if (!TryRealloc(&inodes, sizeof(struct INode*) * (inodeCount + 1)))
       return false;
     if (id != inodeCount) {
@@ -2268,45 +2277,71 @@ class FileSystem {
     if (fdCount == std::numeric_limits<int>::max())
       return -ENFILE;
     int fdNum = fdCount;
-    for (int i = 0; i != fdCount; ++i)
-      if (fds[i]->fd != i) {
-        fdNum = i;
-        break;
+    if (fdCount != 0) {
+      int low = 0;
+      int high = fdCount - 1;
+      while (low <= high) {
+        int mid = (low + high) / 2;
+        if (fds[mid]->fd == mid)
+          low = mid + 1;
+        else {
+          fdNum = mid;
+          high = mid - 1;
+        }
       }
+    }
     struct Fd* fd;
-    if (!TryRealloc(&fds, fdCount + 1))
+    if (!TryAlloc(&fd))
       return -ENOMEM;
-    if (!TryAlloc(&fd)) {
-      fds = reinterpret_cast<struct Fd**>(
-        realloc(fds, sizeof(struct Fd*) * fdCount)
-      );
+    if (!TryRealloc(&fds, fdCount + 1)) {
+      delete fd;
       return -ENOMEM;
     }
+    if (fdNum != fdCount)
+      memmove(fds + fdNum + 1, fds + fdNum, sizeof(struct Fd*) * (fdCount - fdNum));
     fd->inode = inode;
     fd->flags = flags;
     fd->fd = fdNum;
-    fds[fdCount++] = fd;
+    fds[fdNum] = fd;
+    ++fdCount;
     return fdNum;
   }
   int RemoveFd(unsigned int fd) {
-    for (int i = 0; i != fdCount; ++i)
-      if (fds[i]->fd == fd) {
-        if (fds[i]->inode->nlink == 0)
-          RemoveINode(fds[i]->inode);
-        delete fds[i];
-        if (i != fdCount - 1)
-          memmove(fds + i, fds + i + 1, sizeof(struct Fd*) * (fdCount - i));
-        fds = reinterpret_cast<struct Fd**>(
-          realloc(fds, sizeof(struct Fd*) * --fdCount)
-        );
-        return 0;
+    if (fdCount != 0) {
+      int low = 0;
+      int high = fdCount - 1;
+      while (low <= high) {
+        int mid = (low + high) / 2;
+        if (fds[mid]->fd == fd) {
+          if (fds[mid]->inode->nlink == 0)
+            RemoveINode(fds[mid]->inode);
+          delete fds[mid];
+          if (mid != fdCount - 1)
+            memmove(fds + mid, fds + mid + 1, sizeof(struct Fd*) * (fdCount - mid));
+          fds = reinterpret_cast<struct Fd**>(
+            realloc(fds, sizeof(struct Fd*) * --fdCount)
+          );
+          return 0;
+        } else if (fds[mid]->fd < fd)
+          low = mid + 1;
+        else high = mid - 1;
       }
+    }
     return -EBADF;
   }
   struct Fd* GetFd(unsigned int fdNum) {
-    for (int i = 0; i != fdCount; ++i)
-      if (fds[i]->fd == fdNum)
-        return fds[i];
+    if (fdCount != 0) {
+      int low = 0;
+      int high = fdCount - 1;
+      while (low <= high) {
+        int mid = (low + high) / 2;
+        if (fds[mid]->fd == fdNum)
+          return fds[mid];
+        else if (fds[mid]->fd < fdNum)
+          low = mid + 1;
+        else high = mid - 1;
+      }
+    }
     return NULL;
   }
   int GetINode(
