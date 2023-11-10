@@ -2086,23 +2086,31 @@ class FileSystem {
         dataRanges[dataRangeCount++] = range;
         return range;
       }
-      for (off_t i = 0; i != dataRangeCount; ++i)
-        if (offset < dataRanges[i]->offset) {
-          if (!TryAlloc(&range))
-            return NULL;
-          if (!TryAlloc(&range->data, size) ||
-              !TryRealloc(&dataRanges, dataRangeCount + 1)) {
-            delete range;
-            return NULL;
+      off_t low = 0;
+      off_t high = dataRangeCount - 1;
+      while (low <= high) {
+        off_t mid = (low + high) / 2;
+        struct DataRange* range2 = dataRanges[mid];
+        if (offset >= range2->offset) {
+          if (offset <= range2->offset + range2->size) {
+            if (!TryAlloc(&range))
+              return NULL;
+            if (!TryAlloc(&range->data, size) ||
+                !TryRealloc(&dataRanges, dataRangeCount + 1)) {
+              delete range;
+              return NULL;
+            }
+            range->offset = offset;
+            range->size = size;
+            memmove(dataRanges + mid + 1, dataRanges + mid, sizeof(struct DataRange*) * (dataRangeCount - mid));
+            *index = mid;
+            dataRanges[mid] = range;
+            ++dataRangeCount;
+            break;
           }
-          range->offset = offset;
-          range->size = size;
-          memmove(dataRanges + i + 1, dataRanges + i, sizeof(struct DataRange*) * (dataRangeCount - i));
-          *index = i;
-          dataRanges[i] = range;
-          ++dataRangeCount;
-          break;
-        }
+          low = mid + 1;
+        } else high = mid - 1;
+      }
       return range;
     }
     void RemoveRange(off_t index) {
@@ -2119,15 +2127,21 @@ class FileSystem {
       off_t rangeIdx = 0;
       bool createdRange = false;
       struct DataRange* range = NULL;
-      for (off_t i = 0; i != dataRangeCount; ++i) {
-        struct DataRange* range2 = dataRanges[i];
-        if (offset >= range2->offset) {
-          if (offset <= range2->offset + range2->size) {
-            rangeIdx = i;
-            range = range2;
-            break;
-          }
-        } else break;
+      {
+        off_t low = 0;
+        off_t high = dataRangeCount - 1;
+        while (low <= high) {
+          off_t mid = (low + high) / 2;
+          struct DataRange* range2 = dataRanges[mid];
+          if (offset >= range2->offset) {
+            if (offset <= range2->offset + range2->size) {
+              rangeIdx = mid;
+              range = range2;
+              break;
+            }
+            low = mid + 1;
+          } else high = mid - 1;
+        }
       }
       if (!range) {
         range = InsertRange(offset, length, &rangeIdx);
