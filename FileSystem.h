@@ -2049,10 +2049,12 @@ class FileSystem {
       }
       bool Next() {
         if (!atData_) {
-          if (rangeIdx_ >= inode_->dataRangeCount - 1)
-            return false;
-          if (isBeforeFirstRange_)
+          if (isBeforeFirstRange_) {
+            if (inode_->dataRangeCount == 0)
+              return false;
             isBeforeFirstRange_ = false;
+          } else if (rangeIdx_ == inode_->dataRangeCount - 1)
+            return false;
           else ++rangeIdx_;
         }
         atData_ = !atData_;
