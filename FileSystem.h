@@ -2096,7 +2096,7 @@ class FileSystem {
         dataRanges[dataRangeCount++] = range;
         return range;
       }
-      off_t rangeIdx = 0;
+      off_t rangeIdx;
       {
         off_t low = 0;
         off_t high = dataRangeCount - 1;
