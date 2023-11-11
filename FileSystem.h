@@ -2066,7 +2066,7 @@ class FileSystem {
     };
 
     struct DataRange* InsertRange(off_t offset, off_t size, off_t* index) {
-      struct DataRange* range = NULL;
+      struct DataRange* range;
       if (dataRangeCount == 0) {
         if (!TryAlloc(&range))
           return NULL;
