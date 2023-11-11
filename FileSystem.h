@@ -2270,8 +2270,8 @@ class FileSystem {
         if (inodes[mid]->id == mid)
           low = mid + 1;
         else {
-          id = mid;
           high = mid - 1;
+          id = mid;
         }
       }
     }
@@ -2313,8 +2313,8 @@ class FileSystem {
         if (fds[mid]->fd == mid)
           low = mid + 1;
         else {
-          fdNum = mid;
           high = mid - 1;
+          fdNum = mid;
         }
       }
     }
@@ -2350,7 +2350,8 @@ class FileSystem {
             realloc(fds, sizeof(struct Fd*) * --fdCount)
           );
           return 0;
-        } else if (fds[mid]->fd < fd)
+        }
+        if (fds[mid]->fd < fd)
           low = mid + 1;
         else high = mid - 1;
       }
@@ -2365,7 +2366,7 @@ class FileSystem {
         int mid = (low + high) / 2;
         if (fds[mid]->fd == fdNum)
           return fds[mid];
-        else if (fds[mid]->fd < fdNum)
+        if (fds[mid]->fd < fdNum)
           low = mid + 1;
         else high = mid - 1;
       }
