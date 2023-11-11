@@ -778,7 +778,8 @@ class FileSystem {
       return 0;
     if (!buf)
       return -EFAULT;
-    count = std::min(count, (size_t)0x7ffff000);
+    if (count > 0x7ffff000)
+      count = 0x7ffff000;
     if (fd->seekOff >= inode->size)
       return 0;
     off_t end = inode->size - fd->seekOff;
@@ -889,7 +890,8 @@ class FileSystem {
       return 0;
     if (!buf)
       return -EFAULT;
-    count = std::min(count, (size_t)0x7ffff000);
+    if (count > 0x7ffff000)
+      count = 0x7ffff000;
     if (offset >= inode->size)
       return 0;
     off_t end = inode->size - offset;
@@ -992,7 +994,8 @@ class FileSystem {
       return -EBADF;
     if (count == 0)
       return 0;
-    count = std::min(count, (size_t)0x7ffff000);
+    if (count > 0x7ffff000)
+      count = 0x7ffff000;
     if (!buf)
       return -EFAULT;
     struct INode* inode = fd->inode;
@@ -1077,7 +1080,8 @@ class FileSystem {
       return -EBADF;
     if (count == 0)
       return 0;
-    count = std::min(count, (size_t)0x7ffff000);
+    if (count > 0x7ffff000)
+      count = 0x7ffff000;
     if (!buf)
       return -EFAULT;
     struct INode* inode = fd->inode;
@@ -1163,7 +1167,8 @@ class FileSystem {
     } else off = fdIn->seekOff;
     if (count == 0)
       return 0;
-    count = std::min(count, (size_t)0x7ffff000);
+    if (count > 0x7ffff000)
+      count = 0x7ffff000;
     struct INode* inodeIn = fdIn->inode;
     struct INode* inodeOut = fdOut->inode;
     if (fdOut->seekOff > std::numeric_limits<off_t>::max() - count)
@@ -1204,7 +1209,8 @@ class FileSystem {
         } else itOut.Next();
         if (amount == 0)
           continue;
-        amount = std::min(amount, count - amountRead);
+        if (amount > count - amountRead)
+          amount = count - amountRead;
         memset(rangeOut->data + (fdOut->seekOff + amountRead) - rangeOut->offset, '\0', amount);
         amountRead += amount;
         continue;
@@ -1582,7 +1588,9 @@ class FileSystem {
           }
           ssize_t written = 0;
           while (written != range->size) {
-            size_t amount = std::min(range->size - written, (off_t)0x7ffff000);
+            size_t amount = range->size - written;
+            if (amount > 0x7ffff000)
+              amount = 0x7ffff000;
             ssize_t count = write(fd, range->data + written, amount);
             if (count < 0) {
               close(fd);
@@ -1820,7 +1828,9 @@ class FileSystem {
             }
             ssize_t nread = 0;
             while (nread != size) {
-              size_t amount = std::min(size - nread, (off_t)0x7ffff000);
+              size_t amount = size - nread;
+              if (amount > 0x7ffff000)
+                amount = 0x7ffff000;
               ssize_t count = read(fd, range->data + nread, amount);
               if (count != amount) {
                 close(fd);
@@ -2169,7 +2179,8 @@ class FileSystem {
         return NULL;
       }
       range->size = newRangeLength;
-      size = std::max(size, offset + length);
+      if (size < offset + length)
+        size = offset + length;
       for (off_t i = rangeIdx + 1; i < dataRangeCount;) {
         struct DataRange* range2 = dataRanges[i];
         if (range2->offset < offset + length) {
