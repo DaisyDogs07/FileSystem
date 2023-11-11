@@ -2166,7 +2166,7 @@ class FileSystem {
       off_t newRangeLength = range->size + ((offset + length) - (range->offset + range->size));
       for (off_t i = rangeIdx + 1; i < dataRangeCount; ++i) {
         struct DataRange* range2 = dataRanges[i];
-        if (range2->offset < offset + length) {
+        if (range2->offset <= offset + length) {
           if (newRangeLength < (range2->offset - range->offset) + range2->size) {
             newRangeLength = (range2->offset - range->offset) + range2->size;
             break;
@@ -2183,7 +2183,7 @@ class FileSystem {
         size = offset + length;
       for (off_t i = rangeIdx + 1; i < dataRangeCount;) {
         struct DataRange* range2 = dataRanges[i];
-        if (range2->offset < offset + length) {
+        if (range2->offset <= offset + length) {
           memcpy(range->data + (range2->offset - range->offset), range2->data, range2->size);
           RemoveRange(i);
         } else break;
