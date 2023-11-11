@@ -2137,7 +2137,7 @@ class FileSystem {
     }
 
     struct DataRange* AllocData(off_t offset, off_t length) {
-      off_t rangeIdx = 0;
+      off_t rangeIdx;
       bool createdRange = false;
       struct DataRange* range = NULL;
       {
