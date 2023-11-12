@@ -2149,35 +2149,6 @@ class FileSystem {
           off_t mid = (low + high) / 2;
           struct DataRange* range2 = dataRanges[mid];
           if (offset >= range2->offset) {
-            for (off_t i = mid; i != dataRangeCount; ++i) {
-              struct DataRange* range3 = dataRanges[i];
-              if (offset + length == range3->offset) {
-                for (off_t j = i; j != 0; --j) {
-                  struct DataRange* range4 = dataRanges[j - 1];
-                  if (offset < range4->offset + range4->size &&
-                      offset + length >= range4->offset) {
-                    length += offset - range4->offset;
-                    offset = range4->offset;
-                    break;
-                  }
-                }
-                if (!TryRealloc(&range3->data, range3->size + length))
-                  return NULL;
-                memmove(range3->data + length, range3->data, range3->size);
-                for (off_t j = i - 1; j >= 0; --j) {
-                  struct DataRange* range4 = dataRanges[j];
-                  if (offset < range4->offset + range4->size &&
-                      offset + length >= range4->offset) {
-                    memmove(range3->data + (range4->offset - offset), range4->data, range4->size);
-                    RemoveRange(j);
-                  } else break;
-                }
-                range3->offset = offset;
-                range3->size += length;
-                return range3;
-              } else if (offset + length < range3->offset)
-                break;
-            }
             if (offset <= range2->offset + range2->size) {
               rangeIdx = mid;
               range = range2;
