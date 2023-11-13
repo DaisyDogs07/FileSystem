@@ -2180,11 +2180,12 @@ class FileSystem {
                     return NULL;
                   memmove(range4->data + (newRangeLength - range3->size), range3->data, range3->size);
                   range4->size = newRangeLength;
-                  for (off_t k = rangeIdx + 1; k <= i; --i) {
+                  for (off_t k = rangeIdx + 1; k < i; --i) {
                     struct DataRange* range5 = dataRanges[k];
                     memmove(range4->data + (range5->offset - range4->offset), range5->data, range5->size);
                     RemoveRange(k);
                   }
+                  RemoveRange(i);
                   if (offset < range4->offset)
                     range4->offset = offset;
                   return range4;
