@@ -1211,7 +1211,7 @@ class FileSystem {
           continue;
         if (amount > count - amountRead)
           amount = count - amountRead;
-        memset(rangeOut->data + (fdOut->seekOff + amountRead) - rangeOut->offset, '\0', amount);
+        memset(rangeOut->data + ((fdOut->seekOff + amountRead) - rangeOut->offset), '\0', amount);
         amountRead += amount;
         continue;
       }
@@ -1221,8 +1221,8 @@ class FileSystem {
       if (!rangeOut)
         return -EIO;
       memcpy(
-        rangeOut->data + (fdOut->seekOff + amountRead) - rangeOut->offset,
-        rangeIn->data + (off + amountRead) - rangeIn->offset,
+        rangeOut->data + ((fdOut->seekOff + amountRead) - rangeOut->offset),
+        rangeIn->data + ((off + amountRead) - rangeIn->offset),
         amount
       );
       amountRead += amount;
