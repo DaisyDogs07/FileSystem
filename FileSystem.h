@@ -2142,6 +2142,20 @@ class FileSystem {
       off_t rangeIdx;
       bool createdRange = false;
       struct DataRange* range = NULL;
+      // basically, if the end of the data we need to allocate is directly
+      // before another range, merge the data from the
+      // other ranges
+      // ive tried tons of methods and none of them worked correctly ;-;
+
+      // https://github.com/DaisyDogs07/FileSystem/blob/9000b88e8113bd1a231e2457060eb26ef8d5dc7b/FileSystem.h#L2152-L2179
+      // heres one of my attempts
+
+      // free(): double free or corruption (out)
+      // literally what it said in the console
+      // malloc(): something about tcache (underflow i think)
+      // aaaand stuff about invalid old size
+      // blablabla
+      // i logged what things were being free'd and im not freeing things twice at all
       {
         off_t low = 0;
         off_t high = dataRangeCount - 1;
@@ -2149,6 +2163,43 @@ class FileSystem {
           off_t mid = (low + high) / 2;
           struct DataRange* range2 = dataRanges[mid];
           if (offset >= range2->offset) {
+            for (off_t i = mid; i != dataRangeCount; ++i) {
+              struct DataRange* range3 = dataRanges[i];
+              if (offset + length == range3->offset) {
+                struct DataRange* range4 = NULL;
+                for (off_t j = i - 1; j >= 0; --j) {
+                  struct DataRange* range5 = dataRanges[j];
+                  if (offset <= range5->offset + range5->size) {
+                    rangeIdx = j;
+                    range4 = range5;
+                  } else break;
+                }
+                if (range4) {
+                  off_t newRangeLength = range4->size + ((range3->offset + range3->size) - range4->offset);
+                  if (!TryRealloc(&range4->data, newRangeLength))
+                    return NULL;
+                  memmove(range4->data + (newRangeLength - range3->size), range3->data, range3->size);
+                  range4->size = newRangeLength;
+                  for (off_t k = rangeIdx + 1; k <= i; --i) {
+                    struct DataRange* range5 = dataRanges[k];
+                    memmove(range4->data + (range5->offset - range4->offset), range5->data, range5->size);
+                    RemoveRange(k);
+                  }
+                  if (offset < range4->offset)
+                    range4->offset = offset;
+                  return range4;
+                } else {
+                  off_t newRangeLength = (range3->offset + range3->size) - offset;
+                  if (!TryRealloc(&range3->data, newRangeLength))
+                    return NULL;
+                  memmove(range3->data + (newRangeLength - range3->size), range3->data, range3->size);
+                  range3->size = newRangeLength;
+                  range3->offset = offset;
+                  return range3;
+                }
+              } else if (offset + length < range3->offset)
+                break;
+            }
             if (offset <= range2->offset + range2->size) {
               rangeIdx = mid;
               range = range2;
