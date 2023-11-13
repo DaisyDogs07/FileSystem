@@ -2168,7 +2168,7 @@ class FileSystem {
                       return NULL;
                     memmove(range4->data + (newRangeLength - range4->size), range4->data, range4->size);
                     range4->size = newRangeLength;
-                    for (off_t k = j + 1; k <= i + 1; --i) {
+                    for (off_t k = j + 1; k < i + 1; --i) {
                       struct DataRange* range5 = dataRanges[k];
                       memmove(range4->data + (range5->offset - range4->offset), range5->data, range5->size);
                       RemoveRange(k);
@@ -2176,6 +2176,15 @@ class FileSystem {
                     if (offset < range4->offset)
                       range4->offset = offset;
                     return range4;
+                  } else {
+                    // no previous ranges to copy from
+                    off_t newRangeLength = (range3->offset + range3->size) - offset;
+                    if (!TryRealloc(&range3->data, newRangeLength))
+                      return NULL;
+                    memmove(range3->data + (newRangeLength - range3->size), range3->data, range3->size);
+                    range3->size = newRangeLength;
+                    range3->offset = offset;
+                    return range3;
                   }
                 }
               } else if (offset + length < range3->offset)
