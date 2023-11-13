@@ -2149,46 +2149,6 @@ class FileSystem {
           off_t mid = (low + high) / 2;
           struct DataRange* range2 = dataRanges[mid];
           if (offset >= range2->offset) {
-            for (off_t i = mid; i != dataRangeCount; ++i) {
-              struct DataRange* range3 = dataRanges[i];
-              if (offset + length == range3->offset) {
-                for (off_t j = i - 1; j >= 0; --j) {
-                  struct DataRange* range4 = dataRanges[j];
-                  if (offset < range4->offset + range4->size &&
-                      offset + length >= range4->offset) {
-                    if (j - 1 >= 0) {
-                      struct DataRange* range5 = dataRanges[j - 1];
-                      if (offset == range4->offset + range4->size) {
-                        range4 = range5;
-                        --j;
-                      }
-                    }
-                    off_t newRangeLength = (range3->offset + range3->size) - range4->offset;
-                    if (!TryRealloc(&range4->data, newRangeLength))
-                      return NULL;
-                    memmove(range4->data + (newRangeLength - range4->size), range4->data, range4->size);
-                    range4->size = newRangeLength;
-                    for (off_t k = j + 1; k < i + 1; --i) {
-                      struct DataRange* range5 = dataRanges[k];
-                      memmove(range4->data + (range5->offset - range4->offset), range5->data, range5->size);
-                      RemoveRange(k);
-                    }
-                    if (offset < range4->offset)
-                      range4->offset = offset;
-                    return range4;
-                  } else {
-                    off_t newRangeLength = (range3->offset + range3->size) - offset;
-                    if (!TryRealloc(&range3->data, newRangeLength))
-                      return NULL;
-                    memmove(range3->data + (newRangeLength - range3->size), range3->data, range3->size);
-                    range3->size = newRangeLength;
-                    range3->offset = offset;
-                    return range3;
-                  }
-                }
-              } else if (offset + length < range3->offset)
-                break;
-            }
             if (offset <= range2->offset + range2->size) {
               rangeIdx = mid;
               range = range2;
