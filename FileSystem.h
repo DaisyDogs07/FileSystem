@@ -2166,10 +2166,14 @@ class FileSystem {
                   if (!TryRealloc(&range4->data, newRangeLength))
                     return NULL;
                   memmove(range4->data + (newRangeLength - range3->size), range3->data, range3->size);
+                  if (range4->offset < off) {
+                    memmove(range4->data + (range4->offset - off), range4->data, range4->size);
+                    memset(range4->data, '\0', range4->offset - off);
+                  }
                   range4->size = newRangeLength;
                   for (off_t k = rangeIdx + 1; k < i; --i) {
                     struct DataRange* range5 = dataRanges[k];
-                    memmove(range4->data + (range5->offset - range4->offset), range5->data, range5->size);
+                    memmove(range4->data + (range5->offset - off), range5->data, range5->size);
                     RemoveRange(k);
                   }
                   RemoveRange(i);
