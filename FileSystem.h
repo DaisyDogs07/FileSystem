@@ -2175,7 +2175,8 @@ class FileSystem {
                   } else break;
                 }
                 if (range4) {
-                  off_t newRangeLength = range4->size + ((range3->offset + range3->size) - range4->offset);
+                  off_t off = std::min(range4->offset, offset);
+                  off_t newRangeLength = (range3->offset + range3->size) - off;
                   if (!TryRealloc(&range4->data, newRangeLength))
                     return NULL;
                   memmove(range4->data + (newRangeLength - range3->size), range3->data, range3->size);
@@ -2186,8 +2187,7 @@ class FileSystem {
                     RemoveRange(k);
                   }
                   RemoveRange(i);
-                  if (offset < range4->offset)
-                    range4->offset = offset;
+                  range4->offset = off;
                   return range4;
                 } else {
                   off_t newRangeLength = (range3->offset + range3->size) - offset;
