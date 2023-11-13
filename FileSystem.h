@@ -2142,20 +2142,6 @@ class FileSystem {
       off_t rangeIdx;
       bool createdRange = false;
       struct DataRange* range = NULL;
-      // basically, if the end of the data we need to allocate is directly
-      // before another range, merge the data from the
-      // other ranges
-      // ive tried tons of methods and none of them worked correctly ;-;
-
-      // https://github.com/DaisyDogs07/FileSystem/blob/9000b88e8113bd1a231e2457060eb26ef8d5dc7b/FileSystem.h#L2152-L2179
-      // heres one of my attempts
-
-      // free(): double free or corruption (out)
-      // literally what it said in the console
-      // malloc(): something about tcache (underflow i think)
-      // aaaand stuff about invalid old size
-      // blablabla
-      // i logged what things were being free'd and im not freeing things twice at all
       {
         off_t low = 0;
         off_t high = dataRangeCount - 1;
