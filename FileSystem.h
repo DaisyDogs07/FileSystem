@@ -2177,7 +2177,6 @@ class FileSystem {
                       range4->offset = offset;
                     return range4;
                   } else {
-                    // no previous ranges to copy from
                     off_t newRangeLength = (range3->offset + range3->size) - offset;
                     if (!TryRealloc(&range3->data, newRangeLength))
                       return NULL;
