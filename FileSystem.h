@@ -2203,7 +2203,7 @@ class FileSystem {
         createdRange = true;
       } else if (offset + length < range->offset + range->size)
         return range;
-      off_t newRangeLength = range->size + ((offset + length) - (range->offset + range->size));
+      off_t newRangeLength = (offset + length) - range->offset;
       for (off_t i = rangeIdx + 1; i < dataRangeCount; ++i) {
         struct DataRange* range2 = dataRanges[i];
         if (range2->offset <= offset + length) {
