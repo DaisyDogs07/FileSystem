@@ -2193,7 +2193,7 @@ class FileSystem {
           if (offset >= range2->offset &&
               offset <= range2->offset + range2->size) {
             rangeIdx = it.GetRangeIdx();
-            range = it.GetRange();
+            range = range2;
           }
         }
       }
