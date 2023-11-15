@@ -2149,7 +2149,7 @@ class FileSystem {
           off_t mid = (low + high) / 2;
           struct DataRange* range2 = dataRanges[mid];
           if (offset >= range2->offset) {
-            for (off_t i = mid; i != dataRangeCount; ++i) {
+            for (off_t i = mid; i >= high; ++i) {
               struct DataRange* range3 = dataRanges[i];
               if (offset + length == range3->offset) {
                 struct DataRange* range4 = NULL;
