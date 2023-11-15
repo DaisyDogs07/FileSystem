@@ -2029,6 +2029,9 @@ class FileSystem {
       bool IsInData() {
         return atData_;
       }
+      off_t GetRangeIdx() {
+        return rangeIdx_;
+      }
       struct DataRange* GetRange() {
         return inode_->dataRanges[rangeIdx_];
       }
@@ -2143,57 +2146,51 @@ class FileSystem {
       bool createdRange = false;
       struct DataRange* range = NULL;
       {
-        off_t low = 0;
-        off_t high = dataRangeCount - 1;
-        while (low <= high) {
-          off_t mid = (low + high) / 2;
-          struct DataRange* range2 = dataRanges[mid];
-          if (offset >= range2->offset) {
-            for (off_t i = mid; i <= high; ++i) {
-              struct DataRange* range3 = dataRanges[i];
-              if (offset + length == range3->offset) {
-                struct DataRange* range4 = NULL;
-                for (off_t j = i - 1; j >= 0; --j) {
-                  struct DataRange* range5 = dataRanges[j];
-                  if (offset <= range5->offset + range5->size) {
-                    rangeIdx = j;
-                    range4 = range5;
-                  } else break;
-                }
-                if (range4) {
-                  off_t off = std::min(range4->offset, offset);
-                  off_t newRangeLength = (range3->offset + range3->size) - off;
-                  if (!TryRealloc(&range4->data, newRangeLength))
-                    return NULL;
-                  memmove(range4->data + (newRangeLength - range3->size), range3->data, range3->size);
-                  range4->size = newRangeLength;
-                  for (off_t k = rangeIdx + 1; k < i; --i) {
-                    struct DataRange* range5 = dataRanges[k];
-                    memmove(range4->data + (range5->offset - off), range5->data, range5->size);
-                    RemoveRange(k);
-                  }
-                  RemoveRange(i);
-                  range4->offset = off;
-                  return range4;
-                } else {
-                  off_t newRangeLength = (range3->offset + range3->size) - offset;
-                  if (!TryRealloc(&range3->data, newRangeLength))
-                    return NULL;
-                  memmove(range3->data + (newRangeLength - range3->size), range3->data, range3->size);
-                  range3->size = newRangeLength;
-                  range3->offset = offset;
-                  return range3;
-                }
-              } else if (offset + length < range3->offset)
-                break;
+        DataIterator it(this, offset);
+        for (off_t i = it.GetRangeIdx(); i != dataRangeCount; ++i) {
+          struct DataRange* range2 = dataRanges[i];
+          if (offset + length == range2->offset) {
+            struct DataRange* range3 = NULL;
+            for (off_t j = i - 1; j >= 0; --j) {
+              struct DataRange* range4 = dataRanges[j];
+              if (offset <= range4->offset + range4->size) {
+                rangeIdx = j;
+                range3 = range4;
+              } else break;
             }
-            if (offset <= range2->offset + range2->size) {
-              rangeIdx = mid;
-              range = range2;
-              break;
+            if (range3) {
+              off_t off = std::min(range3->offset, offset);
+              off_t newRangeLength = (range2->offset + range2->size) - off;
+              if (!TryRealloc(&range3->data, newRangeLength))
+                return NULL;
+              memmove(range3->data + (newRangeLength - range2->size), range2->data, range2->size);
+              range3->size = newRangeLength;
+              for (off_t j = rangeIdx + 1; j < i; --i) {
+                struct DataRange* range4 = dataRanges[j];
+                memmove(range3->data + (range4->offset - off), range4->data, range4->size);
+                RemoveRange(j);
+              }
+              RemoveRange(i);
+              range3->offset = off;
+              return range3;
+            } else {
+              off_t newRangeLength = (range2->offset + range2->size) - offset;
+              if (!TryRealloc(&range2->data, newRangeLength))
+                return NULL;
+              memmove(range2->data + (newRangeLength - range2->size), range2->data, range2->size);
+              range2->size = newRangeLength;
+              range2->offset = offset;
+              return range2;
             }
-            low = mid + 1;
-          } else high = mid - 1;
+          } else if (offset + length < range2->offset)
+            break;
+        }
+        if (dataRangeCount != 0) {
+          struct DataRange* range2 = it.GetRange();
+          if (offset <= range2->offset + range2->size) {
+            rangeIdx = it.GetRangeIdx();
+            range = it.GetRange();
+          }
         }
       }
       if (!range) {
