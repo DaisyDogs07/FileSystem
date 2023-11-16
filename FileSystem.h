@@ -2018,7 +2018,7 @@ class FileSystem {
               struct DataRange* prevRange = inode->dataRanges[high];
               if (offset >= prevRange->offset + prevRange->size &&
                   offset < range->offset) {
-                rangeIdx_ = mid;
+                rangeIdx_ = high;
                 atData_ = false;
                 break;
               }
@@ -2207,7 +2207,7 @@ class FileSystem {
       off_t newRangeLength = (offset + length) - range->offset;
       for (off_t i = rangeIdx + 1; i < dataRangeCount; ++i) {
         struct DataRange* range2 = dataRanges[i];
-        if (range2->offset <= offset + length) {
+        if (range2->offset < offset + length) {
           if (newRangeLength < (range2->offset - range->offset) + range2->size) {
             newRangeLength = (range2->offset - range->offset) + range2->size;
             break;
@@ -2224,7 +2224,7 @@ class FileSystem {
         size = offset + length;
       for (off_t i = rangeIdx + 1; i < dataRangeCount;) {
         struct DataRange* range2 = dataRanges[i];
-        if (range2->offset <= offset + length) {
+        if (range2->offset < offset + length) {
           memcpy(range->data + (range2->offset - range->offset), range2->data, range2->size);
           RemoveRange(i);
         } else break;
