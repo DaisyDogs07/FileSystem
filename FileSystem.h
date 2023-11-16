@@ -2173,7 +2173,7 @@ class FileSystem {
             }
             if (range3) {
               off_t off = std::min(range3->offset, offset);
-              off_t newRangeLength = (range2->offset + range2->size) - off;
+              off_t newRangeLength = range2->size + (range2->offset - off);
               if (!TryRealloc(&range3->data, newRangeLength))
                 return NULL;
               memmove(range3->data + (newRangeLength - range2->size), range2->data, range2->size);
@@ -2186,7 +2186,7 @@ class FileSystem {
               range3->offset = off;
               return range3;
             } else {
-              off_t newRangeLength = (range2->offset + range2->size) - offset;
+              off_t newRangeLength = range2->size + (range2->offset - offset);
               if (!TryRealloc(&range2->data, newRangeLength))
                 return NULL;
               memmove(range2->data + (newRangeLength - range2->size), range2->data, range2->size);
@@ -2213,7 +2213,7 @@ class FileSystem {
         createdRange = true;
       } else if (offset + length < range->offset + range->size)
         return range;
-      off_t newRangeLength = (offset + length) - range->offset;
+      off_t newRangeLength = length + (offset - range->offset);
       for (off_t i = rangeIdx + 1; i < dataRangeCount; ++i) {
         struct DataRange* range2 = dataRanges[i];
         if (range2->offset < offset + length) {
