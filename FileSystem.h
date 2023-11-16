@@ -2143,6 +2143,16 @@ class FileSystem {
         realloc(dataRanges, sizeof(struct DataRange*) * --dataRangeCount)
       );
     }
+    void RemoveRanges(off_t index, off_t count) {
+      for (off_t i = index; i != index + count; ++i)
+        delete dataRanges[i];
+      if (index + count < dataRangeCount)
+        memmove(dataRanges + index, dataRanges + (index + count), sizeof(struct DataRange*) * (dataRangeCount - (index + count)));
+      dataRanges = reinterpret_cast<struct DataRange**>(
+        realloc(dataRanges, sizeof(struct DataRange*) * (dataRangeCount - count))
+      );
+      dataRangeCount -= count;
+    }
 
     struct DataRange* AllocData(off_t offset, off_t length) {
       off_t rangeIdx;
@@ -2168,12 +2178,11 @@ class FileSystem {
                 return NULL;
               memmove(range3->data + (newRangeLength - range2->size), range2->data, range2->size);
               range3->size = newRangeLength;
-              for (off_t j = rangeIdx + 1; j < i; --i) {
+              for (off_t j = rangeIdx + 1; j < i; ++j) {
                 struct DataRange* range4 = dataRanges[j];
                 memmove(range3->data + (range4->offset - off), range4->data, range4->size);
-                RemoveRange(j);
               }
-              RemoveRange(i);
+              RemoveRanges(rangeIdx + 1, i - rangeIdx);
               range3->offset = off;
               return range3;
             } else {
@@ -2222,12 +2231,14 @@ class FileSystem {
       range->size = newRangeLength;
       if (size < offset + length)
         size = offset + length;
-      for (off_t i = rangeIdx + 1; i < dataRangeCount;) {
+      for (off_t i = rangeIdx + 1; i < dataRangeCount; ++i) {
         struct DataRange* range2 = dataRanges[i];
-        if (range2->offset < offset + length) {
+        if (range2->offset < offset + length)
           memcpy(range->data + (range2->offset - range->offset), range2->data, range2->size);
-          RemoveRange(i);
-        } else break;
+        else {
+          RemoveRanges(rangeIdx + 1, i - (rangeIdx + 1));
+          break;
+        }
       }
       return range;
     }
