@@ -2260,10 +2260,7 @@ class FileSystem {
       for (off_t i = dataRangeCount - 1; i >= 0; --i) {
         struct DataRange* range = dataRanges[i];
         if (length > range->offset) {
-          dataRanges = reinterpret_cast<struct DataRange**>(
-            realloc(dataRanges, sizeof(struct DataRange*) * (i + 1))
-          );
-          dataRangeCount = i + 1;
+          RemoveRanges(i + 1, dataRangeCount - (i + 1));
           if (length < range->offset + range->size) {
             range->size = length - range->offset;
             range->data = reinterpret_cast<char*>(
@@ -2271,7 +2268,7 @@ class FileSystem {
             );
           }
           break;
-        } else delete range;
+        }
       }
     }
     off_t size = 0;
