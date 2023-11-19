@@ -540,9 +540,8 @@ class FileSystem {
         return -EBUSY;
     } else if (S_ISDIR(inode->mode))
       return -EISDIR;
-    for (int i = 0; i != fdCount; ++i)
-      if (fds[i]->inode == inode)
-        return -EBUSY;
+    if (inode->isOpen)
+      return -EBUSY;
     if (flags & AT_REMOVEDIR) {
       const char* last = GetLast(path);
       if (!last)
@@ -2261,7 +2260,7 @@ class FileSystem {
         struct DataRange* range = dataRanges[i];
         if (length > range->offset) {
           RemoveRanges(i + 1, dataRangeCount - (i + 1));
-          if (length < range->offset + range->size) {
+          if (length - range->offset < range->size) {
             range->size = length - range->offset;
             range->data = reinterpret_cast<char*>(
               realloc(range->data, range->size)
@@ -2273,7 +2272,8 @@ class FileSystem {
     }
     off_t size = 0;
     nlink_t nlink = 0;
-    mode_t mode;
+    mode_t mode = sizeof(bool);
+    bool isOpen = false;
     struct timespec btime;
     struct timespec ctime;
     struct timespec mtime;
@@ -2381,6 +2381,7 @@ class FileSystem {
     fd->fd = fdNum;
     fds[fdNum] = fd;
     ++fdCount;
+    inode->isOpen = true;
     return fdNum;
   }
   int RemoveFd(unsigned int fd) {
@@ -2390,8 +2391,10 @@ class FileSystem {
       while (low <= high) {
         int mid = (low + high) / 2;
         if (fds[mid]->fd == fd) {
-          if (fds[mid]->inode->nlink == 0)
-            RemoveINode(fds[mid]->inode);
+          struct INode* inode = fds[mid]->inode;
+          if (inode->nlink == 0)
+            RemoveINode(inode);
+          else inode->isOpen = false;
           delete fds[mid];
           if (mid != fdCount - 1)
             memmove(fds + mid, fds + mid + 1, sizeof(struct Fd*) * (fdCount - mid));
