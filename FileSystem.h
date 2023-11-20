@@ -2451,16 +2451,22 @@ class FileSystem {
           continue;
         if (err)
           return err;
-        off_t j = 0;
-        for (; j != current->dentCount; ++j)
-          if (strcmp(current->dents[j].name, name) == 0)
-            break;
-        if (j == current->dentCount) {
-          err = -ENOENT;
+        currParent = current;
+        if (!(current->mode & 0111)) {
+          err = -EACCES;
           goto resetName;
         }
-        currParent = current;
-        current = current->dents[j].inode;
+        {
+          off_t j = 0;
+          for (; j != current->dentCount; ++j)
+            if (strcmp(current->dents[j].name, name) == 0)
+              break;
+          if (j == current->dentCount) {
+            err = -ENOENT;
+            goto resetName;
+          }
+          current = current->dents[j].inode;
+        }
         if (S_ISLNK(current->mode)) {
           if (followCount++ == 40) {
             err = -ELOOP;
@@ -2492,6 +2498,8 @@ class FileSystem {
     if (nameLen != 0) {
       if (parent)
         *parent = current;
+      if (!(current->mode & 0111))
+        return -EACCES;
       for (off_t i = 0; i != current->dentCount; ++i)
         if (strcmp(current->dents[i].name, name) == 0) {
           current = current->dents[i].inode;
