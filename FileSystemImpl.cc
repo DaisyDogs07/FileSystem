@@ -65,7 +65,7 @@ struct FileSystem::INode {
   off_t dataRangeCount = 0;
 
   class DataIterator {
-    public:
+   public:
     DataIterator(struct INode* inode, off_t offset) {
       inode_ = inode;
       if (inode->dataRangeCount == 0 ||
@@ -151,7 +151,7 @@ struct FileSystem::INode {
       atData_ = !atData_;
       return true;
     }
-    private:
+   private:
     struct INode* inode_;
     off_t rangeIdx_;
     bool atData_;
