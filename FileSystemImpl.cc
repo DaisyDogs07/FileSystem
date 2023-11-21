@@ -1,25 +1,5 @@
 #include "./FileSystemImpl.h"
 
-template<typename T>
-static bool TryAlloc(T** ptr, size_t length = 1) {
-  T* newPtr;
-  if (length == 1)
-    newPtr = new T;
-  else newPtr = new T[length];
-  if (!newPtr)
-    return false;
-  *ptr = newPtr;
-  return true;
-}
-template<typename T>
-static bool TryRealloc(T** ptr, size_t length) {
-  T* newPtr = (T*)realloc(*ptr, sizeof(T) * length);
-  if (!newPtr)
-    return false;
-  *ptr = newPtr;
-  return true;
-}
-
 struct FileSystem::INode {
   INode() {
     clock_gettime(CLOCK_REALTIME, &btime);
@@ -2500,6 +2480,25 @@ const char* FileSystem::GetAbsoluteLast(const char* path) {
   const char* last = GetLast(absPath);
   delete absPath;
   return last;
+}
+template<typename T>
+bool FileSystem::TryAlloc(T** ptr, size_t length) {
+  T* newPtr;
+  if (length == 1)
+    newPtr = new T;
+  else newPtr = new T[length];
+  if (!newPtr)
+    return false;
+  *ptr = newPtr;
+  return true;
+}
+template<typename T>
+bool FileSystem::TryRealloc(T** ptr, size_t length) {
+  T* newPtr = (T*)realloc(*ptr, sizeof(T) * length);
+  if (!newPtr)
+    return false;
+  *ptr = newPtr;
+  return true;
 }
 void FileSystem::FillStat(struct INode* inode, struct stat* buf) {
   memset(buf, '\0', sizeof(struct stat));

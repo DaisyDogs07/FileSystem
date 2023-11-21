@@ -167,6 +167,10 @@ class FileSystem {
   static const char* GetLast(const char* path);
   const char* AbsolutePath(const char* path);
   const char* GetAbsoluteLast(const char* path);
+  template<typename T>
+  static bool TryAlloc(T** ptr, size_t length = 1);
+  template<typename T>
+  static bool TryRealloc(T** ptr, size_t length);
   static void FillStat(struct INode* inode, struct stat* buf);
   static void FillStatx(struct INode* inode, struct statx* buf, int mask);
 
