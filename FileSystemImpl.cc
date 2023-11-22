@@ -456,7 +456,7 @@ int FileSystem::OpenAt(int dirFd, const char* path, int flags, mode_t mode) {
       RemoveINode(inode);
     return res;
   } else if (flags & O_CREAT) {
-    if (flags & O_DIRECTORY || mode & ~0777)
+    if (flags & O_DIRECTORY || mode & ~07777)
       return -EINVAL;
     mode |= S_IFREG;
   } else if (mode != 0)
