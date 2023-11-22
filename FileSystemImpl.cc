@@ -556,12 +556,13 @@ int FileSystem::MkNodAt(int dirFd, const char* path, mode_t mode, dev_t) {
   std::lock_guard<std::mutex> lock(mtx);
   if (inodeCount == std::numeric_limits<ino_t>::max())
     return -EDQUOT;
-  if (!(mode & S_IFMT))
-    mode |= S_IFREG;
-  else if (S_ISDIR(mode))
-    return -EPERM;
-  else if (!S_ISREG(mode))
-    return -EINVAL;
+  if (mode & S_IFMT) {
+    if (S_ISDIR(mode))
+      return -EPERM;
+    if (!S_ISREG(mode))
+      return -EINVAL;
+  }
+  mode = (mode & 07777) | S_IFREG;
   struct INode* origCwd = cwd->inode;
   if (dirFd != AT_FDCWD) {
     struct Fd* fd;
@@ -650,7 +651,7 @@ int FileSystem::MkDirAt(int dirFd, const char* path, mode_t mode) {
     delete name;
     return -EIO;
   }
-  x->mode = (mode & ~S_IFMT) | S_IFDIR;
+  x->mode = (mode & 07777) | S_IFDIR;
   x->nlink = 2;
   x->dents[0] = { ".", x };
   x->dents[1] = { "..", parent };
@@ -1627,7 +1628,7 @@ int FileSystem::FChModAt(int dirFd, const char* path, mode_t mode) {
   cwd->inode = origCwd;
   if (res != 0)
     return res;
-  inode->mode = (mode & ~S_IFMT) | (inode->mode & S_IFMT);
+  inode->mode = (mode & 07777) | (inode->mode & S_IFMT);
   clock_gettime(CLOCK_REALTIME, &inode->ctime);
   return 0;
 }
@@ -1637,7 +1638,7 @@ int FileSystem::FChMod(unsigned int fdNum, mode_t mode) {
   if (!(fd = GetFd(fdNum)))
     return -EBADF;
   struct INode* inode = fd->inode;
-  inode->mode = (mode & ~S_IFMT) | (inode->mode & S_IFMT);
+  inode->mode = (mode & 07777) | (inode->mode & S_IFMT);
   clock_gettime(CLOCK_REALTIME, &inode->ctime);
   return 0;
 }
