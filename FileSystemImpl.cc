@@ -243,7 +243,7 @@ struct FileSystem::INode {
     off_t rangeIdx;
     bool createdRange = false;
     struct DataRange* range = NULL;
-    {
+    if (dataRangeCount != 0) {
       DataIterator it(this, offset);
       for (off_t i = it.GetRangeIdx(); i != dataRangeCount; ++i) {
         struct DataRange* range2 = dataRanges[i];
@@ -282,10 +282,9 @@ struct FileSystem::INode {
         } else if (offset + length < range2->offset)
           break;
       }
-      if (dataRangeCount != 0 && !it.BeforeFirstRange()) {
+      if (!it.BeforeFirstRange()) {
         struct DataRange* range2 = it.GetRange();
-        if (offset >= range2->offset &&
-            offset <= range2->offset + range2->size) {
+        if (offset <= range2->offset + range2->size) {
           rangeIdx = it.GetRangeIdx();
           range = range2;
         }
