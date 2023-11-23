@@ -1,8 +1,8 @@
 {
   "name": "FileSystem",
   "version": "v1.0.0",
-  "main": "./build/Release/FileSystem.node",
-  "types": "FileSystem.d.ts",
+  "main": "./build/Release/module.node",
+  "types": "module.d.ts",
   "author": "DaisyDogs07",
   "repository": {
     "type": "git",

@@ -1,10 +1,10 @@
 {
   "targets": [
     {
-      "target_name": "FileSystem",
+      "target_name": "module",
       "sources": [
-        "FileSystemImpl.cc",
-        "FileSystem.cc"
+        "FileSystem.cc",
+        "module.cc"
       ]
     }
   ]
