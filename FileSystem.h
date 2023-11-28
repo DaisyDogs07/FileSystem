@@ -20,6 +20,10 @@ struct linux_dirent {
 class FileSystem {
  public:
   FileSystem();
+  FileSystem(const FileSystem&) = delete;
+  FileSystem& operator=(const FileSystem&) = delete;
+  FileSystem(FileSystem&&) = delete;
+  FileSystem& operator=(FileSystem&&) = delete;
   ~FileSystem();
 
   int FAccessAt2(int dirFd, const char* path, int mode, int flags);
@@ -142,40 +146,5 @@ class FileSystem {
   static FileSystem* LoadFromFile(const char* filename);
 
  private:
-  struct INode;
-  struct Fd;
-  struct Cwd;
-  struct Cwd* cwd;
-  struct INode** inodes = {};
-  ino_t inodeCount = 0;
-  struct Fd** fds = {};
-  int fdCount = 0;
-  std::mutex mtx;
-  bool PushINode(struct INode* inode);
-  void RemoveINode(struct INode* inode);
-  int PushFd(struct INode* inode, int flags);
-  int RemoveFd(unsigned int fd);
-  struct Fd* GetFd(unsigned int fdNum);
-  int GetINode(
-    const char* path,
-    struct INode** inode,
-    struct INode** parent = NULL,
-    bool followResolved = false,
-    int followCount = 0
-  );
-  bool IsInDir(struct INode* dir, struct INode* inode);
-  static const char* GetLast(const char* path);
-  const char* AbsolutePath(const char* path);
-  const char* GetAbsoluteLast(const char* path);
-  template<typename T>
-  static bool TryAlloc(T** ptr, size_t length = 1);
-  template<typename T>
-  static bool TryRealloc(T** ptr, size_t length);
-  static void FillStat(struct INode* inode, struct stat* buf);
-  static void FillStatx(struct INode* inode, struct statx* buf, int mask);
-
-  FileSystem(const FileSystem&) = delete;
-  FileSystem& operator=(const FileSystem&) = delete;
-  FileSystem(FileSystem&&) = delete;
-  FileSystem& operator=(FileSystem&&) = delete;
+  void* data;
 };
