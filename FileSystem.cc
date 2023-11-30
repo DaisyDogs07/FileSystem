@@ -1288,7 +1288,7 @@ int FileSystem::RenameAt2(int oldDirFd, const char* oldPath, int newDirFd, const
   struct FSInternal* fs = (struct FSInternal*)data;
   std::lock_guard<std::mutex> lock(fs->mtx);
   if (flags & ~(RENAME_NOREPLACE | RENAME_EXCHANGE) ||
-      (flags & RENAME_NOREPLACE && flags & RENAME_EXCHANGE))
+      (flags & (RENAME_NOREPLACE | RENAME_EXCHANGE)) == (RENAME_NOREPLACE | RENAME_EXCHANGE))
     return -EINVAL;
   const char* last = GetLast(oldPath);
   if (!last)
