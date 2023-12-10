@@ -349,7 +349,7 @@ namespace {
         if (range2->offset < offset + length)
           memcpy(range->data + (range2->offset - range->offset), range2->data, range2->size);
         else {
-          if (i != (rangeIdx + 1))
+          if (i != rangeIdx + 1)
             RemoveRanges(rangeIdx + 1, i - (rangeIdx + 1));
           break;
         }
@@ -812,9 +812,9 @@ int FileSystem::FAccessAt2(int dirFd, const char* path, int mode, int flags) {
 int FileSystem::OpenAt(int dirFd, const char* path, int flags, mode_t mode) {
   struct FSInternal* fs = (struct FSInternal*)data;
   std::lock_guard<std::mutex> lock(fs->mtx);
-  if (flags & ~(O_RDONLY | O_WRONLY | O_RDWR | O_CREAT | O_EXCL | O_APPEND | O_TRUNC | O_TMPFILE | O_DIRECTORY | O_NOFOLLOW | O_NOATIME))
+  if (flags & ~(O_RDONLY | O_WRONLY | O_RDWR | O_CREAT | O_EXCL | O_APPEND | O_TRUNC | 0x2000000 | O_DIRECTORY | O_NOFOLLOW | O_NOATIME))
     return -EINVAL;
-  if ((flags & O_TMPFILE) == O_TMPFILE) {
+  if (flags & 0x2000000) {
     if (flags & O_CREAT || !(flags & (O_WRONLY | O_RDWR)) || mode == 0)
       return -EINVAL;
     struct INode* inode;
