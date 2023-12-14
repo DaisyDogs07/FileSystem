@@ -19,7 +19,7 @@ struct linux_dirent {
 
 class FileSystem {
  public:
-  FileSystem();
+  static FileSystem* New();
   FileSystem(const FileSystem&) = delete;
   FileSystem& operator=(const FileSystem&) = delete;
   FileSystem(FileSystem&&) = delete;
@@ -147,4 +147,5 @@ class FileSystem {
 
  private:
   void* data;
+  FileSystem() = default;
 };

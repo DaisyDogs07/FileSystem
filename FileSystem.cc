@@ -742,27 +742,31 @@ namespace {
   }
 }
 
-FileSystem::FileSystem() {
-  struct FSInternal* fs;
-  if (!TryAlloc(&fs) ||
-      !TryAlloc(&fs->inodes) ||
-      !TryAlloc(&fs->fds))
-    abort();
+FileSystem* FileSystem::New() {
+  struct FSInternal* data;
+  if (!TryAlloc(&data) ||
+      !TryAlloc(&data->inodes) ||
+      !TryAlloc(&data->fds))
+    return NULL;
   struct INode* root;
   if (!TryAlloc(&root) ||
       !TryAlloc(&root->dents, 2))
-    abort();
+    return NULL;
   root->mode = 0755 | S_IFDIR;
   root->dents[0] = { ".", root };
   root->dents[1] = { "..", root };
   root->dentCount = root->nlink = 2;
-  if (!PushINode(fs, root) ||
-      !TryAlloc(&fs->cwd) ||
-      !(fs->cwd->path = strdup("/")))
-    abort();
-  fs->cwd->inode = root;
-  fs->cwd->parent = root;
-  data = fs;
+  if (!PushINode(data, root) ||
+      !TryAlloc(&data->cwd) ||
+      !(data->cwd->path = strdup("/")))
+    return NULL;
+  data->cwd->inode = root;
+  data->cwd->parent = root;
+  FileSystem* fs = new(std::nothrow) FileSystem;
+  if (!fs)
+    return NULL;
+  fs->data = data;
+  return fs;
 }
 FileSystem::~FileSystem() {
   struct FSInternal* fs = (struct FSInternal*)data;

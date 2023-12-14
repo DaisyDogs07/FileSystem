@@ -26,7 +26,7 @@ void FileSystemConstructor(const FunctionCallbackInfo<Value>& args) {
     );
     return;
   }
-  FileSystem* fs = new FileSystem;
+  FileSystem* fs = FileSystem::New();
   std::unique_ptr<BackingStore> ab = ArrayBuffer::NewBackingStore(fs, sizeof(FileSystem), FileSystemCleanup, fs);
   Local<ArrayBuffer> abuf = ArrayBuffer::New(isolate, std::move(ab));
   args.This()->SetInternalField(0, External::New(isolate, fs));
