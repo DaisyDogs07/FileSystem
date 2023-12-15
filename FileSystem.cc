@@ -2,11 +2,18 @@
 
 namespace {
   template<typename T>
-  bool TryAlloc(T** ptr, size_t length = -1) {
+  bool TryAlloc(T** ptr) {
     T* newPtr;
-    if (length == -1)
-      newPtr = new(std::nothrow) T;
-    else newPtr = new(std::nothrow) T[length];
+    newPtr = new(std::nothrow) T;
+    if (!newPtr)
+      return false;
+    *ptr = newPtr;
+    return true;
+  }
+  template<typename T>
+  bool TryAlloc(T** ptr, size_t length) {
+    T* newPtr;
+    newPtr = new(std::nothrow) T[length];
     if (!newPtr)
       return false;
     *ptr = newPtr;
@@ -94,7 +101,7 @@ namespace {
     off_t dataRangeCount = 0;
 
     class DataIterator {
-    public:
+     public:
       DataIterator(struct INode* inode, off_t offset) {
         inode_ = inode;
         if (inode->dataRangeCount == 0 ||
@@ -180,7 +187,7 @@ namespace {
         atData_ = !atData_;
         return true;
       }
-    private:
+     private:
       struct INode* inode_;
       off_t rangeIdx_;
       bool atData_;
@@ -258,6 +265,8 @@ namespace {
       );
     }
     void RemoveRanges(off_t index, off_t count) {
+      if (count == 0)
+        return;
       for (off_t i = index; i != index + count; ++i)
         delete dataRanges[i];
       if (index + count < dataRangeCount)
@@ -324,7 +333,8 @@ namespace {
         if (!range)
           return NULL;
         createdRange = true;
-      } else if (offset + length < range->offset + range->size)
+      } else if (offset >= range->offset &&
+          offset + length <= range->offset + range->size)
         return range;
       off_t newRangeLength = length + (offset - range->offset);
       for (off_t i = rangeIdx + 1; i < dataRangeCount; ++i) {
@@ -349,8 +359,7 @@ namespace {
         if (range2->offset < offset + length)
           memcpy(range->data + (range2->offset - range->offset), range2->data, range2->size);
         else {
-          if (i != rangeIdx + 1)
-            RemoveRanges(rangeIdx + 1, i - (rangeIdx + 1));
+          RemoveRanges(rangeIdx + 1, i - (rangeIdx + 1));
           break;
         }
       }
