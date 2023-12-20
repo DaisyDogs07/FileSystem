@@ -9,30 +9,6 @@ using namespace v8;
 Persistent<FunctionTemplate> FSConstructorTmpl;
 Persistent<ObjectTemplate> FSInstanceTmpl;
 
-void FileSystemCleanup(void*, size_t, void* data) {
-  delete reinterpret_cast<FileSystem*>(data);
-}
-
-void FileSystemConstructor(const FunctionCallbackInfo<Value>& args) {
-  Isolate* isolate = args.GetIsolate();
-  if (!args.IsConstructCall()) {
-    isolate->ThrowException(
-      Exception::TypeError(
-        String::NewFromUtf8Literal(
-          isolate,
-          "Constructor FileSystem requires 'new'"
-        )
-      )
-    );
-    return;
-  }
-  FileSystem* fs = FileSystem::New();
-  std::unique_ptr<BackingStore> ab = ArrayBuffer::NewBackingStore(fs, sizeof(FileSystem), FileSystemCleanup, fs);
-  Local<ArrayBuffer> abuf = ArrayBuffer::New(isolate, std::move(ab));
-  args.This()->SetInternalField(0, External::New(isolate, fs));
-  args.This()->SetInternalField(1, abuf);
-}
-
 #define IsNumeric(x) \
   (x->IsNumber() || x->IsBigInt())
 #define IsStrOrBuf(x) \
@@ -82,7 +58,7 @@ void FileSystemConstructor(const FunctionCallbackInfo<Value>& args) {
       Exception::Error( \
         String::NewFromUtf8( \
           isolate, \
-          strerror(-code) \
+          strerror(-(code)) \
         ).ToLocalChecked() \
       ) \
     ); \
@@ -94,6 +70,32 @@ void FileSystemConstructor(const FunctionCallbackInfo<Value>& args) {
     if (tmp < 0) \
       THROWERR(tmp); \
   } while (0)
+
+void FileSystemCleanup(void*, size_t, void* data) {
+  delete reinterpret_cast<FileSystem*>(data);
+}
+
+void FileSystemConstructor(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  if (!args.IsConstructCall()) {
+    isolate->ThrowException(
+      Exception::TypeError(
+        String::NewFromUtf8Literal(
+          isolate,
+          "Constructor FileSystem requires 'new'"
+        )
+      )
+    );
+    return;
+  }
+  FileSystem* fs = FileSystem::New();
+  if (!fs)
+    THROWERR(-errno);
+  std::unique_ptr<BackingStore> ab = ArrayBuffer::NewBackingStore(fs, sizeof(FileSystem), FileSystemCleanup, fs);
+  Local<ArrayBuffer> abuf = ArrayBuffer::New(isolate, std::move(ab));
+  args.This()->SetInternalField(0, External::New(isolate, fs));
+  args.This()->SetInternalField(1, abuf);
+}
 
 void FileSystemFAccessAt2(const FunctionCallbackInfo<Value>& args) {
   Isolate* isolate = args.GetIsolate();

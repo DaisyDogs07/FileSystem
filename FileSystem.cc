@@ -454,19 +454,34 @@ namespace {
   };
   struct Cwd {
     ~Cwd() {
-      delete path;
+      if (path)
+        delete path;
     }
-    const char* path;
+    const char* path = NULL;
     struct INode* inode;
     struct INode* parent;
   };
 
   struct FSInternal {
-    struct INode** inodes;
+    ~FSInternal() {
+      if (inodes) {
+        while (inodeCount--)
+          delete inodes[inodeCount];
+        delete inodes;
+      }
+      if (fds) {
+        while (fdCount--)
+          delete fds[fdCount];
+        delete fds;
+      }
+      if (cwd)
+        delete cwd;
+    }
+    struct INode** inodes = NULL;
     ino_t inodeCount = 0;
-    struct Fd** fds;
+    struct Fd** fds = NULL;
     int fdCount = 0;
-    struct Cwd* cwd;
+    struct Cwd* cwd = NULL;
     std::mutex mtx;
   };
 
@@ -544,6 +559,18 @@ namespace {
     ++fs->fdCount;
     return fdNum;
   }
+  int RemoveFd(struct FSInternal* fs, struct Fd* fd, int i) {
+    struct INode* inode = fd->inode;
+    if (inode->nlink == 0)
+      RemoveINode(fs, inode);
+    delete fd;
+    if (i != fs->fdCount - 1)
+      memmove(fs->fds + i, fs->fds + i + 1, sizeof(struct Fd*) * (fs->fdCount - i));
+    fs->fds = reinterpret_cast<struct Fd**>(
+      realloc(fs->fds, sizeof(struct Fd*) * --fs->fdCount)
+    );
+    return 0;
+  }
   int RemoveFd(struct FSInternal* fs, unsigned int fd) {
     if (fs->fdCount != 0) {
       int low = 0;
@@ -551,18 +578,8 @@ namespace {
       while (low <= high) {
         int mid = (low + high) / 2;
         struct Fd* f = fs->fds[mid];
-        if (f->fd == fd) {
-          struct INode* inode = f->inode;
-          if (inode->nlink == 0)
-            RemoveINode(fs, inode);
-          delete f;
-          if (mid != fs->fdCount - 1)
-            memmove(fs->fds + mid, fs->fds + mid + 1, sizeof(struct Fd*) * (fs->fdCount - mid));
-          fs->fds = reinterpret_cast<struct Fd**>(
-            realloc(fs->fds, sizeof(struct Fd*) * --fs->fdCount)
-          );
-          return 0;
-        }
+        if (f->fd == fd)
+          return RemoveFd(fs, f, mid);
         if (f->fd < fd)
           low = mid + 1;
         else high = mid - 1;
@@ -753,40 +770,48 @@ namespace {
 
 FileSystem* FileSystem::New() {
   struct FSInternal* data;
-  if (!TryAlloc(&data) ||
-      !TryAlloc(&data->inodes) ||
-      !TryAlloc(&data->fds))
+  if (!TryAlloc(&data))
     return NULL;
   struct INode* root;
-  if (!TryAlloc(&root) ||
-      !TryAlloc(&root->dents, 2))
+  if (!TryAlloc(&data->inodes) ||
+      !TryAlloc(&data->fds) ||
+      !TryAlloc(&root)) {
+    delete data;
     return NULL;
+  }
+  if (!TryAlloc(&root->dents, 2)) {
+    delete root;
+    delete data;
+    return NULL;
+  }
   root->mode = 0755 | S_IFDIR;
   root->dents[0] = { ".", root };
   root->dents[1] = { "..", root };
   root->dentCount = root->nlink = 2;
-  if (!PushINode(data, root) ||
-      !TryAlloc(&data->cwd) ||
-      !(data->cwd->path = strdup("/")))
+  if (!PushINode(data, root)) {
+    delete root;
+    delete data;
     return NULL;
+  }
+  if (!TryAlloc(&data->cwd) ||
+      !(data->cwd->path = strdup("/"))) {
+    RemoveINode(data, root);
+    delete data;
+    return NULL;
+  }
   data->cwd->inode = root;
   data->cwd->parent = root;
   FileSystem* fs = new(std::nothrow) FileSystem;
-  if (!fs)
+  if (!fs) {
+    RemoveINode(data, root);
+    delete data;
     return NULL;
+  }
   fs->data = data;
   return fs;
 }
 FileSystem::~FileSystem() {
-  struct FSInternal* fs = (struct FSInternal*)data;
-  while (fs->inodeCount--)
-    delete fs->inodes[fs->inodeCount];
-  while (fs->fdCount--)
-    delete fs->fds[fs->fdCount];
-  delete fs->inodes;
-  delete fs->fds;
-  delete fs->cwd;
-  delete fs;
+  delete (struct FSInternal*)data;
 }
 int FileSystem::FAccessAt2(int dirFd, const char* path, int mode, int flags) {
   struct FSInternal* fs = (struct FSInternal*)data;
@@ -937,8 +962,15 @@ int FileSystem::CloseRange(unsigned int fd, unsigned int maxFd, unsigned int fla
   if (flags != 0 || fd > maxFd)
     return -EINVAL;
   for (int i = 0; i != fs->fdCount; ++i)
-    if (fs->fds[i]->fd > fd && fs->fds[i]->fd < maxFd)
-      RemoveFd(fs, fs->fds[i]->fd);
+    if (fs->fds[i]->fd > fd) {
+      RemoveFd(fs, fs->fds[i], i);
+      for (++i; i != fs->fdCount; ++i) {
+        if (fs->fds[i]->fd < maxFd)
+          RemoveFd(fs, fs->fds[i], i);
+        else break;
+      }
+      break;
+    }
   return 0;
 }
 int FileSystem::MkNodAt(int dirFd, const char* path, mode_t mode, dev_t) {
