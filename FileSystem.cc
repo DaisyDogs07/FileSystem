@@ -2533,11 +2533,16 @@ FileSystem* FileSystem::LoadFromFile(const char* filename) {
           off_t offset;
           off_t size;
           if (read(fd, &offset, sizeof(off_t)) != sizeof(off_t) ||
-              read(fd, &size, sizeof(off_t)) != sizeof(off_t)) {
+              read(fd, &size, sizeof(off_t)) != sizeof(off_t) ||
+              offset < 0 || offset > inode->size - size ||
+              size < 0 || size > inode->size - offset) {
             close(fd);
             for (ino_t j = 0; j != i; ++j)
               delete inodes[j];
             free(inodes);
+            for (off_t k = 0; k != j; ++k)
+              delete inode->dataRanges[k];
+            free(inode->dataRanges);
             free(inode);
             return NULL;
           }
@@ -2547,6 +2552,9 @@ FileSystem* FileSystem::LoadFromFile(const char* filename) {
             for (ino_t j = 0; j != i; ++j)
               delete inodes[j];
             free(inodes);
+            for (off_t k = 0; k != j; ++k)
+              delete inode->dataRanges[k];
+            free(inode->dataRanges);
             free(inode);
             return NULL;
           }
@@ -2558,6 +2566,9 @@ FileSystem* FileSystem::LoadFromFile(const char* filename) {
             for (ino_t j = 0; j != i; ++j)
               delete inodes[j];
             free(inodes);
+            for (off_t k = 0; k != j; ++k)
+              delete inode->dataRanges[k];
+            free(inode->dataRanges);
             free(inode);
             return NULL;
           }
@@ -2573,6 +2584,9 @@ FileSystem* FileSystem::LoadFromFile(const char* filename) {
               for (ino_t j = 0; j != i; ++j)
                 delete inodes[j];
               free(inodes);
+              for (off_t k = 0; k != j; ++k)
+                delete inode->dataRanges[k];
+              free(inode->dataRanges);
               free(inode);
               return NULL;
             }
