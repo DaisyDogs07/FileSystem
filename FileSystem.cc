@@ -560,7 +560,7 @@ namespace {
     ++fs->fdCount;
     return fdNum;
   }
-  int RemoveFd(struct FSInternal* fs, struct Fd* fd, int i) {
+  void RemoveFd(struct FSInternal* fs, struct Fd* fd, int i) {
     struct INode* inode = fd->inode;
     if (inode->nlink == 0)
       RemoveINode(fs, inode);
@@ -570,7 +570,6 @@ namespace {
     fs->fds = reinterpret_cast<struct Fd**>(
       realloc(fs->fds, sizeof(struct Fd*) * --fs->fdCount)
     );
-    return 0;
   }
   int RemoveFd(struct FSInternal* fs, unsigned int fd) {
     if (LIKELY(fs->fdCount != 0)) {
@@ -579,8 +578,10 @@ namespace {
       while (low <= high) {
         int mid = (low + high) / 2;
         struct Fd* f = fs->fds[mid];
-        if (f->fd == fd)
-          return RemoveFd(fs, f, mid);
+        if (f->fd == fd) {
+          RemoveFd(fs, f, mid);
+          return 0;
+        }
         if (f->fd < fd)
           low = mid + 1;
         else high = mid - 1;
