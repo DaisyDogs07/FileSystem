@@ -1016,6 +1016,8 @@ int FileSystem::MkNodAt(int dirFd, const char* path, mode_t mode, dev_t dev) {
     if (UNLIKELY(!S_ISREG(mode)))
       return -EINVAL;
   }
+  if (UNLIKELY(dev != 0))
+    return -EINVAL;
   struct INode* origCwd = fs->cwd->inode;
   if (dirFd != AT_FDCWD) {
     struct Fd* fd;
