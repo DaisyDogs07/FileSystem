@@ -509,7 +509,7 @@ namespace {
 
   bool PushINode(struct FSInternal* fs, struct INode* inode) {
     ino_t id = fs->inodeCount;
-    {
+    if (fs->inodeCount != 0) {
       ino_t low = 0;
       ino_t high = fs->inodeCount - 1;
       while (low <= high) {
