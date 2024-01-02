@@ -62,9 +62,9 @@ class FileSystem {
   }
   int Close(unsigned int fd);
   int CloseRange(unsigned int fd, unsigned int maxFd, unsigned int flags);
-  int MkNodAt(int dirFd, const char* path, mode_t mode, dev_t);
-  int MkNod(const char* path, mode_t mode, dev_t) {
-    return MkNodAt(AT_FDCWD, path, mode, 0);
+  int MkNodAt(int dirFd, const char* path, mode_t mode, dev_t dev);
+  int MkNod(const char* path, mode_t mode, dev_t dev) {
+    return MkNodAt(AT_FDCWD, path, mode, dev);
   }
   int MkDirAt(int dirFd, const char* path, mode_t mode);
   int MkDir(const char* path, mode_t mode) {
