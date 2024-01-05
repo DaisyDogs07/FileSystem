@@ -140,7 +140,7 @@ namespace {
           off_t low = 0;
           off_t high = inode->dataRangeCount - 1;
           while (low <= high) {
-            off_t mid = (low + high) / 2;
+            off_t mid = low + ((high - low) / 2);
             struct DataRange* range = inode->dataRanges[mid];
             if (offset >= range->offset) {
               if (offset < range->offset + range->size) {
@@ -252,7 +252,7 @@ namespace {
         off_t low = 0;
         off_t high = dataRangeCount - 1;
         while (low <= high) {
-          off_t mid = (low + high) / 2;
+          off_t mid = low + ((high - low) / 2);
           struct DataRange* range2 = dataRanges[mid];
           if (offset >= range2->offset)
             low = mid + 1;
@@ -513,7 +513,7 @@ namespace {
       ino_t low = 0;
       ino_t high = fs->inodeCount - 1;
       while (low <= high) {
-        ino_t mid = (low + high) / 2;
+        ino_t mid = low + ((high - low) / 2);
         if (fs->inodes[mid]->id == mid)
           low = mid + 1;
         else {
@@ -554,7 +554,7 @@ namespace {
       int low = 0;
       int high = fs->fdCount - 1;
       while (low <= high) {
-        int mid = (low + high) / 2;
+        int mid = low + ((high - low) / 2);
         if (fs->fds[mid]->fd == mid)
           low = mid + 1;
         else {
@@ -595,7 +595,7 @@ namespace {
       int low = 0;
       int high = fs->fdCount - 1;
       while (low <= high) {
-        int mid = (low + high) / 2;
+        int mid = low + ((high - low) / 2);
         struct Fd* f = fs->fds[mid];
         if (f->fd == fd) {
           RemoveFd(fs, f, mid);
@@ -613,7 +613,7 @@ namespace {
       int low = 0;
       int high = fs->fdCount - 1;
       while (low <= high) {
-        int mid = (low + high) / 2;
+        int mid = low + ((high - low) / 2);
         struct Fd* f = fs->fds[mid];
         if (f->fd == fdNum)
           return f;
