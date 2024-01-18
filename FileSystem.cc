@@ -1790,8 +1790,6 @@ ssize_t FileSystem::Write(unsigned int fdNum, const char* buf, size_t count) {
   if (UNLIKELY(!range))
     return -EIO;
   memcpy(range->data + (seekOff - range->offset), buf, count);
-  if (seekOff + count > inode->size)
-    inode->size = seekOff + count;
   fd->seekOff += count;
   struct timespec ts;
   clock_gettime(CLOCK_REALTIME, &ts);
@@ -1844,8 +1842,6 @@ ssize_t FileSystem::Writev(unsigned int fdNum, struct iovec* iov, int iovcnt) {
     if (count == totalLen)
       break;
   }
-  if (seekOff + count > inode->size)
-    inode->size = seekOff + count;
   fd->seekOff += count;
   struct timespec ts;
   clock_gettime(CLOCK_REALTIME, &ts);
@@ -1872,8 +1868,6 @@ ssize_t FileSystem::PWrite(unsigned int fdNum, const char* buf, size_t count, of
   if (UNLIKELY(!range))
     return -EIO;
   memcpy(range->data + (offset - range->offset), buf, count);
-  if (offset + count > inode->size)
-    inode->size = offset + count;
   struct timespec ts;
   clock_gettime(CLOCK_REALTIME, &ts);
   inode->mtime = inode->ctime = ts;
@@ -1924,8 +1918,6 @@ ssize_t FileSystem::PWritev(unsigned int fdNum, struct iovec* iov, int iovcnt, o
     if (count == totalLen)
       break;
   }
-  if (offset + count > inode->size)
-    inode->size = offset + count;
   struct timespec ts;
   clock_gettime(CLOCK_REALTIME, &ts);
   inode->mtime = inode->ctime = ts;
