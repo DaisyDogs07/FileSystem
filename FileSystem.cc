@@ -28,7 +28,7 @@ namespace {
     T* newPtr = (T*)malloc(sizeof(T) * length);
     if (UNLIKELY(!newPtr))
       return false;
-    if constexpr (I)
+    if constexpr ((!std::is_fundamental<T>::value && !std::is_pointer<T>::value) && I)
       for (size_t i = 0; i != length; ++i)
         new (&newPtr[i]) T;
     *ptr = newPtr;
@@ -804,7 +804,7 @@ FileSystem* FileSystem::New() {
     delete data;
     return NULL;
   }
-  if (UNLIKELY(!TryAlloc(&root->dents, 2))) {
+  if (UNLIKELY(!TryAlloc<false>(&root->dents, 2))) {
     delete root;
     delete data;
     return NULL;
@@ -1089,7 +1089,7 @@ int FileSystem::MkDirAt(int dirFd, const char* path, mode_t mode) {
     delete name;
     return -EIO;
   }
-  if (UNLIKELY(!TryAlloc(&x->dents, 2)) ||
+  if (UNLIKELY(!TryAlloc<false>(&x->dents, 2)) ||
       UNLIKELY(!PushINode(fs, x))) {
     delete name;
     delete x;
