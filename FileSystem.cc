@@ -25,19 +25,19 @@
 namespace {
   template<typename T>
   bool TryAlloc(T** ptr) {
-    T* newPtr;
-    newPtr = new(std::nothrow) T;
+    T* newPtr = (T*)malloc(sizeof(T));
     if (UNLIKELY(!newPtr))
       return false;
-    *ptr = newPtr;
+    *ptr = new(newPtr) T;
     return true;
   }
   template<typename T>
   bool TryAlloc(T** ptr, size_t length) {
-    T* newPtr;
-    newPtr = new(std::nothrow) T[length];
+    T* newPtr = (T*)malloc(sizeof(T) * length);
     if (UNLIKELY(!newPtr))
       return false;
+    for (size_t i = 0; i != length; ++i)
+      new (&newPtr[i]) T;
     *ptr = newPtr;
     return true;
   }
