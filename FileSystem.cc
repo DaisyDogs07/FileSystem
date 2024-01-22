@@ -23,21 +23,14 @@
 #define UNLIKELY(expr) __builtin_expect(!!(expr), 0)
 
 namespace {
-  template<typename T>
-  bool TryAlloc(T** ptr) {
-    T* newPtr = (T*)malloc(sizeof(T));
-    if (UNLIKELY(!newPtr))
-      return false;
-    *ptr = new(newPtr) T;
-    return true;
-  }
-  template<typename T>
-  bool TryAlloc(T** ptr, size_t length) {
+  template<bool I = true, typename T>
+  bool TryAlloc(T** ptr, size_t length = 1) {
     T* newPtr = (T*)malloc(sizeof(T) * length);
     if (UNLIKELY(!newPtr))
       return false;
-    for (size_t i = 0; i != length; ++i)
-      new (&newPtr[i]) T;
+    if constexpr (I)
+      for (size_t i = 0; i != length; ++i)
+        new (&newPtr[i]) T;
     *ptr = newPtr;
     return true;
   }
@@ -833,8 +826,8 @@ FileSystem* FileSystem::New() {
   }
   data->cwd->inode = root;
   data->cwd->parent = root;
-  FileSystem* fs = (FileSystem*)malloc(sizeof(FileSystem));
-  if (UNLIKELY(!fs)) {
+  FileSystem* fs;
+  if (UNLIKELY(!TryAlloc<false>(&fs))) {
     RemoveINode(data, root);
     delete data;
     return NULL;
@@ -2365,14 +2358,14 @@ FileSystem* FileSystem::LoadFromFile(const char* filename) {
     close(fd);
     return NULL;
   }
-  struct INode** inodes = (struct INode**)malloc(sizeof(struct INode*) * inodeCount);
-  if (UNLIKELY(!inodes)) {
+  struct INode** inodes;
+  if (UNLIKELY(!TryAlloc<false>(&inodes, inodeCount))) {
     close(fd);
     return NULL;
   }
   for (ino_t i = 0; i != inodeCount; ++i) {
-    struct INode* inode = (struct INode*)malloc(sizeof(struct INode));
-    if (UNLIKELY(!inode)) {
+    struct INode* inode;
+    if (UNLIKELY(!TryAlloc<false>(&inode))) {
       close(fd);
       for (ino_t j = 0; j != i; ++j)
         delete inodes[j];
@@ -2452,8 +2445,7 @@ FileSystem* FileSystem::LoadFromFile(const char* filename) {
         free(inode);
         return NULL;
       }
-      inode->dents = (struct INode::Dent*)malloc(sizeof(struct INode::Dent) * inode->dentCount);
-      if (UNLIKELY(!inode->dents)) {
+      if (UNLIKELY(!TryAlloc<false>(&inode->dents, inode->dentCount))) {
         close(fd);
         for (ino_t j = 0; j != i; ++j)
           delete inodes[j];
@@ -2532,8 +2524,7 @@ FileSystem* FileSystem::LoadFromFile(const char* filename) {
           free(inode);
           return NULL;
         }
-        inode->dataRanges = (struct INode::DataRange**)malloc(sizeof(struct INode::DataRange*) * dataRangeCount);
-        if (UNLIKELY(!inode->dataRanges)) {
+        if (UNLIKELY(!TryAlloc<false>(&inode->dataRanges, dataRangeCount))) {
           close(fd);
           for (ino_t j = 0; j != i; ++j)
             delete inodes[j];
@@ -2559,8 +2550,8 @@ FileSystem* FileSystem::LoadFromFile(const char* filename) {
             free(inode);
             return NULL;
           }
-          struct INode::DataRange* range = (struct INode::DataRange*)malloc(sizeof(struct INode::DataRange));
-          if (UNLIKELY(!range)) {
+          struct INode::DataRange* range;
+          if (UNLIKELY(!TryAlloc<false>(&range))) {
             close(fd);
             for (ino_t k = 0; k != i; ++k)
               delete inodes[k];
@@ -2642,9 +2633,9 @@ FileSystem* FileSystem::LoadFromFile(const char* filename) {
     } else ++i;
   }
   close(fd);
-  FileSystem* fs = (FileSystem*)malloc(sizeof(FileSystem));
+  FileSystem* fs;
   struct FSInternal* data;
-  if (UNLIKELY(!fs) ||
+  if (UNLIKELY(!TryAlloc<false>(&fs)) ||
       UNLIKELY(!TryAlloc(&data))) {
     for (ino_t i = 0; i != inodeCount; ++i)
       delete inodes[i];
@@ -2654,16 +2645,15 @@ FileSystem* FileSystem::LoadFromFile(const char* filename) {
   data->inodes = inodes;
   data->inodeCount = inodeCount;
   data->fds = {};
-  struct Cwd* cwd = (struct Cwd*)malloc(sizeof(struct Cwd));
-  if (UNLIKELY(!cwd)) {
+  struct Cwd* cwd;
+  if (UNLIKELY(!TryAlloc(&cwd))) {
     for (ino_t i = 0; i != inodeCount; ++i)
       delete inodes[i];
     free(inodes);
     free(fs);
     return NULL;
   }
-  cwd->path = strdup("/");
-  if (UNLIKELY(!cwd->path)) {
+  if (UNLIKELY(!(cwd->path = strdup("/")))) {
     free(cwd);
     for (ino_t i = 0; i != inodeCount; ++i)
       delete inodes[i];
