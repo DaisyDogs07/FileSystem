@@ -2264,12 +2264,10 @@ bool FileSystem::DumpToFile(const char* filename) {
   std::lock_guard<std::mutex> lock(fs->mtx);
   int fd = creat(filename, 0644);
   if (UNLIKELY(fd < 0))
-    return false;
+    goto err1;
   if (UNLIKELY(write(fd, "\x7FVFS", 4) != 4) ||
-      UNLIKELY(write(fd, &fs->inodeCount, sizeof(ino_t)) != sizeof(ino_t))) {
-    close(fd);
-    return false;
-  }
+      UNLIKELY(write(fd, &fs->inodeCount, sizeof(ino_t)) != sizeof(ino_t)))
+    goto err2;
   for (ino_t i = 0; i != fs->inodeCount; ++i) {
     struct INode* inode = fs->inodes[i];
     struct DumpedINode dumped = {
@@ -2282,68 +2280,42 @@ bool FileSystem::DumpToFile(const char* filename) {
       .mtime = inode->mtime,
       .atime = inode->atime
     };
-    if (UNLIKELY(write(fd, &dumped, sizeof(struct DumpedINode)) != sizeof(struct DumpedINode))) {
-      close(fd);
-      return false;
-    }
+    if (UNLIKELY(write(fd, &dumped, sizeof(struct DumpedINode)) != sizeof(struct DumpedINode)))
+      goto err2;
     if (S_ISLNK(inode->mode)) {
       size_t targetLen = strlen(inode->target) + 1;
-      if (UNLIKELY(write(fd, inode->target, targetLen) != targetLen)) {
-        close(fd);
-        return false;
-      }
       off_t dataLen = inode->size;
-      if (UNLIKELY(write(fd, inode->dataRanges[0]->data, dataLen) != dataLen)) {
-        close(fd);
-        return false;
-      }
+      if (UNLIKELY(write(fd, inode->target, targetLen) != targetLen) ||
+          UNLIKELY(write(fd, inode->dataRanges[0]->data, dataLen) != dataLen))
+        goto err2;
     }
     if (S_ISDIR(inode->mode)) {
-      if (UNLIKELY(write(fd, &inode->dentCount, sizeof(off_t)) != sizeof(off_t))) {
-        close(fd);
-        return false;
-      }
-      if (UNLIKELY(write(fd, &inode->dents[1].inode->ndx, sizeof(ino_t)) != sizeof(ino_t))) {
-        close(fd);
-        return false;
-      }
+      if (UNLIKELY(write(fd, &inode->dentCount, sizeof(off_t)) != sizeof(off_t)) ||
+          UNLIKELY(write(fd, &inode->dents[1].inode->ndx, sizeof(ino_t)) != sizeof(ino_t)))
+        goto err2;
       for (off_t j = 2; j != inode->dentCount; ++j) {
         struct INode::Dent* dent = &inode->dents[j];
-        if (UNLIKELY(write(fd, &dent->inode->ndx, sizeof(ino_t)) != sizeof(ino_t))) {
-          close(fd);
-          return false;
-        }
         size_t nameLen = strlen(dent->name) + 1;
-        if (UNLIKELY(write(fd, dent->name, nameLen) != nameLen)) {
-          close(fd);
-          return false;
-        }
+        if (UNLIKELY(write(fd, &dent->inode->ndx, sizeof(ino_t)) != sizeof(ino_t)) ||
+            UNLIKELY(write(fd, dent->name, nameLen) != nameLen))
+          goto err2;
       }
     } else if (inode->size != 0) {
-      if (UNLIKELY(write(fd, &inode->dataRangeCount, sizeof(off_t)) != sizeof(off_t))) {
-        close(fd);
-        return false;
-      }
+      if (UNLIKELY(write(fd, &inode->dataRangeCount, sizeof(off_t)) != sizeof(off_t)))
+        goto err2;
       for (off_t j = 0; j != inode->dataRangeCount; ++j) {
         struct INode::DataRange* range = inode->dataRanges[j];
-        if (UNLIKELY(write(fd, &range->offset, sizeof(off_t)) != sizeof(off_t))) {
-          close(fd);
-          return false;
-        }
-        if (UNLIKELY(write(fd, &range->size, sizeof(off_t)) != sizeof(off_t))) {
-          close(fd);
-          return false;
-        }
+        if (UNLIKELY(write(fd, &range->offset, sizeof(off_t)) != sizeof(off_t)) ||
+            UNLIKELY(write(fd, &range->size, sizeof(off_t)) != sizeof(off_t)))
+          goto err2;
         ssize_t written = 0;
         while (written != range->size) {
           size_t amount = range->size - written;
           if (amount > 0x7ffff000)
             amount = 0x7ffff000;
           ssize_t count = write(fd, range->data + written, amount);
-          if (UNLIKELY(count < 0)) {
-            close(fd);
-            return false;
-          }
+          if (UNLIKELY(count < 0))
+            goto err2;
           written += count;
         }
       }
@@ -2351,43 +2323,32 @@ bool FileSystem::DumpToFile(const char* filename) {
   }
   close(fd);
   return true;
+
+ err2:
+  close(fd);
+ err1:
+  return false;
 }
 FileSystem* FileSystem::LoadFromFile(const char* filename) {
   int fd = open(filename, O_RDONLY);
   if (UNLIKELY(fd < 0))
-    return NULL;
+    goto err_at_open;
   char magic[4];
   ino_t inodeCount;
+  struct INode** inodes;
   if (UNLIKELY(read(fd, magic, 4) != 4) ||
       UNLIKELY(memcmp(magic, "\x7FVFS", 4) != 0) ||
-      UNLIKELY(read(fd, &inodeCount, sizeof(ino_t)) != sizeof(ino_t))) {
-    close(fd);
-    return NULL;
-  }
-  struct INode** inodes;
-  if (UNLIKELY(!TryAlloc(&inodes, inodeCount))) {
-    close(fd);
-    return NULL;
-  }
+      UNLIKELY(read(fd, &inodeCount, sizeof(ino_t)) != sizeof(ino_t)) ||
+      UNLIKELY(!TryAlloc(&inodes, inodeCount)))
+    goto err_after_open;
   for (ino_t i = 0; i != inodeCount; ++i) {
     struct INode* inode;
-    if (UNLIKELY(!TryAlloc(&inode))) {
-      close(fd);
-      for (ino_t j = 0; j != i; ++j)
-        delete inodes[j];
-      free(inodes);
-      return NULL;
-    }
-    inode->ndx = i;
     struct DumpedINode dumped;
-    if (UNLIKELY(read(fd, &dumped, sizeof(struct DumpedINode)) != sizeof(struct DumpedINode))) {
-      close(fd);
-      for (ino_t j = 0; j != i; ++j)
-        delete inodes[j];
-      free(inodes);
-      free(inode);
-      return NULL;
-    }
+    if (UNLIKELY(!TryAlloc(&inode)))
+      goto err_at_inode_loop;
+    inode->ndx = i;
+    if (UNLIKELY(read(fd, &dumped, sizeof(struct DumpedINode)) != sizeof(struct DumpedINode)))
+      goto err_after_inode_init;
     inode->id = dumped.id;
     inode->size = dumped.size;
     inode->nlink = dumped.nlink;
@@ -2400,119 +2361,64 @@ FileSystem* FileSystem::LoadFromFile(const char* filename) {
       char target[PATH_MAX];
       size_t targetLen = 0;
       do {
-        if (UNLIKELY(read(fd, &target[targetLen], 1) != 1)) {
-          close(fd);
-          for (ino_t j = 0; j != i; ++j)
-            delete inodes[j];
-          free(inodes);
-          free(inode);
-          return NULL;
-        }
+        if (UNLIKELY(read(fd, &target[targetLen], 1) != 1))
+          goto err_after_inode_init;
       } while (target[targetLen++] != '\0');
       inode->target = strdup(target);
-      if (UNLIKELY(!inode->target)) {
-        close(fd);
-        for (ino_t j = 0; j != i; ++j)
-          delete inodes[j];
-        free(inodes);
-        free(inode);
-        return NULL;
-      }
+      if (UNLIKELY(!inode->target))
+        goto err_after_inode_init;
       char data[PATH_MAX];
       size_t dataLen = 0;
       do {
-        if (UNLIKELY(read(fd, &data[dataLen], 1) != 1)) {
-          close(fd);
-          free((void*)inode->target);
-          for (ino_t j = 0; j != i; ++j)
-            delete inodes[j];
-          free(inodes);
-          free(inode);
-          return NULL;
-        }
+        if (UNLIKELY(read(fd, &data[dataLen], 1) != 1))
+          goto err_after_target_alloc;
       } while (data[dataLen++] != '\0');
-      if (UNLIKELY(!inode->AllocData(0, dataLen))) {
-        close(fd);
-        free((void*)inode->target);
-        for (ino_t j = 0; j != i; ++j)
-          delete inodes[j];
-        free(inodes);
-        free(inode);
-        return NULL;
-      }
+      if (UNLIKELY(!inode->AllocData(0, dataLen)))
+        goto err_after_target_alloc;
       memcpy(inode->dataRanges[0]->data, data, dataLen);
+      goto success_symlink;
+
+     err_after_target_alloc:
+      free((void*)inode->target);
+      goto err_after_inode_init;
+     success_symlink: {}
     } else inode->target = NULL;
     if (S_ISDIR(inode->mode)) {
-      if (UNLIKELY(read(fd, &inode->dentCount, sizeof(off_t)) != sizeof(off_t))) {
-        close(fd);
-        for (ino_t j = 0; j != i; ++j)
-          delete inodes[j];
-        free(inodes);
-        free(inode);
-        return NULL;
-      }
-      if (UNLIKELY(!TryAlloc(&inode->dents, inode->dentCount))) {
-        close(fd);
-        for (ino_t j = 0; j != i; ++j)
-          delete inodes[j];
-        free(inodes);
-        free(inode);
-        return NULL;
-      }
+      if (UNLIKELY(read(fd, &inode->dentCount, sizeof(off_t)) != sizeof(off_t)) ||
+          UNLIKELY(!TryAlloc(&inode->dents, inode->dentCount)))
+        goto err_after_inode_init;
       inode->dents[0] = { ".", inode };
       inode->dents[1].name = "..";
-      if (UNLIKELY(read(fd, &inode->dents[1].inode, sizeof(ino_t)) != sizeof(ino_t))) {
-        close(fd);
-        free(inode->dents);
-        for (ino_t j = 0; j != i; ++j)
-          delete inodes[j];
-        free(inodes);
-        free(inode);
-        return NULL;
-      }
+      if (UNLIKELY(read(fd, &inode->dents[1].inode, sizeof(ino_t)) != sizeof(ino_t)))
+        goto err_after_dent_alloc;
       for (off_t j = 2; j != inode->dentCount; ++j) {
         struct INode::Dent* dent = &inode->dents[j];
-        if (UNLIKELY(read(fd, &dent->inode, sizeof(ino_t)) != sizeof(ino_t))) {
-          close(fd);
-          for (off_t k = 2; k != j; ++k)
-            free((void*)inode->dents[k].name);
-          free(inode->dents);
-          for (ino_t k = 0; k != i; ++k)
-            delete inodes[k];
-          free(inodes);
-          free(inode);
-          return NULL;
-        }
         char name[PATH_MAX];
         size_t nameLen = 0;
+        if (UNLIKELY(read(fd, &dent->inode, sizeof(ino_t)) != sizeof(ino_t)))
+          goto err_after_dent_list_init;
         do {
-          if (UNLIKELY(read(fd, &name[nameLen], 1) != 1)) {
-            close(fd);
-            for (off_t k = 2; k != j; ++k)
-              free((void*)inode->dents[k].name);
-            free(inode->dents);
-            for (ino_t k = 0; k != i; ++k)
-              delete inodes[k];
-            free(inodes);
-            free(inode);
-            return NULL;
-          }
+          if (UNLIKELY(read(fd, &name[nameLen], 1) != 1))
+            goto err_after_dent_list_init;
         } while (name[nameLen++] != '\0');
         dent->name = strdup(name);
-        if (UNLIKELY(!dent->name)) {
-          close(fd);
-          for (off_t k = 2; k != j; ++k)
-            free((void*)inode->dents[k].name);
-          free(inode->dents);
-          for (ino_t k = 0; k != i; ++k)
-            delete inodes[k];
-          free(inodes);
-          free(inode);
-          return NULL;
-        }
+        if (UNLIKELY(!dent->name))
+          goto err_after_dent_list_init;
+        break;
+
+       err_after_dent_list_init:
+        for (off_t k = 2; k != j; ++k)
+          free((void*)inode->dents[k].name);
+        goto err_after_dent_alloc;
       }
       inode->dataRangeCount = 0;
       inode->dataRanges = NULL;
+      goto success_dents;
+
+     err_after_dent_alloc:
+      free(inode->dents);
+      goto err_after_inode_init;
+     success_dents: {}
     } else  {
       inode->dents = NULL;
       inode->dentCount = 0;
@@ -2522,104 +2428,74 @@ FileSystem* FileSystem::LoadFromFile(const char* filename) {
       inode->dataRanges = NULL;
       if (inode->size != 0) {
         off_t dataRangeCount;
-        if (UNLIKELY(read(fd, &dataRangeCount, sizeof(off_t)) != sizeof(off_t))) {
-          close(fd);
-          for (ino_t j = 0; j != i; ++j)
-            delete inodes[j];
-          free(inodes);
-          free(inode);
-          return NULL;
-        }
-        if (UNLIKELY(!TryAlloc(&inode->dataRanges, dataRangeCount))) {
-          close(fd);
-          for (ino_t j = 0; j != i; ++j)
-            delete inodes[j];
-          free(inodes);
-          free(inode);
-          return NULL;
+        if (UNLIKELY(read(fd, &dataRangeCount, sizeof(off_t)) != sizeof(off_t)) ||
+            UNLIKELY(!TryAlloc(&inode->dataRanges, dataRangeCount))) {
+          goto err_after_inode_init;
         }
         inode->dataRangeCount = dataRangeCount;
         for (off_t j = 0; j != dataRangeCount; ++j) {
+          struct INode::DataRange* range;
+          ssize_t nread = 0;
           off_t offset;
           off_t size;
           if (UNLIKELY(read(fd, &offset, sizeof(off_t)) != sizeof(off_t)) ||
               UNLIKELY(read(fd, &size, sizeof(off_t)) != sizeof(off_t)) ||
               UNLIKELY(offset < 0) || UNLIKELY(offset > inode->size - size) ||
-              UNLIKELY(size < 0) || UNLIKELY(size > inode->size - offset)) {
-            close(fd);
-            for (ino_t k = 0; k != i; ++k)
-              delete inodes[k];
-            free(inodes);
-            for (off_t k = 0; k != j; ++k)
-              delete inode->dataRanges[k];
-            free(inode->dataRanges);
-            free(inode);
-            return NULL;
-          }
-          struct INode::DataRange* range;
-          if (UNLIKELY(!TryAlloc(&range))) {
-            close(fd);
-            for (ino_t k = 0; k != i; ++k)
-              delete inodes[k];
-            free(inodes);
-            for (off_t k = 0; k != j; ++k)
-              delete inode->dataRanges[k];
-            free(inode->dataRanges);
-            free(inode);
-            return NULL;
-          }
+              UNLIKELY(size < 0) || UNLIKELY(size > inode->size - offset))\
+            goto err_after_dataranges_init;
+          if (UNLIKELY(!TryAlloc(&range)))
+            goto err_after_dataranges_init;
           range->offset = offset;
           range->size = size;
-          if (UNLIKELY(!TryAlloc(&range->data, size))) {
-            close(fd);
-            free(range);
-            for (ino_t k = 0; k != i; ++k)
-              delete inodes[k];
-            free(inodes);
-            for (off_t k = 0; k != j; ++k)
-              delete inode->dataRanges[k];
-            free(inode->dataRanges);
-            free(inode);
-            return NULL;
-          }
-          ssize_t nread = 0;
+          if (UNLIKELY(!TryAlloc(&range->data, size)))
+            goto err_after_range_alloc;
           while (nread != size) {
             size_t amount = size - nread;
             if (amount > 0x7ffff000)
               amount = 0x7ffff000;
             ssize_t count = read(fd, range->data + nread, amount);
-            if (UNLIKELY(count != amount)) {
-              close(fd);
-              delete range;
-              for (ino_t k = 0; k != i; ++k)
-                delete inodes[k];
-              free(inodes);
-              for (off_t k = 0; k != j; ++k)
-                delete inode->dataRanges[k];
-              free(inode->dataRanges);
-              free(inode);
-              return NULL;
-            }
+            if (UNLIKELY(count != amount))
+              goto err_after_range_data_alloc;
             nread += count;
           }
           inode->dataRanges[j] = range;
+          goto success_data_range;
+
+         err_after_range_data_alloc:
+          free((void*)range->data);
+         err_after_range_alloc:
+          free(range);
+          goto err_after_dataranges_init;
+         success_data_range: {}
         }
+        goto success_data;
+        
+       err_after_dataranges_init:
+        for (off_t k = 0; k != dataRangeCount; ++k)
+          delete inode->dataRanges[k];
+        delete inode->dataRanges;
+        goto err_after_inode_init;
+       success_data: {}
       }
     }
     inodes[i] = inode;
+    goto success_inode;
+
+   err_after_inode_init:
+    free(inode);
+   err_at_inode_loop:
+    for (ino_t j = 0; j != i; ++i)
+      delete inodes[j];
+    goto err_after_inode_list_init;
+   success_inode: {}
   }
   for (ino_t i = 0; i != inodeCount; ++i) {
     struct INode* inode = inodes[i];
     if (S_ISDIR(inode->mode)) {
       for (off_t j = 1; j != inode->dentCount; ++j) {
         struct INode::Dent* dent = &inode->dents[j];
-        if (UNLIKELY((ino_t)dent->inode >= inodeCount)) {
-          close(fd);
-          for (ino_t k = 0; k != inodeCount; ++k)
-            delete inodes[k];
-          free(inodes);
-          return NULL;
-        }
+        if (UNLIKELY((ino_t)dent->inode >= inodeCount))
+          goto err_after_inodes;
         dent->inode = inodes[(ino_t)dent->inode];
       }
     }
@@ -2641,35 +2517,36 @@ FileSystem* FileSystem::LoadFromFile(const char* filename) {
   close(fd);
   FileSystem* fs;
   struct FSInternal* data;
-  if (UNLIKELY(!TryAlloc(&fs)) ||
-      UNLIKELY(!TryAlloc<true>(&data))) {
-    for (ino_t i = 0; i != inodeCount; ++i)
-      delete inodes[i];
-    free(inodes);
-    return NULL;
-  }
+  if (UNLIKELY(!TryAlloc(&fs)))
+    goto err_after_inodes;
+  if (UNLIKELY(!TryAlloc<true>(&data)))
+    goto err_after_fs_init;
   data->inodes = inodes;
   data->inodeCount = inodeCount;
-  data->fds = {};
   struct Cwd* cwd;
-  if (UNLIKELY(!TryAlloc(&cwd))) {
-    for (ino_t i = 0; i != inodeCount; ++i)
-      delete inodes[i];
-    free(inodes);
-    free(fs);
-    return NULL;
-  }
-  if (UNLIKELY(!(cwd->path = strdup("/")))) {
-    free(cwd);
-    for (ino_t i = 0; i != inodeCount; ++i)
-      delete inodes[i];
-    free(inodes);
-    free(fs);
-    return NULL;
-  }
+  if (UNLIKELY(!TryAlloc(&cwd)))
+    goto err_after_fsdata_init;
+  if (UNLIKELY(!(cwd->path = strdup("/"))))
+    goto err_after_cwd_init;
   cwd->inode = inodes[0];
   cwd->parent = inodes[0];
   data->cwd = cwd;
   fs->data = data;
   return fs;
+
+ err_after_cwd_init:
+  free(cwd);
+ err_after_fsdata_init:
+  delete data;
+ err_after_fs_init:
+  free(fs);
+ err_after_inodes:
+  for (ino_t i = 0; i != inodeCount; ++i)
+    delete inodes[i];
+ err_after_inode_list_init:
+  free(inodes);
+ err_after_open:
+  close(fd);
+ err_at_open:
+  return NULL;
 }
