@@ -958,22 +958,21 @@ int FileSystem::OpenAt(int dirFd, const char* path, int flags, mode_t mode) {
     }
     return res;
   }
-  if (flags & 020000000) {
-    if (!S_ISDIR(inode->mode))
-      return -ENOTDIR;
-    struct INode* inode;
-    if (UNLIKELY(!TryAlloc<true>(&inode)))
-      return -EIO;
-    if (UNLIKELY(!PushINode(fs, inode))) {
-      delete inode;
-      return -EIO;
+  if (S_ISDIR(inode->mode)) {
+    if (flags & 020000000) {
+      struct INode* x;
+      if (UNLIKELY(!TryAlloc<true>(&x)))
+        return -EIO;
+      if (UNLIKELY(!PushINode(fs, x))) {
+        delete x;
+        return -EIO;
+      }
+      x->mode = (mode & ~S_IFMT) | S_IFREG;
+      int res = PushFd(fs, x, flags);
+      if (UNLIKELY(res < 0))
+        RemoveINode(fs, x);
+      return res;
     }
-    inode->mode = (mode & ~S_IFMT) | S_IFREG;
-    int res = PushFd(fs, inode, flags);
-    if (UNLIKELY(res < 0))
-      RemoveINode(fs, inode);
-    return res;
-  } else if (S_ISDIR(inode->mode)) {
     if (UNLIKELY(flags & (O_WRONLY | O_RDWR)))
       return -EISDIR;
   } else {
@@ -2643,7 +2642,7 @@ FileSystem* FileSystem::LoadFromFile(const char* filename) {
   FileSystem* fs;
   struct FSInternal* data;
   if (UNLIKELY(!TryAlloc(&fs)) ||
-      UNLIKELY(!TryAlloc(&data))) {
+      UNLIKELY(!TryAlloc<true>(&data))) {
     for (ino_t i = 0; i != inodeCount; ++i)
       delete inodes[i];
     free(inodes);
