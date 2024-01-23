@@ -19,7 +19,6 @@
 
 #include "FileSystem.h"
 
-#define LIKELY(expr) __builtin_expect(!!(expr), 1)
 #define UNLIKELY(expr) __builtin_expect(!!(expr), 0)
 
 namespace {
@@ -373,8 +372,9 @@ namespace {
           memcpy(range->data + (range2->offset - range->offset), range2->data, range2->size);
         else {
           off_t n = i - (rangeIdx + 1);
-          if (LIKELY(n != 0))
-            RemoveRanges(rangeIdx + 1, n);
+          if (UNLIKELY(n == 0))
+            break;
+          RemoveRanges(rangeIdx + 1, n);
           break;
         }
       }
@@ -587,36 +587,36 @@ namespace {
     );
   }
   int RemoveFd(struct FSInternal* fs, unsigned int fd) {
-    if (LIKELY(fs->fdCount != 0)) {
-      int low = 0;
-      int high = fs->fdCount - 1;
-      while (low <= high) {
-        int mid = low + ((high - low) / 2);
-        struct Fd* f = fs->fds[mid];
-        if (f->fd == fd) {
-          RemoveFd(fs, f, mid);
-          return 0;
-        }
-        if (f->fd < fd)
-          low = mid + 1;
-        else high = mid - 1;
+    if (UNLIKELY(fs->fdCount == 0))
+      return -EBADF;
+    int low = 0;
+    int high = fs->fdCount - 1;
+    while (low <= high) {
+      int mid = low + ((high - low) / 2);
+      struct Fd* f = fs->fds[mid];
+      if (f->fd == fd) {
+        RemoveFd(fs, f, mid);
+        return 0;
       }
+      if (f->fd < fd)
+        low = mid + 1;
+      else high = mid - 1;
     }
     return -EBADF;
   }
   struct Fd* GetFd(struct FSInternal* fs, unsigned int fdNum) {
-    if (LIKELY(fs->fdCount != 0)) {
-      int low = 0;
-      int high = fs->fdCount - 1;
-      while (low <= high) {
-        int mid = low + ((high - low) / 2);
-        struct Fd* f = fs->fds[mid];
-        if (f->fd == fdNum)
-          return f;
-        if (f->fd < fdNum)
-          low = mid + 1;
-        else high = mid - 1;
-      }
+    if (UNLIKELY(fs->fdCount == 0))
+      return NULL;
+    int low = 0;
+    int high = fs->fdCount - 1;
+    while (low <= high) {
+      int mid = low + ((high - low) / 2);
+      struct Fd* f = fs->fds[mid];
+      if (f->fd == fdNum)
+        return f;
+      if (f->fd < fdNum)
+        low = mid + 1;
+      else high = mid - 1;
     }
     return NULL;
   }
