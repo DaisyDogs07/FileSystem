@@ -2404,12 +2404,13 @@ FileSystem* FileSystem::LoadFromFile(const char* filename) {
         dent->name = strdup(name);
         if (UNLIKELY(!dent->name))
           goto err_after_dent_list_init;
-        break;
+        goto success_dent;
 
        err_after_dent_list_init:
         for (off_t k = 2; k != j; ++k)
           free((void*)inode->dents[k].name);
         goto err_after_dent_alloc;
+       success_dent: {}
       }
       inode->dataRangeCount = 0;
       inode->dataRanges = NULL;
@@ -2504,7 +2505,7 @@ FileSystem* FileSystem::LoadFromFile(const char* filename) {
     if (inode->nlink == 0) {
       delete inode;
       if (i != inodeCount - 1) {
-        memmove(inodes + i, inodes + i + 1, sizeof(struct INode*) * (inodeCount - i - 1));
+        memmove(inodes + i, inodes + i + 1, sizeof(struct INode*) * (inodeCount - i));
         for (ino_t j = i; j != inodeCount - 1; ++j)
           --inodes[j]->ndx;
       }
