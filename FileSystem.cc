@@ -2429,9 +2429,8 @@ FileSystem* FileSystem::LoadFromFile(const char* filename) {
       if (inode->size != 0) {
         off_t dataRangeCount;
         if (UNLIKELY(read(fd, &dataRangeCount, sizeof(off_t)) != sizeof(off_t)) ||
-            UNLIKELY(!TryAlloc(&inode->dataRanges, dataRangeCount))) {
+            UNLIKELY(!TryAlloc(&inode->dataRanges, dataRangeCount)))
           goto err_after_inode_init;
-        }
         inode->dataRangeCount = dataRangeCount;
         for (off_t j = 0; j != dataRangeCount; ++j) {
           struct INode::DataRange* range;
