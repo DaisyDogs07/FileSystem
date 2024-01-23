@@ -23,12 +23,12 @@
 #define UNLIKELY(expr) __builtin_expect(!!(expr), 0)
 
 namespace {
-  template<bool I = true, typename T>
+  template<bool I = false, typename T>
   bool TryAlloc(T** ptr, size_t length = 1) {
     T* newPtr = (T*)malloc(sizeof(T) * length);
     if (UNLIKELY(!newPtr))
       return false;
-    if constexpr ((!std::is_fundamental<T>::value && !std::is_pointer<T>::value) && I)
+    if constexpr (I)
       for (size_t i = 0; i != length; ++i)
         new (&newPtr[i]) T;
     *ptr = newPtr;
@@ -212,7 +212,7 @@ namespace {
     struct DataRange* InsertRange(off_t offset, off_t size, off_t* index) {
       struct DataRange* range;
       if (dataRangeCount == 0) {
-        if (UNLIKELY(!TryAlloc(&range)))
+        if (UNLIKELY(!TryAlloc<true>(&range)))
           return NULL;
         if (UNLIKELY(!TryAlloc(&range->data, size)) ||
             UNLIKELY(!TryAlloc(&dataRanges, 1))) {
@@ -227,7 +227,7 @@ namespace {
         return range;
       }
       if (offset > dataRanges[dataRangeCount - 1]->offset) {
-        if (UNLIKELY(!TryAlloc(&range)))
+        if (UNLIKELY(!TryAlloc<true>(&range)))
           return NULL;
         if (UNLIKELY(!TryAlloc(&range->data, size)) ||
             UNLIKELY(!TryRealloc(&dataRanges, dataRangeCount + 1))) {
@@ -255,7 +255,7 @@ namespace {
           }
         }
       }
-      if (UNLIKELY(!TryAlloc(&range)))
+      if (UNLIKELY(!TryAlloc<true>(&range)))
         return NULL;
       if (UNLIKELY(!TryAlloc(&range->data, size)) ||
           UNLIKELY(!TryRealloc(&dataRanges, dataRangeCount + 1))) {
@@ -479,11 +479,9 @@ namespace {
 
   struct FSInternal {
     ~FSInternal() {
-      if (inodes) {
-        while (inodeCount--)
-          delete inodes[inodeCount];
-        delete inodes;
-      }
+      while (inodeCount--)
+        delete inodes[inodeCount];
+      delete inodes;
       if (fds) {
         while (fdCount--)
           delete fds[fdCount];
@@ -557,7 +555,7 @@ namespace {
       }
     }
     struct Fd* fd;
-    if (UNLIKELY(!TryAlloc(&fd)))
+    if (UNLIKELY(!TryAlloc<true>(&fd)))
       return -ENOMEM;
     if (UNLIKELY(!TryRealloc(&fs->fds, fs->fdCount + 1))) {
       delete fd;
@@ -579,6 +577,11 @@ namespace {
     delete fd;
     if (i != fs->fdCount - 1)
       memmove(fs->fds + i, fs->fds + i + 1, sizeof(struct Fd*) * (fs->fdCount - i));
+    if (--fs->fdCount == 0) {
+      delete fs->fds;
+      fs->fds = NULL;
+      return;
+    }
     fs->fds = reinterpret_cast<struct Fd**>(
       realloc(fs->fds, sizeof(struct Fd*) * --fs->fdCount)
     );
@@ -795,16 +798,15 @@ namespace {
 
 FileSystem* FileSystem::New() {
   struct FSInternal* data;
-  if (UNLIKELY(!TryAlloc(&data)))
+  if (UNLIKELY(!TryAlloc<true>(&data)))
     return NULL;
   struct INode* root;
   if (UNLIKELY(!TryAlloc(&data->inodes)) ||
-      UNLIKELY(!TryAlloc(&data->fds)) ||
-      UNLIKELY(!TryAlloc(&root))) {
+      UNLIKELY(!TryAlloc<true>(&root))) {
     delete data;
     return NULL;
   }
-  if (UNLIKELY(!TryAlloc<false>(&root->dents, 2))) {
+  if (UNLIKELY(!TryAlloc(&root->dents, 2))) {
     delete root;
     delete data;
     return NULL;
@@ -818,7 +820,7 @@ FileSystem* FileSystem::New() {
     delete data;
     return NULL;
   }
-  if (UNLIKELY(!TryAlloc(&data->cwd)) ||
+  if (UNLIKELY(!TryAlloc<true>(&data->cwd)) ||
       UNLIKELY(!(data->cwd->path = strdup("/")))) {
     RemoveINode(data, root);
     delete data;
@@ -827,7 +829,7 @@ FileSystem* FileSystem::New() {
   data->cwd->inode = root;
   data->cwd->parent = root;
   FileSystem* fs;
-  if (UNLIKELY(!TryAlloc<false>(&fs))) {
+  if (UNLIKELY(!TryAlloc(&fs))) {
     RemoveINode(data, root);
     delete data;
     return NULL;
@@ -876,24 +878,14 @@ int FileSystem::FAccessAt2(int dirFd, const char* path, int mode, int flags) {
 int FileSystem::OpenAt(int dirFd, const char* path, int flags, mode_t mode) {
   struct FSInternal* fs = (struct FSInternal*)data;
   std::lock_guard<std::mutex> lock(fs->mtx);
-  if (UNLIKELY(flags & ~(O_RDONLY | O_WRONLY | O_RDWR | O_CREAT | O_EXCL | O_APPEND | O_TRUNC | 0x2000000 | O_DIRECTORY | O_NOFOLLOW | O_NOATIME)))
+  if (UNLIKELY(flags & ~(O_RDONLY | O_WRONLY | O_RDWR | O_CREAT | O_EXCL | O_APPEND | O_TRUNC | 020000000 | O_DIRECTORY | O_NOFOLLOW | O_NOATIME)))
     return -EINVAL;
-  if (flags & 0x2000000) {
+  if (flags & 020000000) {
     if (UNLIKELY(flags & O_CREAT) ||
-        UNLIKELY(!(flags & (O_WRONLY | O_RDWR)) || mode == 0))
+        UNLIKELY(!(flags & (O_WRONLY | O_RDWR))) ||
+        UNLIKELY(mode & ~07777 || mode == 0))
       return -EINVAL;
-    struct INode* inode;
-    if (UNLIKELY(!TryAlloc(&inode)))
-      return -EIO;
-    if (UNLIKELY(!PushINode(fs, inode))) {
-      delete inode;
-      return -EIO;
-    }
-    inode->mode = (mode & ~S_IFMT) | S_IFREG;
-    int res = PushFd(fs, inode, flags);
-    if (UNLIKELY(res < 0))
-      RemoveINode(fs, inode);
-    return res;
+    mode |= S_IFREG;
   } else if (flags & O_CREAT) {
     if (UNLIKELY(flags & O_DIRECTORY) ||
         UNLIKELY(mode & ~07777))
@@ -940,7 +932,7 @@ int FileSystem::OpenAt(int dirFd, const char* path, int flags, mode_t mode) {
         return -ENOSPC;
       }
       struct INode* x;
-      if (UNLIKELY(!TryAlloc(&x))) {
+      if (UNLIKELY(!TryAlloc<true>(&x))) {
         delete name;
         return -EIO;
       }
@@ -966,7 +958,22 @@ int FileSystem::OpenAt(int dirFd, const char* path, int flags, mode_t mode) {
     }
     return res;
   }
-  if (S_ISDIR(inode->mode)) {
+  if (flags & 020000000) {
+    if (!S_ISDIR(inode->mode))
+      return -ENOTDIR;
+    struct INode* inode;
+    if (UNLIKELY(!TryAlloc<true>(&inode)))
+      return -EIO;
+    if (UNLIKELY(!PushINode(fs, inode))) {
+      delete inode;
+      return -EIO;
+    }
+    inode->mode = (mode & ~S_IFMT) | S_IFREG;
+    int res = PushFd(fs, inode, flags);
+    if (UNLIKELY(res < 0))
+      RemoveINode(fs, inode);
+    return res;
+  } else if (S_ISDIR(inode->mode)) {
     if (UNLIKELY(flags & (O_WRONLY | O_RDWR)))
       return -EISDIR;
   } else {
@@ -1037,7 +1044,7 @@ int FileSystem::MkNodAt(int dirFd, const char* path, mode_t mode, dev_t dev) {
     return -ENOSPC;
   }
   struct INode* x;
-  if (UNLIKELY(!TryAlloc(&x))) {
+  if (UNLIKELY(!TryAlloc<true>(&x))) {
     delete name;
     return -EIO;
   }
@@ -1085,11 +1092,11 @@ int FileSystem::MkDirAt(int dirFd, const char* path, mode_t mode) {
     return -ENOSPC;
   }
   struct INode* x;
-  if (UNLIKELY(!TryAlloc(&x))) {
+  if (UNLIKELY(!TryAlloc<true>(&x))) {
     delete name;
     return -EIO;
   }
-  if (UNLIKELY(!TryAlloc<false>(&x->dents, 2)) ||
+  if (UNLIKELY(!TryAlloc(&x->dents, 2)) ||
       UNLIKELY(!PushINode(fs, x))) {
     delete name;
     delete x;
@@ -1144,7 +1151,7 @@ int FileSystem::SymLinkAt(const char* oldPath, int newDirFd, const char* newPath
     return -ENOSPC;
   }
   struct INode* x;
-  if (UNLIKELY(!TryAlloc(&x))) {
+  if (UNLIKELY(!TryAlloc<true>(&x))) {
     delete name;
     return -EIO;
   }
@@ -2359,13 +2366,13 @@ FileSystem* FileSystem::LoadFromFile(const char* filename) {
     return NULL;
   }
   struct INode** inodes;
-  if (UNLIKELY(!TryAlloc<false>(&inodes, inodeCount))) {
+  if (UNLIKELY(!TryAlloc(&inodes, inodeCount))) {
     close(fd);
     return NULL;
   }
   for (ino_t i = 0; i != inodeCount; ++i) {
     struct INode* inode;
-    if (UNLIKELY(!TryAlloc<false>(&inode))) {
+    if (UNLIKELY(!TryAlloc(&inode))) {
       close(fd);
       for (ino_t j = 0; j != i; ++j)
         delete inodes[j];
@@ -2445,7 +2452,7 @@ FileSystem* FileSystem::LoadFromFile(const char* filename) {
         free(inode);
         return NULL;
       }
-      if (UNLIKELY(!TryAlloc<false>(&inode->dents, inode->dentCount))) {
+      if (UNLIKELY(!TryAlloc(&inode->dents, inode->dentCount))) {
         close(fd);
         for (ino_t j = 0; j != i; ++j)
           delete inodes[j];
@@ -2524,7 +2531,7 @@ FileSystem* FileSystem::LoadFromFile(const char* filename) {
           free(inode);
           return NULL;
         }
-        if (UNLIKELY(!TryAlloc<false>(&inode->dataRanges, dataRangeCount))) {
+        if (UNLIKELY(!TryAlloc(&inode->dataRanges, dataRangeCount))) {
           close(fd);
           for (ino_t j = 0; j != i; ++j)
             delete inodes[j];
@@ -2551,7 +2558,7 @@ FileSystem* FileSystem::LoadFromFile(const char* filename) {
             return NULL;
           }
           struct INode::DataRange* range;
-          if (UNLIKELY(!TryAlloc<false>(&range))) {
+          if (UNLIKELY(!TryAlloc(&range))) {
             close(fd);
             for (ino_t k = 0; k != i; ++k)
               delete inodes[k];
@@ -2635,7 +2642,7 @@ FileSystem* FileSystem::LoadFromFile(const char* filename) {
   close(fd);
   FileSystem* fs;
   struct FSInternal* data;
-  if (UNLIKELY(!TryAlloc<false>(&fs)) ||
+  if (UNLIKELY(!TryAlloc(&fs)) ||
       UNLIKELY(!TryAlloc(&data))) {
     for (ino_t i = 0; i != inodeCount; ++i)
       delete inodes[i];
