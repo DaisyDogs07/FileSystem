@@ -22,9 +22,8 @@
 #error FileSystem is only available in Linux
 #endif
 #include <sys/stat.h>
-#include <dirent.h>
+#include <sys/time.h>
 #include <fcntl.h>
-#include <mutex>
 #include <string.h>
 #include <utime.h>
 #include <unistd.h>

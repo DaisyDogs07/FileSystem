@@ -18,7 +18,10 @@
 // SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #include "FileSystem.h"
+#include <dirent.h>
+#include <mutex>
 
+#define LIKELY(expr) __builtin_expect(!!(expr), 1)
 #define UNLIKELY(expr) __builtin_expect(!!(expr), 0)
 
 namespace {
@@ -40,6 +43,13 @@ namespace {
       return false;
     *ptr = newPtr;
     return true;
+  }
+
+  template<typename R, typename T1, typename T2>
+  R min(T1 a, T2 b) {
+    if (a < b)
+      return a;
+    return b;
   }
 
   struct INode {
@@ -307,7 +317,7 @@ namespace {
               } else break;
             }
             if (range3) {
-              off_t off = std::min(range3->offset, offset);
+              off_t off = min<off_t>(range3->offset, offset);
               off_t newRangeLength = range2->size + (range2->offset - off);
               if (UNLIKELY(!TryRealloc(&range3->data, newRangeLength)))
                 return NULL;
@@ -794,6 +804,37 @@ namespace {
     struct timespec mtime;
     struct timespec atime;
   };
+
+  template<typename T>
+  T toLittle(T value) {
+#if __BYTE_ORDER == __BIG_ENDIAN
+    if constexpr (sizeof(T) == 1)
+      return value;
+    if constexpr (sizeof(T) == 2)
+      return htole16(value);
+    if constexpr (sizeof(T) == 4)
+      return htole32(value);
+    if constexpr (sizeof(T) == 8)
+      return htole64(value);
+#else
+    return value;
+#endif
+  }
+  template<typename T>
+  T toHost(T value) {
+#if __BYTE_ORDER == __BIG_ENDIAN
+    if constexpr (sizeof(T) == 1)
+      return value;
+    if constexpr (sizeof(T) == 2)
+      return le16toh(value);
+    if constexpr (sizeof(T) == 4)
+      return le32toh(value);
+    if constexpr (sizeof(T) == 8)
+      return le64toh(value);
+#else
+    return value;
+#endif
+  }
 }
 
 FileSystem* FileSystem::New() {
@@ -881,7 +922,8 @@ int FileSystem::OpenAt(int dirFd, const char* path, int flags, mode_t mode) {
   if (UNLIKELY(flags & ~(O_RDONLY | O_WRONLY | O_RDWR | O_CREAT | O_EXCL | O_APPEND | O_TRUNC | 020000000 | O_DIRECTORY | O_NOFOLLOW | O_NOATIME)))
     return -EINVAL;
   if (flags & 020000000) {
-    if (UNLIKELY(flags & O_CREAT) ||
+    if (UNLIKELY(!(flags & O_DIRECTORY)) ||
+        UNLIKELY(flags & O_CREAT) ||
         UNLIKELY(!(flags & (O_WRONLY | O_RDWR))) ||
         UNLIKELY(mode & ~07777 || mode == 0))
       return -EINVAL;
@@ -1573,11 +1615,11 @@ ssize_t FileSystem::Read(unsigned int fdNum, char* buf, size_t count) {
     size_t amount;
     if (it.IsInData()) {
       struct INode::DataRange* range = it.GetRange();
-      amount = std::min((range->offset + range->size) - (fd->seekOff + amountRead), count - amountRead);
+      amount = min<size_t>((range->offset + range->size) - (fd->seekOff + amountRead), count - amountRead);
       memcpy(buf + amountRead, range->data + (fd->seekOff + amountRead) - range->offset, amount);
     } else {
       struct INode::HoleRange hole = it.GetHole();
-      amount = std::min((hole.offset + hole.size) - (fd->seekOff + amountRead), count - amountRead);
+      amount = min<size_t>((hole.offset + hole.size) - (fd->seekOff + amountRead), count - amountRead);
       memset(buf + amountRead, '\0', amount);
     }
     amountRead += amount;
@@ -1629,8 +1671,8 @@ ssize_t FileSystem::Readv(unsigned int fdNum, struct iovec* iov, int iovcnt) {
     size_t amount;
     if (it.IsInData()) {
       struct INode::DataRange* range = it.GetRange();
-      amount = std::min(
-        std::min(
+      amount = min<size_t>(
+        min<size_t>(
           (range->offset + range->size) - (fd->seekOff + count),
           curr.iov_len - amountRead),
         totalLen - count
@@ -1638,8 +1680,8 @@ ssize_t FileSystem::Readv(unsigned int fdNum, struct iovec* iov, int iovcnt) {
       memcpy((char*)curr.iov_base + amountRead, range->data + (fd->seekOff + count) - range->offset, amount);
     } else {
       struct INode::HoleRange hole = it.GetHole();
-      amount = std::min(
-        std::min(
+      amount = min<size_t>(
+        min<size_t>(
           (hole.offset + hole.size) - (fd->seekOff + count),
           curr.iov_len - amountRead),
         totalLen - count
@@ -1684,11 +1726,11 @@ ssize_t FileSystem::PRead(unsigned int fdNum, char* buf, size_t count, off_t off
     size_t amount;
     if (it.IsInData()) {
       struct INode::DataRange* range = it.GetRange();
-      amount = std::min((range->offset + range->size) - (offset + amountRead), count - amountRead);
+      amount = min<size_t>((range->offset + range->size) - (offset + amountRead), count - amountRead);
       memcpy(buf + amountRead, range->data + (offset + amountRead) - range->offset, amount);
     } else {
       struct INode::HoleRange hole = it.GetHole();
-      amount = std::min((hole.offset + hole.size) - (offset + amountRead), count - amountRead);
+      amount = min<size_t>((hole.offset + hole.size) - (offset + amountRead), count - amountRead);
       memset(buf + amountRead, '\0', amount);
     }
     amountRead += amount;
@@ -1740,8 +1782,8 @@ ssize_t FileSystem::PReadv(unsigned int fdNum, struct iovec* iov, int iovcnt, of
     size_t amount;
     if (it.IsInData()) {
       struct INode::DataRange* range = it.GetRange();
-      amount = std::min(
-        std::min(
+      amount = min<size_t>(
+        min<size_t>(
           (range->offset + range->size) - (fd->seekOff + count),
           curr.iov_len - amountRead),
         totalLen - count
@@ -1749,8 +1791,8 @@ ssize_t FileSystem::PReadv(unsigned int fdNum, struct iovec* iov, int iovcnt, of
       memcpy((char*)curr.iov_base + amountRead, range->data + (fd->seekOff + count) - range->offset, amount);
     } else {
       struct INode::HoleRange hole = it.GetHole();
-      amount = std::min(
-        std::min(
+      amount = min<size_t>(
+        min<size_t>(
           (hole.offset + hole.size) - (fd->seekOff + count),
           curr.iov_len - amountRead),
         totalLen - count
@@ -1971,7 +2013,7 @@ ssize_t FileSystem::SendFile(unsigned int outFd, unsigned int inFd, off_t* offse
         } else itOut.Next();
         if (amount == 0)
           continue;
-        amountRead += std::min(amount, count - amountRead);
+        amountRead += min<size_t>(amount, count - amountRead);
         continue;
       }
       struct INode::DataRange* rangeOut = itOut.GetRange();
@@ -1989,7 +2031,7 @@ ssize_t FileSystem::SendFile(unsigned int outFd, unsigned int inFd, off_t* offse
       continue;
     }
     struct INode::DataRange* rangeIn = itIn.GetRange();
-    amount = std::min((rangeIn->offset + rangeIn->size) - (off + amountRead), count - amountRead);
+    amount = min<size_t>((rangeIn->offset + rangeIn->size) - (off + amountRead), count - amountRead);
     struct INode::DataRange* rangeOut = inodeOut->AllocData(fdOut->seekOff + amountRead, amount);
     if (UNLIKELY(!rangeOut))
       return -EIO;
@@ -2265,20 +2307,35 @@ bool FileSystem::DumpToFile(const char* filename) {
   int fd = creat(filename, 0644);
   if (UNLIKELY(fd < 0))
     goto err1;
-  if (UNLIKELY(write(fd, "\x7FVFS", 4) != 4) ||
-      UNLIKELY(write(fd, &fs->inodeCount, sizeof(ino_t)) != sizeof(ino_t)))
-    goto err2;
+  {
+    ino_t littleInodeCount = toLittle(fs->inodeCount);
+    if (UNLIKELY(write(fd, "\x7FVFS", 4) != 4) ||
+        UNLIKELY(write(fd, &littleInodeCount, sizeof(ino_t)) != sizeof(ino_t)))
+      goto err2;
+  }
   for (ino_t i = 0; i != fs->inodeCount; ++i) {
     struct INode* inode = fs->inodes[i];
     struct DumpedINode dumped = {
-      .id = inode->id,
-      .size = inode->size,
-      .nlink = inode->nlink,
-      .mode = inode->mode,
-      .btime = inode->btime,
-      .ctime = inode->ctime,
-      .mtime = inode->mtime,
-      .atime = inode->atime
+      .id = toLittle(inode->id),
+      .size = toLittle(inode->size),
+      .nlink = toLittle(inode->nlink),
+      .mode = toLittle(inode->mode),
+      .btime = {
+        .tv_sec = toLittle(inode->btime.tv_sec),
+        .tv_nsec = toLittle(inode->btime.tv_nsec)
+      },
+      .ctime = {
+        .tv_sec = toLittle(inode->ctime.tv_sec),
+        .tv_nsec = toLittle(inode->ctime.tv_nsec)
+      },
+      .mtime = {
+        .tv_sec = toLittle(inode->mtime.tv_sec),
+        .tv_nsec = toLittle(inode->mtime.tv_nsec)
+      },
+      .atime = {
+        .tv_sec = toLittle(inode->atime.tv_sec),
+        .tv_nsec = toLittle(inode->atime.tv_nsec)
+      },
     };
     if (UNLIKELY(write(fd, &dumped, sizeof(struct DumpedINode)) != sizeof(struct DumpedINode)))
       goto err2;
@@ -2290,24 +2347,36 @@ bool FileSystem::DumpToFile(const char* filename) {
         goto err2;
     }
     if (S_ISDIR(inode->mode)) {
-      if (UNLIKELY(write(fd, &inode->dentCount, sizeof(off_t)) != sizeof(off_t)) ||
-          UNLIKELY(write(fd, &inode->dents[1].inode->ndx, sizeof(ino_t)) != sizeof(ino_t)))
-        goto err2;
+      {
+        off_t littleDentCount = toLittle(inode->dentCount);
+        ino_t littleNdx = toLittle(inode->dents[1].inode->ndx);
+        if (UNLIKELY(write(fd, &littleDentCount, sizeof(off_t)) != sizeof(off_t)) ||
+            UNLIKELY(write(fd, &littleNdx, sizeof(ino_t)) != sizeof(ino_t)))
+          goto err2;
+      }
       for (off_t j = 2; j != inode->dentCount; ++j) {
         struct INode::Dent* dent = &inode->dents[j];
         size_t nameLen = strlen(dent->name) + 1;
-        if (UNLIKELY(write(fd, &dent->inode->ndx, sizeof(ino_t)) != sizeof(ino_t)) ||
+        ino_t littleNdx = toLittle(dent->inode->ndx);
+        if (UNLIKELY(write(fd, &littleNdx, sizeof(ino_t)) != sizeof(ino_t)) ||
             UNLIKELY(write(fd, dent->name, nameLen) != nameLen))
           goto err2;
       }
     } else if (inode->size != 0) {
-      if (UNLIKELY(write(fd, &inode->dataRangeCount, sizeof(off_t)) != sizeof(off_t)))
-        goto err2;
+      {
+        off_t littleDataRangeCount = toLittle(inode->dataRangeCount);
+        if (UNLIKELY(write(fd, &littleDataRangeCount, sizeof(off_t)) != sizeof(off_t)))
+          goto err2;
+      }
       for (off_t j = 0; j != inode->dataRangeCount; ++j) {
         struct INode::DataRange* range = inode->dataRanges[j];
-        if (UNLIKELY(write(fd, &range->offset, sizeof(off_t)) != sizeof(off_t)) ||
-            UNLIKELY(write(fd, &range->size, sizeof(off_t)) != sizeof(off_t)))
-          goto err2;
+        {
+          off_t littleOffset = toLittle(range->offset);
+          off_t littleSize = toLittle(range->size);
+          if (UNLIKELY(write(fd, &littleOffset, sizeof(off_t)) != sizeof(off_t)) ||
+              UNLIKELY(write(fd, &littleSize, sizeof(off_t)) != sizeof(off_t)))
+            goto err2;
+        }
         ssize_t written = 0;
         while (written != range->size) {
           size_t amount = range->size - written;
@@ -2323,7 +2392,6 @@ bool FileSystem::DumpToFile(const char* filename) {
   }
   close(fd);
   return true;
-
  err2:
   close(fd);
  err1:
@@ -2338,8 +2406,10 @@ FileSystem* FileSystem::LoadFromFile(const char* filename) {
   struct INode** inodes;
   if (UNLIKELY(read(fd, magic, 4) != 4) ||
       UNLIKELY(memcmp(magic, "\x7FVFS", 4) != 0) ||
-      UNLIKELY(read(fd, &inodeCount, sizeof(ino_t)) != sizeof(ino_t)) ||
-      UNLIKELY(!TryAlloc(&inodes, inodeCount)))
+      UNLIKELY(read(fd, &inodeCount, sizeof(ino_t)) != sizeof(ino_t)))
+    goto err_after_open;
+  inodeCount = toHost(inodeCount);
+  if (UNLIKELY(!TryAlloc(&inodes, inodeCount)))
     goto err_after_open;
   for (ino_t i = 0; i != inodeCount; ++i) {
     struct INode* inode;
@@ -2349,14 +2419,26 @@ FileSystem* FileSystem::LoadFromFile(const char* filename) {
     inode->ndx = i;
     if (UNLIKELY(read(fd, &dumped, sizeof(struct DumpedINode)) != sizeof(struct DumpedINode)))
       goto err_after_inode_init;
-    inode->id = dumped.id;
-    inode->size = dumped.size;
-    inode->nlink = dumped.nlink;
-    inode->mode = dumped.mode;
-    inode->btime = dumped.btime;
-    inode->ctime = dumped.ctime;
-    inode->mtime = dumped.mtime;
-    inode->atime = dumped.atime;
+    inode->id = toHost(dumped.id);
+    inode->size = toHost(dumped.size);
+    inode->nlink = toHost(dumped.nlink);
+    inode->mode = toHost(dumped.mode);
+    inode->btime = {
+      .tv_sec = toHost(dumped.btime.tv_sec),
+      .tv_nsec = toHost(dumped.btime.tv_nsec)
+    };
+    inode->ctime = {
+      .tv_sec = toHost(dumped.ctime.tv_sec),
+      .tv_nsec = toHost(dumped.ctime.tv_nsec)
+    };
+    inode->mtime = {
+      .tv_sec = toHost(dumped.mtime.tv_sec),
+      .tv_nsec = toHost(dumped.mtime.tv_nsec)
+    };
+    inode->atime = {
+      .tv_sec = toHost(dumped.atime.tv_sec),
+      .tv_nsec = toHost(dumped.atime.tv_nsec)
+    };
     if (S_ISLNK(inode->mode)) {
       char target[PATH_MAX];
       size_t targetLen = 0;
@@ -2384,14 +2466,17 @@ FileSystem* FileSystem::LoadFromFile(const char* filename) {
      success_symlink: {}
     } else inode->target = NULL;
     if (S_ISDIR(inode->mode)) {
-      if (UNLIKELY(read(fd, &inode->dentCount, sizeof(off_t)) != sizeof(off_t)) ||
-          UNLIKELY(!TryAlloc(&inode->dents, inode->dentCount)))
+      off_t dentCount;
+      if (UNLIKELY(read(fd, &dentCount, sizeof(off_t)) != sizeof(off_t)))
+        goto err_after_inode_init;
+      dentCount = toHost(dentCount);
+      if (UNLIKELY(!TryAlloc(&inode->dents, dentCount)))
         goto err_after_inode_init;
       inode->dents[0] = { ".", inode };
       inode->dents[1].name = "..";
       if (UNLIKELY(read(fd, &inode->dents[1].inode, sizeof(ino_t)) != sizeof(ino_t)))
         goto err_after_dent_alloc;
-      for (off_t j = 2; j != inode->dentCount; ++j) {
+      for (off_t j = 2; j != dentCount; ++j) {
         struct INode::Dent* dent = &inode->dents[j];
         char name[PATH_MAX];
         size_t nameLen = 0;
@@ -2412,8 +2497,7 @@ FileSystem* FileSystem::LoadFromFile(const char* filename) {
         goto err_after_dent_alloc;
        success_dent: {}
       }
-      inode->dataRangeCount = 0;
-      inode->dataRanges = NULL;
+      inode->dentCount = dentCount;
       goto success_dents;
 
      err_after_dent_alloc:
@@ -2424,59 +2508,64 @@ FileSystem* FileSystem::LoadFromFile(const char* filename) {
       inode->dents = NULL;
       inode->dentCount = 0;
     }
-    if (S_ISREG(inode->mode)) {
+    if (S_ISREG(inode->mode) &&
+        LIKELY(inode->size != 0)) {
+      off_t dataRangeCount;
+      if (UNLIKELY(read(fd, &dataRangeCount, sizeof(off_t)) != sizeof(off_t)))
+        goto err_after_inode_init;
+      dataRangeCount = toHost(dataRangeCount);
+      if (UNLIKELY(!TryAlloc(&inode->dataRanges, dataRangeCount)))
+        goto err_after_inode_init;
+      for (off_t j = 0; j != dataRangeCount; ++j) {
+        struct INode::DataRange* range;
+        ssize_t nread = 0;
+        off_t offset;
+        off_t size;
+        if (UNLIKELY(read(fd, &offset, sizeof(off_t)) != sizeof(off_t)) ||
+            UNLIKELY(read(fd, &size, sizeof(off_t)) != sizeof(off_t)))
+          goto err_after_dataranges_init;
+        offset = toHost(offset);
+        size = toHost(size);
+        if (UNLIKELY(offset < 0) || UNLIKELY(offset > inode->size - size) ||
+            UNLIKELY(size < 0) || UNLIKELY(size > inode->size - offset))
+          goto err_after_dataranges_init;
+        if (UNLIKELY(!TryAlloc(&range)))
+          goto err_after_dataranges_init;
+        range->offset = offset;
+        range->size = size;
+        if (UNLIKELY(!TryAlloc(&range->data, size)))
+          goto err_after_range_alloc;
+        while (nread != size) {
+          size_t amount = size - nread;
+          if (amount > 0x7ffff000)
+            amount = 0x7ffff000;
+          ssize_t count = read(fd, range->data + nread, amount);
+          if (UNLIKELY(count != amount))
+            goto err_after_range_data_alloc;
+          nread += count;
+        }
+        inode->dataRanges[j] = range;
+        goto success_data_range;
+
+        err_after_range_data_alloc:
+        free((void*)range->data);
+        err_after_range_alloc:
+        free(range);
+        goto err_after_dataranges_init;
+        success_data_range: {}
+      }
+      inode->dataRangeCount = dataRangeCount;
+      goto success_data;
+
+      err_after_dataranges_init:
+      for (off_t k = 0; k != dataRangeCount; ++k)
+        delete inode->dataRanges[k];
+      delete inode->dataRanges;
+      goto err_after_inode_init;
+      success_data: {}
+    } else {
       inode->dataRangeCount = 0;
       inode->dataRanges = NULL;
-      if (inode->size != 0) {
-        off_t dataRangeCount;
-        if (UNLIKELY(read(fd, &dataRangeCount, sizeof(off_t)) != sizeof(off_t)) ||
-            UNLIKELY(!TryAlloc(&inode->dataRanges, dataRangeCount)))
-          goto err_after_inode_init;
-        inode->dataRangeCount = dataRangeCount;
-        for (off_t j = 0; j != dataRangeCount; ++j) {
-          struct INode::DataRange* range;
-          ssize_t nread = 0;
-          off_t offset;
-          off_t size;
-          if (UNLIKELY(read(fd, &offset, sizeof(off_t)) != sizeof(off_t)) ||
-              UNLIKELY(read(fd, &size, sizeof(off_t)) != sizeof(off_t)) ||
-              UNLIKELY(offset < 0) || UNLIKELY(offset > inode->size - size) ||
-              UNLIKELY(size < 0) || UNLIKELY(size > inode->size - offset))\
-            goto err_after_dataranges_init;
-          if (UNLIKELY(!TryAlloc(&range)))
-            goto err_after_dataranges_init;
-          range->offset = offset;
-          range->size = size;
-          if (UNLIKELY(!TryAlloc(&range->data, size)))
-            goto err_after_range_alloc;
-          while (nread != size) {
-            size_t amount = size - nread;
-            if (amount > 0x7ffff000)
-              amount = 0x7ffff000;
-            ssize_t count = read(fd, range->data + nread, amount);
-            if (UNLIKELY(count != amount))
-              goto err_after_range_data_alloc;
-            nread += count;
-          }
-          inode->dataRanges[j] = range;
-          goto success_data_range;
-
-         err_after_range_data_alloc:
-          free((void*)range->data);
-         err_after_range_alloc:
-          free(range);
-          goto err_after_dataranges_init;
-         success_data_range: {}
-        }
-        goto success_data;
-        
-       err_after_dataranges_init:
-        for (off_t k = 0; k != dataRangeCount; ++k)
-          delete inode->dataRanges[k];
-        delete inode->dataRanges;
-        goto err_after_inode_init;
-       success_data: {}
-      }
     }
     inodes[i] = inode;
     goto success_inode;
@@ -2494,9 +2583,10 @@ FileSystem* FileSystem::LoadFromFile(const char* filename) {
     if (S_ISDIR(inode->mode)) {
       for (off_t j = 1; j != inode->dentCount; ++j) {
         struct INode::Dent* dent = &inode->dents[j];
-        if (UNLIKELY((ino_t)dent->inode >= inodeCount))
+        ino_t hostIno = toHost((ino_t)dent->inode);
+        if (UNLIKELY(hostIno >= inodeCount))
           goto err_after_inodes;
-        dent->inode = inodes[(ino_t)dent->inode];
+        dent->inode = inodes[hostIno];
       }
     }
   }
