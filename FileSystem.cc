@@ -440,6 +440,11 @@ namespace {
     struct timespec ctime;
     struct timespec mtime;
     struct timespec atime;
+    bool CanUse(int perms) {
+      if (!(mode & (perms | (perms << 3) | (perms << 6))))
+        return false;
+      return true;
+    }
     void FillStat(struct stat* buf) {
       memset(buf, '\0', sizeof(struct stat));
       buf->st_ino = id;
@@ -678,7 +683,7 @@ namespace {
         if (UNLIKELY(err))
           return err;
         currParent = current;
-        if (UNLIKELY(!(current->mode & 0111))) {
+        if (UNLIKELY(!current->CanUse(X_OK))) {
           err = -EACCES;
           goto resetName;
         }
@@ -724,7 +729,7 @@ namespace {
     if (nameLen != 0) {
       if (parent)
         *parent = current;
-      if (UNLIKELY(!(current->mode & 0111)))
+      if (UNLIKELY(!current->CanUse(X_OK)))
         return -EACCES;
       for (off_t i = 0; i != current->dentCount; ++i)
         if (strcmp(current->dents[i].name, name) == 0) {
@@ -806,6 +811,18 @@ namespace {
     const char* last = GetLast(absPath);
     delete absPath;
     return last;
+  }
+  int FlagsToPerms(int flags) {
+    int perms = F_OK;
+    if ((flags & O_ACCMODE) == O_RDONLY)
+      perms |= R_OK;
+    else if ((flags & O_ACCMODE) == O_WRONLY)
+      perms |= W_OK;
+    else if ((flags & O_ACCMODE) == O_RDWR)
+      perms |= (R_OK | W_OK);
+    if (flags & O_TRUNC)
+      perms |= W_OK;
+    return perms;
   }
 
   struct DumpedINode {
@@ -898,7 +915,7 @@ FileSystem::~FileSystem() {
 int FileSystem::FAccessAt2(int dirFd, const char* path, int mode, int flags) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
   std::lock_guard<std::mutex> lock(fs->mtx);
-  if (UNLIKELY(mode & ~S_IRWXO) ||
+  if (UNLIKELY(mode & ~(F_OK | R_OK | W_OK | X_OK)) ||
       UNLIKELY(flags & ~(AT_SYMLINK_NOFOLLOW | AT_EMPTY_PATH)) ||
       UNLIKELY(flags & AT_EMPTY_PATH && path[0] != '\0'))
     return -EINVAL;
@@ -919,14 +936,7 @@ int FileSystem::FAccessAt2(int dirFd, const char* path, int mode, int flags) {
   fs->cwd->inode = origCwd;
   if (UNLIKELY(res != 0))
     return res;
-  int check = 0;
-  if (mode & R_OK)
-    check |= 0444;
-  if (mode & W_OK)
-    check |= 0222;
-  if (mode & X_OK)
-    check |= 0111;
-  if (check != F_OK && !(inode->mode & check))
+  if (mode != F_OK && !inode->CanUse(mode))
     return -EACCES;
   return 0;
 }
@@ -977,6 +987,8 @@ int FileSystem::OpenAt(int dirFd, const char* path, int flags, mode_t mode) {
     }
     if (flags & O_NOFOLLOW && UNLIKELY(S_ISLNK(inode->mode)))
       return -ELOOP;
+    if (!inode->CanUse(FlagsToPerms(flags)))
+      return -EACCES;
   } else {
     if (flags & O_CREAT && res == -ENOENT) {
       flags &= ~O_TRUNC;
@@ -2098,7 +2110,7 @@ int FileSystem::Truncate(const char* path, off_t length) {
     return -EISDIR;
   if (UNLIKELY(!S_ISREG(inode->mode)))
     return -EINVAL;
-  if (UNLIKELY(!(inode->mode & 0222)))
+  if (UNLIKELY(!inode->CanUse(W_OK)))
     return -EACCES;
   inode->TruncateData(length);
   struct timespec ts;
