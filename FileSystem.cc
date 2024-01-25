@@ -441,7 +441,9 @@ namespace {
     struct timespec mtime;
     struct timespec atime;
     bool CanUse(int perms) {
-      if (!(mode & (perms | (perms << 3) | (perms << 6))))
+      if (!(mode & perms) &&
+          !(mode & (perms << 3)) &&
+          !(mode & (perms << 6)))
         return false;
       return true;
     }
