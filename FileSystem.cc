@@ -997,10 +997,6 @@ int FileSystem::OpenAt(int dirFd, const char* path, int flags, mode_t mode) {
       const char* name = GetAbsoluteLast(fs, path);
       if (UNLIKELY(!name))
         return -ENOMEM;
-      if (UNLIKELY(parent->size > std::numeric_limits<off_t>::max() - strlen(name))) {
-        delete name;
-        return -ENOSPC;
-      }
       struct INode* x;
       if (UNLIKELY(!TryAlloc<true>(&x))) {
         delete name;
@@ -1108,10 +1104,6 @@ int FileSystem::MkNodAt(int dirFd, const char* path, mode_t mode, dev_t dev) {
   const char* name = GetAbsoluteLast(fs, path);
   if (UNLIKELY(!name))
     return -ENOMEM;
-  if (UNLIKELY(parent->size > std::numeric_limits<off_t>::max() - strlen(name))) {
-    delete name;
-    return -ENOSPC;
-  }
   struct INode* x;
   if (UNLIKELY(!TryAlloc<true>(&x))) {
     delete name;
@@ -1156,10 +1148,6 @@ int FileSystem::MkDirAt(int dirFd, const char* path, mode_t mode) {
   const char* name = GetAbsoluteLast(fs, path);
   if (UNLIKELY(!name))
     return -ENOMEM;
-  if (UNLIKELY(parent->size > std::numeric_limits<off_t>::max() - strlen(name))) {
-    delete name;
-    return -ENOSPC;
-  }
   struct INode* x;
   if (UNLIKELY(!TryAlloc<true>(&x))) {
     delete name;
@@ -1215,10 +1203,6 @@ int FileSystem::SymLinkAt(const char* oldPath, int newDirFd, const char* newPath
   const char* name = GetAbsoluteLast(fs, newPath);
   if (UNLIKELY(!name))
     return -ENOMEM;
-  if (UNLIKELY(newParent->size > std::numeric_limits<off_t>::max() - strlen(name))) {
-    delete name;
-    return -ENOSPC;
-  }
   struct INode* x;
   if (UNLIKELY(!TryAlloc<true>(&x))) {
     delete name;
@@ -1360,10 +1344,6 @@ int FileSystem::LinkAt(int oldDirFd, const char* oldPath, int newDirFd, const ch
   const char* name = GetAbsoluteLast(fs, newPath);
   if (UNLIKELY(!name))
     return -ENOMEM;
-  if (UNLIKELY(newParent->size > std::numeric_limits<off_t>::max() - strlen(name))) {
-    delete name;
-    return -ENOSPC;
-  }
   if (UNLIKELY(!newParent->PushDent(name, oldInode))) {
     delete name;
     return -EIO;
@@ -1517,11 +1497,6 @@ int FileSystem::RenameAt2(int oldDirFd, const char* oldPath, int newDirFd, const
     delete oldName;
     delete newName;
   } else {
-    if (UNLIKELY(newParent->size > std::numeric_limits<off_t>::max() - strlen(newName))) {
-      delete oldName;
-      delete newName;
-      return -ENOSPC;
-    }
     if (UNLIKELY(!newParent->PushDent(newName, oldInode))) {
       delete oldName;
       delete newName;
