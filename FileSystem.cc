@@ -614,7 +614,7 @@ namespace {
       return;
     }
     fs->fds = reinterpret_cast<struct Fd**>(
-      realloc(fs->fds, sizeof(struct Fd*) * --fs->fdCount)
+      realloc(fs->fds, sizeof(struct Fd*) * fs->fdCount)
     );
   }
   int RemoveFd(struct FSInternal* fs, unsigned int fd) {
