@@ -528,6 +528,7 @@ namespace {
       pthread_mutex_init(&mtx, NULL);
     }
     ~FSInternal() {
+      pthread_mutex_destroy(&mtx);
       while (inodeCount--)
         delete inodes[inodeCount];
       delete inodes;
