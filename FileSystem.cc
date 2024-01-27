@@ -1432,7 +1432,7 @@ int FileSystem::RenameAt2(int oldDirFd, const char* oldPath, int newDirFd, const
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
   ScopedLock lock(fs->mtx);
   if (UNLIKELY(flags & ~(RENAME_NOREPLACE | RENAME_EXCHANGE)) ||
-      UNLIKELY((flags & (RENAME_NOREPLACE | RENAME_EXCHANGE)) == (RENAME_NOREPLACE | RENAME_EXCHANGE)))
+      UNLIKELY((flags & RENAME_NOREPLACE && flags & RENAME_EXCHANGE)))
     return -EINVAL;
   const char* last = GetLast(oldPath);
   if (UNLIKELY(!last))
