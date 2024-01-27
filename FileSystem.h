@@ -21,8 +21,10 @@
 #ifndef __linux__
 #error FileSystem is only available in Linux
 #endif
+#include <sys/errno.h>
 #include <sys/stat.h>
 #include <sys/time.h>
+#include <dirent.h>
 #include <fcntl.h>
 #include <string.h>
 #include <utime.h>

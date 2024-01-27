@@ -18,8 +18,10 @@
 // SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #include "FileSystem.h"
-#include <dirent.h>
-#include <mutex>
+#include <new>
+#include <pthread.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 #define LIKELY(expr) __builtin_expect(!!(expr), 1)
 #define UNLIKELY(expr) __builtin_expect(!!(expr), 0)
@@ -51,6 +53,19 @@ namespace {
       return a;
     return b;
   }
+
+  class ScopedLock {
+   public:
+    ScopedLock(pthread_mutex_t& mtx) {
+      mtx_ = &mtx;
+      pthread_mutex_lock(&mtx);
+    }
+    ~ScopedLock() {
+      pthread_mutex_unlock(mtx_);
+    }
+   private:
+    pthread_mutex_t* mtx_;
+  };
 
   struct INode {
     INode() {
@@ -509,6 +524,9 @@ namespace {
   };
 
   struct FSInternal {
+    FSInternal() {
+      pthread_mutex_init(&mtx, NULL);
+    }
     ~FSInternal() {
       while (inodeCount--)
         delete inodes[inodeCount];
@@ -526,7 +544,7 @@ namespace {
     struct Fd** fds = NULL;
     int fdCount = 0;
     struct Cwd* cwd = NULL;
-    std::mutex mtx;
+    pthread_mutex_t mtx;
   };
 
   bool PushINode(struct FSInternal* fs, struct INode* inode) {
@@ -916,7 +934,7 @@ FileSystem::~FileSystem() {
 }
 int FileSystem::FAccessAt2(int dirFd, const char* path, int mode, int flags) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
-  std::lock_guard<std::mutex> lock(fs->mtx);
+  ScopedLock lock(fs->mtx);
   if (UNLIKELY(mode & ~(F_OK | R_OK | W_OK | X_OK)) ||
       UNLIKELY(flags & ~(AT_SYMLINK_NOFOLLOW | AT_EMPTY_PATH)) ||
       UNLIKELY(flags & AT_EMPTY_PATH && path[0] != '\0'))
@@ -944,7 +962,7 @@ int FileSystem::FAccessAt2(int dirFd, const char* path, int mode, int flags) {
 }
 int FileSystem::OpenAt(int dirFd, const char* path, int flags, mode_t mode) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
-  std::lock_guard<std::mutex> lock(fs->mtx);
+  ScopedLock lock(fs->mtx);
   if (UNLIKELY(flags & ~(O_RDONLY | O_WRONLY | O_RDWR | O_CREAT | O_EXCL | O_APPEND | O_TRUNC | 020000000 | O_DIRECTORY | O_NOFOLLOW | O_NOATIME)))
     return -EINVAL;
   if (flags & 020000000) {
@@ -1051,12 +1069,12 @@ int FileSystem::OpenAt(int dirFd, const char* path, int flags, mode_t mode) {
 }
 int FileSystem::Close(unsigned int fd) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
-  std::lock_guard<std::mutex> lock(fs->mtx);
+  ScopedLock lock(fs->mtx);
   return RemoveFd(fs, fd);
 }
 int FileSystem::CloseRange(unsigned int fd, unsigned int maxFd, unsigned int flags) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
-  std::lock_guard<std::mutex> lock(fs->mtx);
+  ScopedLock lock(fs->mtx);
   if (UNLIKELY(flags != 0) ||
       UNLIKELY(fd > maxFd))
     return -EINVAL;
@@ -1074,7 +1092,7 @@ int FileSystem::CloseRange(unsigned int fd, unsigned int maxFd, unsigned int fla
 }
 int FileSystem::MkNodAt(int dirFd, const char* path, mode_t mode, dev_t dev) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
-  std::lock_guard<std::mutex> lock(fs->mtx);
+  ScopedLock lock(fs->mtx);
   if (mode & S_IFMT) {
     if (UNLIKELY(S_ISDIR(mode)))
       return -EPERM;
@@ -1126,7 +1144,7 @@ int FileSystem::MkNodAt(int dirFd, const char* path, mode_t mode, dev_t dev) {
 }
 int FileSystem::MkDirAt(int dirFd, const char* path, mode_t mode) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
-  std::lock_guard<std::mutex> lock(fs->mtx);
+  ScopedLock lock(fs->mtx);
   struct INode* origCwd = fs->cwd->inode;
   if (dirFd != AT_FDCWD) {
     struct Fd* fd;
@@ -1175,7 +1193,7 @@ int FileSystem::MkDirAt(int dirFd, const char* path, mode_t mode) {
 }
 int FileSystem::SymLinkAt(const char* oldPath, int newDirFd, const char* newPath) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
-  std::lock_guard<std::mutex> lock(fs->mtx);
+  ScopedLock lock(fs->mtx);
   struct Fd* fd;
   if (newDirFd != AT_FDCWD) {
     if (UNLIKELY(!(fd = GetFd(fs, newDirFd))))
@@ -1231,7 +1249,7 @@ int FileSystem::SymLinkAt(const char* oldPath, int newDirFd, const char* newPath
 }
 int FileSystem::ReadLinkAt(int dirFd, const char* path, char* buf, int bufLen) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
-  std::lock_guard<std::mutex> lock(fs->mtx);
+  ScopedLock lock(fs->mtx);
   if (UNLIKELY(bufLen <= 0))
     return -EINVAL;
   struct INode* origCwd = fs->cwd->inode;
@@ -1258,7 +1276,7 @@ int FileSystem::ReadLinkAt(int dirFd, const char* path, char* buf, int bufLen) {
 }
 int FileSystem::GetDents(unsigned int fdNum, struct linux_dirent* dirp, unsigned int count) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
-  std::lock_guard<std::mutex> lock(fs->mtx);
+  ScopedLock lock(fs->mtx);
   struct Fd* fd;
   if (UNLIKELY(!(fd = GetFd(fs, fdNum))))
     return -EBADF;
@@ -1295,7 +1313,7 @@ int FileSystem::GetDents(unsigned int fdNum, struct linux_dirent* dirp, unsigned
 }
 int FileSystem::LinkAt(int oldDirFd, const char* oldPath, int newDirFd, const char* newPath, int flags) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
-  std::lock_guard<std::mutex> lock(fs->mtx);
+  ScopedLock lock(fs->mtx);
   if (UNLIKELY(flags & ~(AT_SYMLINK_FOLLOW | AT_EMPTY_PATH)) ||
       UNLIKELY(flags & AT_EMPTY_PATH && oldPath[0] != '\0'))
     return -EINVAL;
@@ -1356,7 +1374,7 @@ int FileSystem::LinkAt(int oldDirFd, const char* oldPath, int newDirFd, const ch
 }
 int FileSystem::UnlinkAt(int dirFd, const char* path, int flags) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
-  std::lock_guard<std::mutex> lock(fs->mtx);
+  ScopedLock lock(fs->mtx);
   if (UNLIKELY(flags & ~AT_REMOVEDIR))
     return -EINVAL;
   struct INode* origCwd = fs->cwd->inode;
@@ -1412,7 +1430,7 @@ int FileSystem::UnlinkAt(int dirFd, const char* path, int flags) {
 }
 int FileSystem::RenameAt2(int oldDirFd, const char* oldPath, int newDirFd, const char* newPath, unsigned int flags) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
-  std::lock_guard<std::mutex> lock(fs->mtx);
+  ScopedLock lock(fs->mtx);
   if (UNLIKELY(flags & ~(RENAME_NOREPLACE | RENAME_EXCHANGE)) ||
       UNLIKELY((flags & (RENAME_NOREPLACE | RENAME_EXCHANGE)) == (RENAME_NOREPLACE | RENAME_EXCHANGE)))
     return -EINVAL;
@@ -1527,7 +1545,7 @@ int FileSystem::RenameAt2(int oldDirFd, const char* oldPath, int newDirFd, const
 }
 off_t FileSystem::LSeek(unsigned int fdNum, off_t offset, unsigned int whence) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
-  std::lock_guard<std::mutex> lock(fs->mtx);
+  ScopedLock lock(fs->mtx);
   if (UNLIKELY(offset < 0))
     return -EINVAL;
   struct Fd* fd;
@@ -1537,66 +1555,72 @@ off_t FileSystem::LSeek(unsigned int fdNum, off_t offset, unsigned int whence) {
   switch (whence) {
     case SEEK_SET:
       return fd->seekOff = offset;
-    case SEEK_CUR:
-      if (UNLIKELY(fd->seekOff > std::numeric_limits<off_t>::max() - offset))
+    case SEEK_CUR: {
+      off_t res;
+      if (UNLIKELY(__builtin_add_overflow(fd->seekOff, offset, &res)))
         return -EOVERFLOW;
-      return fd->seekOff += offset;
-    case SEEK_END:
+      return fd->seekOff = res;
+    }
+    case SEEK_END: {
       if (UNLIKELY(S_ISDIR(inode->mode)))
         return -EINVAL;
-      if (UNLIKELY(inode->size > std::numeric_limits<off_t>::max() - offset))
+      off_t res;
+      if (UNLIKELY(__builtin_add_overflow(inode->size, offset, &res)))
         return -EOVERFLOW;
-      return fd->seekOff = inode->size + offset;
+      return fd->seekOff = res;
+    }
     case SEEK_DATA: {
       INode::DataIterator it(inode, fd->seekOff);
+      off_t res;
       if (!it.IsInData()) {
         if (!it.Next()) {
-          if (UNLIKELY(inode->size > std::numeric_limits<off_t>::max() - offset))
+          if (UNLIKELY(__builtin_add_overflow(inode->size, offset, &res)))
             return -EOVERFLOW;
-          return fd->seekOff = inode->size + offset;
+          return fd->seekOff = res;
         }
         struct INode::DataRange* range = it.GetRange();
-        if (UNLIKELY(range->offset > std::numeric_limits<off_t>::max() - offset))
+        if (UNLIKELY(__builtin_add_overflow(range->offset, offset, &res)))
           return -EOVERFLOW;
-        return fd->seekOff = range->offset + offset;
+        return fd->seekOff = res;
       }
       it.Next();
       if (it.Next()) {
         struct INode::DataRange* range = it.GetRange();
-        if (UNLIKELY(range->offset > std::numeric_limits<off_t>::max() - offset))
+        if (UNLIKELY(__builtin_add_overflow(range->offset, offset, &res)))
           return -EOVERFLOW;
-        return fd->seekOff = range->offset + offset;
+        return fd->seekOff = res;
       }
-      if (UNLIKELY(inode->size > std::numeric_limits<off_t>::max() - offset))
+      if (UNLIKELY(__builtin_add_overflow(inode->size, offset, &res)))
         return -EOVERFLOW;
-      return fd->seekOff = inode->size + offset;
+      return fd->seekOff = res;
     }
     case SEEK_HOLE: {
       INode::DataIterator it(inode, fd->seekOff);
+      off_t res;
       if (it.IsInData()) {
         it.Next();
         struct INode::HoleRange hole = it.GetHole();
-        if (UNLIKELY(hole.offset > std::numeric_limits<off_t>::max() - offset))
+        if (UNLIKELY(__builtin_add_overflow(hole.offset, offset, &res)))
           return -EOVERFLOW;
-        return fd->seekOff = hole.offset + offset;
+        return fd->seekOff = res;
       }
       if (it.Next()) {
         it.Next();
         struct INode::HoleRange hole = it.GetHole();
-        if (UNLIKELY(hole.offset > std::numeric_limits<off_t>::max() - offset))
+        if (UNLIKELY(__builtin_add_overflow(hole.offset, offset, &res)))
           return -EOVERFLOW;
-        return fd->seekOff = hole.offset + offset;
+        return fd->seekOff = res;
       }
-      if (UNLIKELY(inode->size > std::numeric_limits<off_t>::max() - offset))
+      if (UNLIKELY(__builtin_add_overflow(inode->size, offset, &res)))
         return -EOVERFLOW;
-      return fd->seekOff = inode->size + offset;
+      return fd->seekOff = res;
     }
   }
   return -EINVAL;
 }
 ssize_t FileSystem::Read(unsigned int fdNum, char* buf, size_t count) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
-  std::lock_guard<std::mutex> lock(fs->mtx);
+  ScopedLock lock(fs->mtx);
   struct Fd* fd;
   if (UNLIKELY(!(fd = GetFd(fs, fdNum))) ||
       UNLIKELY(fd->flags & O_WRONLY))
@@ -1635,7 +1659,7 @@ ssize_t FileSystem::Read(unsigned int fdNum, char* buf, size_t count) {
 }
 ssize_t FileSystem::Readv(unsigned int fdNum, struct iovec* iov, int iovcnt) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
-  std::lock_guard<std::mutex> lock(fs->mtx);
+  ScopedLock lock(fs->mtx);
   struct Fd* fd;
   if (UNLIKELY(!(fd = GetFd(fs, fdNum))) ||
       UNLIKELY(fd->flags & O_WRONLY))
@@ -1705,7 +1729,7 @@ ssize_t FileSystem::Readv(unsigned int fdNum, struct iovec* iov, int iovcnt) {
 }
 ssize_t FileSystem::PRead(unsigned int fdNum, char* buf, size_t count, off_t offset) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
-  std::lock_guard<std::mutex> lock(fs->mtx);
+  ScopedLock lock(fs->mtx);
   if (UNLIKELY(offset < 0))
     return -EINVAL;
   struct Fd* fd;
@@ -1744,7 +1768,7 @@ ssize_t FileSystem::PRead(unsigned int fdNum, char* buf, size_t count, off_t off
 }
 ssize_t FileSystem::PReadv(unsigned int fdNum, struct iovec* iov, int iovcnt, off_t offset) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
-  std::lock_guard<std::mutex> lock(fs->mtx);
+  ScopedLock lock(fs->mtx);
   if (UNLIKELY(offset < 0))
     return -EINVAL;
   struct Fd* fd;
@@ -1815,7 +1839,7 @@ ssize_t FileSystem::PReadv(unsigned int fdNum, struct iovec* iov, int iovcnt, of
 }
 ssize_t FileSystem::Write(unsigned int fdNum, const char* buf, size_t count) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
-  std::lock_guard<std::mutex> lock(fs->mtx);
+  ScopedLock lock(fs->mtx);
   struct Fd* fd;
   if (UNLIKELY(!(fd = GetFd(fs, fdNum))) ||
       UNLIKELY(!(fd->flags & (O_WRONLY | O_RDWR))))
@@ -1828,13 +1852,14 @@ ssize_t FileSystem::Write(unsigned int fdNum, const char* buf, size_t count) {
   off_t seekOff = fd->flags & O_APPEND
     ? inode->size
     : fd->seekOff;
-  if (UNLIKELY(seekOff > std::numeric_limits<off_t>::max() - count))
+  off_t seekEnd;
+  if (UNLIKELY(__builtin_add_overflow(seekOff, count, &seekEnd)))
     return -EFBIG;
   struct INode::DataRange* range = inode->AllocData(seekOff, count);
   if (UNLIKELY(!range))
     return -EIO;
   memcpy(range->data + (seekOff - range->offset), buf, count);
-  fd->seekOff += count;
+  fd->seekOff = seekEnd;
   struct timespec ts;
   clock_gettime(CLOCK_REALTIME, &ts);
   inode->mtime = inode->ctime = ts;
@@ -1842,7 +1867,7 @@ ssize_t FileSystem::Write(unsigned int fdNum, const char* buf, size_t count) {
 }
 ssize_t FileSystem::Writev(unsigned int fdNum, struct iovec* iov, int iovcnt) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
-  std::lock_guard<std::mutex> lock(fs->mtx);
+  ScopedLock lock(fs->mtx);
   struct Fd* fd;
   if (UNLIKELY(!(fd = GetFd(fs, fdNum))) ||
       UNLIKELY(!(fd->flags & (O_WRONLY | O_RDWR))))
@@ -1871,7 +1896,8 @@ ssize_t FileSystem::Writev(unsigned int fdNum, struct iovec* iov, int iovcnt) {
   off_t seekOff = fd->flags & O_APPEND
     ? inode->size
     : fd->seekOff;
-  if (UNLIKELY(seekOff > std::numeric_limits<off_t>::max() - totalLen))
+  off_t seekEnd;
+  if (UNLIKELY(__builtin_add_overflow(seekOff, totalLen, &seekEnd)))
     return -EFBIG;
   struct INode::DataRange* range = inode->AllocData(seekOff, totalLen);
   if (UNLIKELY(!range))
@@ -1886,7 +1912,7 @@ ssize_t FileSystem::Writev(unsigned int fdNum, struct iovec* iov, int iovcnt) {
     if (count == totalLen)
       break;
   }
-  fd->seekOff += count;
+  fd->seekOff = seekEnd;
   struct timespec ts;
   clock_gettime(CLOCK_REALTIME, &ts);
   inode->mtime = inode->ctime = ts;
@@ -1894,7 +1920,7 @@ ssize_t FileSystem::Writev(unsigned int fdNum, struct iovec* iov, int iovcnt) {
 }
 ssize_t FileSystem::PWrite(unsigned int fdNum, const char* buf, size_t count, off_t offset) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
-  std::lock_guard<std::mutex> lock(fs->mtx);
+  ScopedLock lock(fs->mtx);
   if (UNLIKELY(offset < 0))
     return -EINVAL;
   struct Fd* fd;
@@ -1906,8 +1932,11 @@ ssize_t FileSystem::PWrite(unsigned int fdNum, const char* buf, size_t count, of
   if (count > 0x7ffff000)
     count = 0x7ffff000;
   struct INode* inode = fd->inode;
-  if (UNLIKELY(offset > std::numeric_limits<off_t>::max() - count))
-    return -EFBIG;
+  {
+    off_t res;
+    if (UNLIKELY(__builtin_add_overflow(offset, count, &res)))
+      return -EFBIG;
+  }
   struct INode::DataRange* range = inode->AllocData(offset, count);
   if (UNLIKELY(!range))
     return -EIO;
@@ -1919,7 +1948,7 @@ ssize_t FileSystem::PWrite(unsigned int fdNum, const char* buf, size_t count, of
 }
 ssize_t FileSystem::PWritev(unsigned int fdNum, struct iovec* iov, int iovcnt, off_t offset) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
-  std::lock_guard<std::mutex> lock(fs->mtx);
+  ScopedLock lock(fs->mtx);
   if (UNLIKELY(offset < 0))
     return -EINVAL;
   struct Fd* fd;
@@ -1947,8 +1976,11 @@ ssize_t FileSystem::PWritev(unsigned int fdNum, struct iovec* iov, int iovcnt, o
   if (UNLIKELY(totalLen == 0))
     return 0;
   struct INode* inode = fd->inode;
-  if (UNLIKELY(offset > std::numeric_limits<off_t>::max() - totalLen))
-    return -EFBIG;
+  {
+    off_t res;
+    if (UNLIKELY(__builtin_add_overflow(offset, totalLen, &res)))
+      return -EFBIG;
+  }
   struct INode::DataRange* range = inode->AllocData(offset, totalLen);
   if (UNLIKELY(!range))
     return -EIO;
@@ -1969,7 +2001,7 @@ ssize_t FileSystem::PWritev(unsigned int fdNum, struct iovec* iov, int iovcnt, o
 }
 ssize_t FileSystem::SendFile(unsigned int outFd, unsigned int inFd, off_t* offset, size_t count) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
-  std::lock_guard<std::mutex> lock(fs->mtx);
+  ScopedLock lock(fs->mtx);
   struct Fd* fdIn;
   struct Fd* fdOut;
   if (UNLIKELY(!(fdIn = GetFd(fs, inFd))) || UNLIKELY(fdIn->flags & O_WRONLY) ||
@@ -1989,7 +2021,8 @@ ssize_t FileSystem::SendFile(unsigned int outFd, unsigned int inFd, off_t* offse
     count = 0x7ffff000;
   struct INode* inodeIn = fdIn->inode;
   struct INode* inodeOut = fdOut->inode;
-  if (UNLIKELY(fdOut->seekOff > std::numeric_limits<off_t>::max() - count))
+  off_t outSeekEnd;
+  if (UNLIKELY(__builtin_add_overflow(fdOut->seekOff, count, &outSeekEnd)))
     return -EFBIG;
   if (off >= inodeIn->size)
     return 0;
@@ -1999,8 +2032,8 @@ ssize_t FileSystem::SendFile(unsigned int outFd, unsigned int inFd, off_t* offse
   if (!offset)
     fdIn->seekOff += count;
   else *offset += count;
-  if (fdOut->seekOff + count > inodeOut->size)
-    inodeOut->TruncateData(fdOut->seekOff + count);
+  if (outSeekEnd > inodeOut->size)
+    inodeOut->TruncateData(outSeekEnd);
   INode::DataIterator itIn(inodeIn, off);
   INode::DataIterator itOut(inodeOut, fdOut->seekOff);
   for (size_t amountRead = 0; amountRead != count;) {
@@ -2056,7 +2089,7 @@ ssize_t FileSystem::SendFile(unsigned int outFd, unsigned int inFd, off_t* offse
 }
 int FileSystem::FTruncate(unsigned int fdNum, off_t length) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
-  std::lock_guard<std::mutex> lock(fs->mtx);
+  ScopedLock lock(fs->mtx);
   if (UNLIKELY(length < 0))
     return -EINVAL;
   struct Fd* fd;
@@ -2076,7 +2109,7 @@ int FileSystem::FTruncate(unsigned int fdNum, off_t length) {
 }
 int FileSystem::Truncate(const char* path, off_t length) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
-  std::lock_guard<std::mutex> lock(fs->mtx);
+  ScopedLock lock(fs->mtx);
   if (UNLIKELY(length < 0))
     return -EINVAL;
   struct INode* inode;
@@ -2097,7 +2130,7 @@ int FileSystem::Truncate(const char* path, off_t length) {
 }
 int FileSystem::FChModAt(int dirFd, const char* path, mode_t mode) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
-  std::lock_guard<std::mutex> lock(fs->mtx);
+  ScopedLock lock(fs->mtx);
   struct INode* origCwd = fs->cwd->inode;
   if (dirFd != AT_FDCWD) {
     struct Fd* fd;
@@ -2116,7 +2149,7 @@ int FileSystem::FChModAt(int dirFd, const char* path, mode_t mode) {
 }
 int FileSystem::FChMod(unsigned int fdNum, mode_t mode) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
-  std::lock_guard<std::mutex> lock(fs->mtx);
+  ScopedLock lock(fs->mtx);
   struct Fd* fd;
   if (UNLIKELY(!(fd = GetFd(fs, fdNum))))
     return -EBADF;
@@ -2127,7 +2160,7 @@ int FileSystem::FChMod(unsigned int fdNum, mode_t mode) {
 }
 int FileSystem::ChDir(const char* path) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
-  std::lock_guard<std::mutex> lock(fs->mtx);
+  ScopedLock lock(fs->mtx);
   struct INode* inode;
   struct INode* parent;
   int res = GetINode(fs, path, &inode, &parent, true);
@@ -2146,7 +2179,7 @@ int FileSystem::ChDir(const char* path) {
 }
 int FileSystem::GetCwd(char* buf, size_t size) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
-  std::lock_guard<std::mutex> lock(fs->mtx);
+  ScopedLock lock(fs->mtx);
   if (fs->cwd->inode != fs->inodes[0]) {
     struct INode* inode;
     struct INode* parent;
@@ -2165,7 +2198,7 @@ int FileSystem::GetCwd(char* buf, size_t size) {
 }
 int FileSystem::FStat(unsigned int fdNum, struct stat* buf) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
-  std::lock_guard<std::mutex> lock(fs->mtx);
+  ScopedLock lock(fs->mtx);
   struct Fd* fd;
   if (UNLIKELY(!(fd = GetFd(fs, fdNum))))
     return -EBADF;
@@ -2174,7 +2207,7 @@ int FileSystem::FStat(unsigned int fdNum, struct stat* buf) {
 }
 int FileSystem::Stat(const char* path, struct stat* buf) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
-  std::lock_guard<std::mutex> lock(fs->mtx);
+  ScopedLock lock(fs->mtx);
   struct INode* inode;
   int res = GetINode(fs, path, &inode, NULL, true);
   if (UNLIKELY(res != 0))
@@ -2184,7 +2217,7 @@ int FileSystem::Stat(const char* path, struct stat* buf) {
 }
 int FileSystem::LStat(const char* path, struct stat* buf) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
-  std::lock_guard<std::mutex> lock(fs->mtx);
+  ScopedLock lock(fs->mtx);
   struct INode* inode;
   int res = GetINode(fs, path, &inode);
   if (UNLIKELY(res != 0))
@@ -2194,7 +2227,7 @@ int FileSystem::LStat(const char* path, struct stat* buf) {
 }
 int FileSystem::Statx(int dirFd, const char* path, int flags, int mask, struct statx* buf) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
-  std::lock_guard<std::mutex> lock(fs->mtx);
+  ScopedLock lock(fs->mtx);
   if (UNLIKELY(flags & ~(AT_SYMLINK_NOFOLLOW | AT_EMPTY_PATH)) ||
       UNLIKELY(mask & ~STATX_ALL) ||
       UNLIKELY(flags & AT_EMPTY_PATH && path[0] != '\0'))
@@ -2219,7 +2252,7 @@ int FileSystem::Statx(int dirFd, const char* path, int flags, int mask, struct s
 }
 int FileSystem::UTimeNsAt(int dirFd, const char* path, const struct timespec* times, int flags) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
-  std::lock_guard<std::mutex> lock(fs->mtx);
+  ScopedLock lock(fs->mtx);
   if (UNLIKELY(flags & ~AT_SYMLINK_NOFOLLOW))
     return -EINVAL;
   struct INode* origCwd = fs->cwd->inode;
@@ -2253,7 +2286,7 @@ int FileSystem::UTimeNsAt(int dirFd, const char* path, const struct timespec* ti
 }
 int FileSystem::FUTimesAt(unsigned int fdNum, const char* path, const struct timeval* times) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
-  std::lock_guard<std::mutex> lock(fs->mtx);
+  ScopedLock lock(fs->mtx);
   if (times &&
       UNLIKELY(
         UNLIKELY(times[0].tv_usec < 0) || UNLIKELY(times[0].tv_usec >= 1000000) ||
@@ -2286,7 +2319,7 @@ int FileSystem::FUTimesAt(unsigned int fdNum, const char* path, const struct tim
 
 bool FileSystem::DumpToFile(const char* filename) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
-  std::lock_guard<std::mutex> lock(fs->mtx);
+  ScopedLock lock(fs->mtx);
   int fd = creat(filename, 0644);
   if (UNLIKELY(fd < 0))
     goto err1;
