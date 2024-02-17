@@ -17,10 +17,9 @@
 // OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 // SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-#include "FileSystem.h"
+#include "FileSystemCpp.h"
 #include <new>
 #include <pthread.h>
-#include <stdio.h>
 #include <stdlib.h>
 
 #define LIKELY(expr) __builtin_expect(!!(expr), 1)
@@ -81,8 +80,8 @@ namespace {
       if (target)
         delete target;
       if (dents) {
-        while (dentCount > 2)
-          delete dents[--dentCount].name;
+        for (off_t i = 2; i != dentCount; ++i)
+          delete dents[i].name;
         delete dents;
       }
     }
@@ -103,38 +102,41 @@ namespace {
       return true;
     }
     void RemoveDent(const char* name) {
-      for (off_t i = 0; i != dentCount; ++i)
-        if (strcmp(dents[i].name, name) == 0) {
-          delete dents[i].name;
+      for (off_t i = 2; i != dentCount; ++i) {
+        const char* d_name = dents[i].name;
+        if (strcmp(d_name, name) == 0) {
+          delete d_name;
           if (i != dentCount - 1)
-            memmove(dents + i, dents + i + 1, sizeof(struct Dent) * (dentCount - i));
+            memmove(&dents[i], &dents[i + 1], sizeof(struct Dent) * (dentCount - i));
           dents = reinterpret_cast<struct Dent*>(
             realloc(dents, sizeof(struct Dent) * --dentCount)
           );
           size -= strlen(name);
           break;
         }
+      }
     }
     bool IsInSelf(struct INode* inode) {
-      for (off_t i = 2; i != dentCount; ++i)
-        if (dents[i].inode == inode ||
-            (S_ISDIR(dents[i].inode->mode) && dents[i].inode->IsInSelf(inode)))
+      for (off_t i = 2; i != dentCount; ++i) {
+        struct INode* dentInode = dents[i].inode;
+        if (dentInode == inode ||
+            (S_ISDIR(dentInode->mode) && dentInode->IsInSelf(inode)))
           return true;
+      }
       return false;
     }
 
     struct DataRange {
       ~DataRange() {
-        if (data)
-          delete data;
+        delete data;
       }
-      off_t offset = 0;
-      off_t size = 0;
-      char* data = NULL;
+      off_t offset;
+      off_t size;
+      char* data;
     };
     struct HoleRange {
-      off_t offset = 0;
-      off_t size = -1;
+      off_t offset;
+      off_t size;
     };
     struct DataRange** dataRanges = NULL;
     off_t dataRangeCount = 0;
@@ -144,12 +146,12 @@ namespace {
       DataIterator(struct INode* inode, off_t offset) {
         inode_ = inode;
         if (inode->dataRangeCount == 0 ||
-            offset < inode_->dataRanges[0]->offset) {
+            offset < inode->dataRanges[0]->offset) {
           rangeIdx_ = 0;
           atData_ = false;
           isBeforeFirstRange_ = true;
-        } else if (offset >= inode_->dataRanges[inode_->dataRangeCount - 1]->offset + inode_->dataRanges[inode_->dataRangeCount - 1]->size) {
-          rangeIdx_ = inode_->dataRangeCount - 1;
+        } else if (offset >= inode->dataRanges[inode->dataRangeCount - 1]->offset + inode->dataRanges[inode->dataRangeCount - 1]->size) {
+          rangeIdx_ = inode->dataRangeCount - 1;
           atData_ = false;
           isBeforeFirstRange_ = false;
         } else {
@@ -201,6 +203,7 @@ namespace {
       struct HoleRange GetHole() {
         struct HoleRange hole;
         if (isBeforeFirstRange_) {
+          hole.offset = 0;
           if (inode_->dataRangeCount == 0)
             hole.size = inode_->size;
           else hole.size = inode_->dataRanges[0]->offset;
@@ -249,14 +252,11 @@ namespace {
 
     struct DataRange* InsertRange(off_t offset, off_t length, off_t* index) {
       struct DataRange* range;
+      if (UNLIKELY(!TryAlloc(&range)))
+        goto err_alloc_failed;
       if (dataRangeCount == 0) {
-        if (UNLIKELY(!TryAlloc<true>(&range)))
-          return NULL;
-        if (UNLIKELY(!TryAlloc(&range->data, length)) ||
-            UNLIKELY(!TryAlloc(&dataRanges, 1))) {
-          delete range;
-          return NULL;
-        }
+        if (UNLIKELY(!TryAlloc(&dataRanges)))
+          goto err_after_alloc;
         range->offset = offset;
         range->size = length;
         *index = 0;
@@ -264,14 +264,9 @@ namespace {
         dataRangeCount = 1;
         return range;
       }
+      if (UNLIKELY(!TryRealloc(&dataRanges, dataRangeCount + 1)))
+        goto err_after_alloc;
       if (offset > dataRanges[dataRangeCount - 1]->offset) {
-        if (UNLIKELY(!TryAlloc<true>(&range)))
-          return NULL;
-        if (UNLIKELY(!TryAlloc(&range->data, length)) ||
-            UNLIKELY(!TryRealloc(&dataRanges, dataRangeCount + 1))) {
-          delete range;
-          return NULL;
-        }
         range->offset = offset;
         range->size = length;
         *index = dataRangeCount;
@@ -293,26 +288,24 @@ namespace {
           }
         }
       }
-      if (UNLIKELY(!TryAlloc<true>(&range)))
-        return NULL;
-      if (UNLIKELY(!TryAlloc(&range->data, length)) ||
-          UNLIKELY(!TryRealloc(&dataRanges, dataRangeCount + 1))) {
-        delete range;
-        return NULL;
-      }
       range->offset = offset;
       range->size = length;
-      memmove(dataRanges + rangeIdx + 1, dataRanges + rangeIdx, sizeof(struct DataRange*) * (dataRangeCount - rangeIdx));
+      memmove(&dataRanges[rangeIdx + 1], &dataRanges[rangeIdx], sizeof(struct DataRange*) * (dataRangeCount - rangeIdx));
       *index = rangeIdx;
       dataRanges[rangeIdx] = range;
       ++dataRangeCount;
       return range;
+
+     err_after_alloc:
+      delete range;
+     err_alloc_failed:
+      return NULL;
     }
     void RemoveRange(off_t index) {
       struct DataRange* range = dataRanges[index];
       delete range;
       if (index != dataRangeCount - 1)
-        memmove(dataRanges + index, dataRanges + index + 1, sizeof(struct DataRange*) * (dataRangeCount - index));
+        memmove(&dataRanges[index], &dataRanges[index + 1], sizeof(struct DataRange*) * (dataRangeCount - index));
       dataRanges = reinterpret_cast<struct DataRange**>(
         realloc(dataRanges, sizeof(struct DataRange*) * --dataRangeCount)
       );
@@ -321,11 +314,11 @@ namespace {
       for (off_t i = index; i != index + count; ++i)
         delete dataRanges[i];
       if (index + count < dataRangeCount)
-        memmove(dataRanges + index, dataRanges + (index + count), sizeof(struct DataRange*) * (dataRangeCount - (index + count)));
-      dataRanges = reinterpret_cast<struct DataRange**>(
-        realloc(dataRanges, sizeof(struct DataRange*) * (dataRangeCount - count))
-      );
+        memmove(&dataRanges[index], &dataRanges[index + count], sizeof(struct DataRange*) * (dataRangeCount - (index + count)));
       dataRangeCount -= count;
+      dataRanges = reinterpret_cast<struct DataRange**>(
+        realloc(dataRanges, sizeof(struct DataRange*) * dataRangeCount)
+      );
     }
 
     struct DataRange* AllocData(off_t offset, off_t length) {
@@ -350,11 +343,11 @@ namespace {
               off_t newRangeLength = range2->size + (range2->offset - off);
               if (UNLIKELY(!TryRealloc(&range3->data, newRangeLength)))
                 return NULL;
-              memmove(range3->data + (newRangeLength - range2->size), range2->data, range2->size);
+              memmove(&range3->data[newRangeLength - range2->size], range2->data, range2->size);
               range3->size = newRangeLength;
               for (off_t j = rangeIdx + 1; j < i; ++j) {
                 struct DataRange* range4 = dataRanges[j];
-                memmove(range3->data + (range4->offset - off), range4->data, range4->size);
+                memmove(&range3->data[range4->offset - off], range4->data, range4->size);
               }
               RemoveRanges(rangeIdx + 1, i - rangeIdx);
               range3->offset = off;
@@ -363,7 +356,7 @@ namespace {
               off_t newRangeLength = range2->size + (range2->offset - offset);
               if (UNLIKELY(!TryRealloc(&range2->data, newRangeLength)))
                 return NULL;
-              memmove(range2->data + (newRangeLength - range2->size), range2->data, range2->size);
+              memmove(&range2->data[newRangeLength - range2->size], range2->data, range2->size);
               range2->size = newRangeLength;
               range2->offset = offset;
               return range2;
@@ -397,18 +390,20 @@ namespace {
           }
         } else break;
       }
-      if (UNLIKELY(!TryRealloc(&range->data, newRangeLength))) {
-        if (createdRange)
+      if (createdRange) {
+        if (UNLIKELY(!TryAlloc(&range->data, newRangeLength))) {
           RemoveRange(rangeIdx);
+          return NULL;
+        }
+      } else if (UNLIKELY(!TryRealloc(&range->data, newRangeLength)))
         return NULL;
-      }
       range->size = newRangeLength;
       if (size < offset + length)
         size = offset + length;
       for (off_t i = rangeIdx + 1; i < dataRangeCount; ++i) {
         struct DataRange* range2 = dataRanges[i];
         if (range2->offset < offset + length)
-          memcpy(range->data + (range2->offset - range->offset), range2->data, range2->size);
+          memcpy(&range->data[range2->offset - range->offset], range2->data, range2->size);
         else {
           off_t n = i - (rangeIdx + 1);
           if (UNLIKELY(n == 0))
@@ -461,6 +456,11 @@ namespace {
           (mode & (perms << 6)) != (perms << 6))
         return false;
       return true;
+    }
+    bool IsUnused() {
+      if (S_ISDIR(mode))
+        return nlink == 1;
+      return nlink == 0;
     }
     void FillStat(struct stat* buf) {
       memset(buf, '\0', sizeof(struct stat));
@@ -529,22 +529,20 @@ namespace {
     }
     ~FSInternal() {
       pthread_mutex_destroy(&mtx);
-      while (inodeCount--)
-        delete inodes[inodeCount];
+      for (ino_t i = 0; i != inodeCount; ++i)
+        delete inodes[i];
       delete inodes;
       if (fds) {
-        while (fdCount--)
-          delete fds[fdCount];
+        for (int i = 0; i != fdCount; ++i)
+          delete fds[i];
         delete fds;
       }
-      if (cwd)
-        delete cwd;
     }
     struct INode** inodes = NULL;
     ino_t inodeCount = 0;
     struct Fd** fds = NULL;
     int fdCount = 0;
-    struct Cwd* cwd = NULL;
+    struct Cwd cwd = {};
     pthread_mutex_t mtx;
   };
 
@@ -563,10 +561,10 @@ namespace {
         }
       }
     }
-    if (UNLIKELY(!TryRealloc(&fs->inodes, sizeof(struct INode*) * (fs->inodeCount + 1))))
+    if (UNLIKELY(!TryRealloc(&fs->inodes, fs->inodeCount + 1)))
       return false;
     if (id != fs->inodeCount) {
-      memmove(fs->inodes + id + 1, fs->inodes + id, sizeof(struct INode*) * (fs->inodeCount - id));
+      memmove(&fs->inodes[id + 1], &fs->inodes[id], sizeof(struct INode*) * (fs->inodeCount - id));
       for (ino_t i = id + 1; i != fs->inodeCount + 1; ++i)
         ++fs->inodes[i]->ndx;
     }
@@ -580,7 +578,7 @@ namespace {
     ino_t i = inode->ndx;
     delete inode;
     if (i != fs->inodeCount - 1) {
-      memmove(fs->inodes + i, fs->inodes + i + 1, sizeof(struct INode*) * (fs->inodeCount - i));
+      memmove(&fs->inodes[i], &fs->inodes[i + 1], sizeof(struct INode*) * (fs->inodeCount - i));
       do {
         --fs->inodes[i++]->ndx;
       } while (i != fs->inodeCount - 1);
@@ -612,7 +610,7 @@ namespace {
       return -ENOMEM;
     }
     if (fdNum != fs->fdCount)
-      memmove(fs->fds + fdNum + 1, fs->fds + fdNum, sizeof(struct Fd*) * (fs->fdCount - fdNum));
+      memmove(&fs->fds[fdNum + 1], &fs->fds[fdNum], sizeof(struct Fd*) * (fs->fdCount - fdNum));
     fd->inode = inode;
     fd->flags = flags;
     fd->fd = fdNum;
@@ -620,13 +618,13 @@ namespace {
     ++fs->fdCount;
     return fdNum;
   }
-  void RemoveFd(struct FSInternal* fs, struct Fd* fd, int i) {
+  void RemoveFd2(struct FSInternal* fs, struct Fd* fd, int i) {
     struct INode* inode = fd->inode;
     if (inode->nlink == 0)
       RemoveINode(fs, inode);
     delete fd;
     if (i != fs->fdCount - 1)
-      memmove(fs->fds + i, fs->fds + i + 1, sizeof(struct Fd*) * (fs->fdCount - i));
+      memmove(&fs->fds[i], &fs->fds[i + 1], sizeof(struct Fd*) * (fs->fdCount - i));
     if (--fs->fdCount == 0) {
       delete fs->fds;
       fs->fds = NULL;
@@ -645,7 +643,7 @@ namespace {
       int mid = low + ((high - low) / 2);
       struct Fd* f = fs->fds[mid];
       if (f->fd == fd) {
-        RemoveFd(fs, f, mid);
+        RemoveFd2(fs, f, mid);
         return 0;
       }
       if (f->fd < fd)
@@ -690,10 +688,10 @@ namespace {
     bool isAbsolute = path[0] == '/';
     struct INode* current = isAbsolute
       ? fs->inodes[0]
-      : fs->cwd->inode;
+      : fs->cwd.inode;
     struct INode* currParent = isAbsolute
       ? fs->inodes[0]
-      : fs->cwd->parent;
+      : fs->cwd.parent;
     int err = 0;
     char name[NAME_MAX + 1];
     size_t nameLen = 0;
@@ -792,9 +790,9 @@ namespace {
     char absPath[PATH_MAX];
     int absPathLen = 0;
     if (path[0] != '/') {
-      int cwdPathLen = strlen(fs->cwd->path);
+      int cwdPathLen = strlen(fs->cwd.path);
       if (cwdPathLen != 1) {
-        memcpy(absPath, fs->cwd->path, cwdPathLen);
+        memcpy(absPath, fs->cwd.path, cwdPathLen);
         absPath[cwdPathLen] = '/';
         absPathLen = cwdPathLen + 1;
       } else absPath[absPathLen++] = '/';
@@ -856,37 +854,6 @@ namespace {
     struct timespec mtime;
     struct timespec atime;
   };
-
-  template<typename T>
-  T toLittle(T value) {
-#if __BYTE_ORDER == __BIG_ENDIAN
-    if constexpr (sizeof(T) == 1)
-      return value;
-    if constexpr (sizeof(T) == 2)
-      return htole16(value);
-    if constexpr (sizeof(T) == 4)
-      return htole32(value);
-    if constexpr (sizeof(T) == 8)
-      return htole64(value);
-#else
-    return value;
-#endif
-  }
-  template<typename T>
-  T toHost(T value) {
-#if __BYTE_ORDER == __BIG_ENDIAN
-    if constexpr (sizeof(T) == 1)
-      return value;
-    if constexpr (sizeof(T) == 2)
-      return le16toh(value);
-    if constexpr (sizeof(T) == 4)
-      return le32toh(value);
-    if constexpr (sizeof(T) == 8)
-      return le64toh(value);
-#else
-    return value;
-#endif
-  }
 }
 
 FileSystem* FileSystem::New() {
@@ -913,17 +880,14 @@ FileSystem* FileSystem::New() {
     delete data;
     return NULL;
   }
-  if (UNLIKELY(!TryAlloc<true>(&data->cwd)) ||
-      UNLIKELY(!(data->cwd->path = strdup("/")))) {
-    RemoveINode(data, root);
+  if (UNLIKELY(!(data->cwd.path = strdup("/")))) {
     delete data;
     return NULL;
   }
-  data->cwd->inode = root;
-  data->cwd->parent = root;
+  data->cwd.inode = root;
+  data->cwd.parent = root;
   FileSystem* fs;
   if (UNLIKELY(!TryAlloc(&fs))) {
-    RemoveINode(data, root);
     delete data;
     return NULL;
   }
@@ -935,26 +899,26 @@ FileSystem::~FileSystem() {
 }
 int FileSystem::FAccessAt2(int dirFd, const char* path, int mode, int flags) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
-  ScopedLock lock(fs->mtx);
   if (UNLIKELY(mode & ~(F_OK | R_OK | W_OK | X_OK)) ||
       UNLIKELY(flags & ~(AT_SYMLINK_NOFOLLOW | AT_EMPTY_PATH)) ||
       UNLIKELY(flags & AT_EMPTY_PATH && path[0] != '\0'))
     return -EINVAL;
-  struct INode* origCwd = fs->cwd->inode;
+  ScopedLock lock(fs->mtx);
+  struct INode* origCwd = fs->cwd.inode;
   if (dirFd != AT_FDCWD) {
     struct Fd* fd;
     if (UNLIKELY(!(fd = GetFd(fs, dirFd))))
       return -EBADF;
     if (UNLIKELY(!S_ISDIR(fd->inode->mode) && !(flags & AT_EMPTY_PATH)))
       return -ENOTDIR;
-    fs->cwd->inode = fd->inode;
+    fs->cwd.inode = fd->inode;
   }
   struct INode* inode;
   int res = 0;
   if (flags & AT_EMPTY_PATH)
-    inode = fs->cwd->inode;
+    inode = fs->cwd.inode;
   else res = GetINode(fs, path, &inode, NULL, !(flags & AT_SYMLINK_NOFOLLOW));
-  fs->cwd->inode = origCwd;
+  fs->cwd.inode = origCwd;
   if (UNLIKELY(res != 0))
     return res;
   if (mode != F_OK && !inode->CanUse(mode))
@@ -963,7 +927,6 @@ int FileSystem::FAccessAt2(int dirFd, const char* path, int mode, int flags) {
 }
 int FileSystem::OpenAt(int dirFd, const char* path, int flags, mode_t mode) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
-  ScopedLock lock(fs->mtx);
   if (UNLIKELY(flags & ~(O_RDONLY | O_WRONLY | O_RDWR | O_CREAT | O_EXCL | O_APPEND | O_TRUNC | 020000000 | O_DIRECTORY | O_NOFOLLOW | O_NOATIME)))
     return -EINVAL;
   if (flags & 020000000) {
@@ -980,14 +943,15 @@ int FileSystem::OpenAt(int dirFd, const char* path, int flags, mode_t mode) {
     mode |= S_IFREG;
   } else if (UNLIKELY(mode != 0))
     return -EINVAL;
-  struct INode* origCwd = fs->cwd->inode;
+  ScopedLock lock(fs->mtx);
+  struct INode* origCwd = fs->cwd.inode;
   if (dirFd != AT_FDCWD) {
     struct Fd* fd;
     if (UNLIKELY(!(fd = GetFd(fs, dirFd))))
       return -EBADF;
     if (UNLIKELY(!S_ISDIR(fd->inode->mode)))
       return -ENOTDIR;
-    fs->cwd->inode = fd->inode;
+    fs->cwd.inode = fd->inode;
   }
   if (flags & O_CREAT && flags & O_EXCL)
     flags |= O_NOFOLLOW;
@@ -996,7 +960,7 @@ int FileSystem::OpenAt(int dirFd, const char* path, int flags, mode_t mode) {
   struct INode* inode;
   struct INode* parent = NULL;
   int res = GetINode(fs, path, &inode, &parent, !(flags & O_NOFOLLOW));
-  fs->cwd->inode = origCwd;
+  fs->cwd.inode = origCwd;
   if (UNLIKELY(!parent))
     return res;
   if (res == 0) {
@@ -1022,8 +986,8 @@ int FileSystem::OpenAt(int dirFd, const char* path, int flags, mode_t mode) {
         return -EIO;
       }
       if (UNLIKELY(!PushINode(fs, x))) {
-        delete name;
         delete x;
+        delete name;
         return -EIO;
       }
       if (UNLIKELY(!parent->PushDent(name, x))) {
@@ -1075,25 +1039,27 @@ int FileSystem::Close(unsigned int fd) {
 }
 int FileSystem::CloseRange(unsigned int fd, unsigned int maxFd, unsigned int flags) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
-  ScopedLock lock(fs->mtx);
   if (UNLIKELY(flags != 0) ||
       UNLIKELY(fd > maxFd))
     return -EINVAL;
-  for (int i = 0; i != fs->fdCount; ++i)
-    if (fs->fds[i]->fd > fd) {
-      RemoveFd(fs, fs->fds[i], i);
+  ScopedLock lock(fs->mtx);
+  for (int i = 0; i != fs->fdCount; ++i) {
+    struct Fd* f = fs->fds[i];
+    if (f->fd > fd) {
+      RemoveFd2(fs, f, i);
       for (++i; i != fs->fdCount; ++i) {
-        if (fs->fds[i]->fd < maxFd)
-          RemoveFd(fs, fs->fds[i], i);
+        f = fs->fds[i];
+        if (f->fd < maxFd)
+          RemoveFd2(fs, f, i);
         else break;
       }
       break;
     }
+  }
   return 0;
 }
 int FileSystem::MkNodAt(int dirFd, const char* path, mode_t mode, dev_t dev) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
-  ScopedLock lock(fs->mtx);
   if (mode & S_IFMT) {
     if (UNLIKELY(S_ISDIR(mode)))
       return -EPERM;
@@ -1102,19 +1068,20 @@ int FileSystem::MkNodAt(int dirFd, const char* path, mode_t mode, dev_t dev) {
   }
   if (UNLIKELY(dev != 0))
     return -EINVAL;
-  struct INode* origCwd = fs->cwd->inode;
+  ScopedLock lock(fs->mtx);
+  struct INode* origCwd = fs->cwd.inode;
   if (dirFd != AT_FDCWD) {
     struct Fd* fd;
     if (UNLIKELY(!(fd = GetFd(fs, dirFd))))
       return -EBADF;
     if (UNLIKELY(!S_ISDIR(fd->inode->mode)))
       return -ENOTDIR;
-    fs->cwd->inode = fd->inode;
+    fs->cwd.inode = fd->inode;
   }
   struct INode* inode;
   struct INode* parent = NULL;
   int res = GetINode(fs, path, &inode, &parent);
-  fs->cwd->inode = origCwd;
+  fs->cwd.inode = origCwd;
   if (UNLIKELY(!parent) ||
       UNLIKELY(res != -ENOENT))
     return res;
@@ -1129,8 +1096,8 @@ int FileSystem::MkNodAt(int dirFd, const char* path, mode_t mode, dev_t dev) {
     return -EIO;
   }
   if (UNLIKELY(!PushINode(fs, x))) {
-    delete name;
     delete x;
+    delete name;
     return -EIO;
   }
   if (UNLIKELY(!parent->PushDent(name, x))) {
@@ -1146,19 +1113,19 @@ int FileSystem::MkNodAt(int dirFd, const char* path, mode_t mode, dev_t dev) {
 int FileSystem::MkDirAt(int dirFd, const char* path, mode_t mode) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
   ScopedLock lock(fs->mtx);
-  struct INode* origCwd = fs->cwd->inode;
+  struct INode* origCwd = fs->cwd.inode;
   if (dirFd != AT_FDCWD) {
     struct Fd* fd;
     if (UNLIKELY(!(fd = GetFd(fs, dirFd))))
       return -EBADF;
     if (UNLIKELY(!S_ISDIR(fd->inode->mode)))
       return -ENOTDIR;
-    fs->cwd->inode = fd->inode;
+    fs->cwd.inode = fd->inode;
   }
   struct INode* inode;
   struct INode* parent = NULL;
   int res = GetINode(fs, path, &inode, &parent);
-  fs->cwd->inode = origCwd;
+  fs->cwd.inode = origCwd;
   if (UNLIKELY(!parent) ||
       UNLIKELY(res != -ENOENT))
     return res;
@@ -1174,8 +1141,8 @@ int FileSystem::MkDirAt(int dirFd, const char* path, mode_t mode) {
   }
   if (UNLIKELY(!TryAlloc(&x->dents, 2)) ||
       UNLIKELY(!PushINode(fs, x))) {
-    delete name;
     delete x;
+    delete name;
     return -EIO;
   }
   if (UNLIKELY(!parent->PushDent(name, x))) {
@@ -1206,13 +1173,13 @@ int FileSystem::SymLinkAt(const char* oldPath, int newDirFd, const char* newPath
   int res = GetINode(fs, oldPath, &oldInode);
   if (UNLIKELY(res != 0))
     return res;
-  struct INode* origCwd = fs->cwd->inode;
+  struct INode* origCwd = fs->cwd.inode;
   if (newDirFd != AT_FDCWD)
-    fs->cwd->inode = fd->inode;
+    fs->cwd.inode = fd->inode;
   struct INode* newInode;
   struct INode* newParent = NULL;
   res = GetINode(fs, newPath, &newInode, &newParent);
-  fs->cwd->inode = origCwd;
+  fs->cwd.inode = origCwd;
   if (UNLIKELY(!newParent))
     return res;
   if (UNLIKELY(res == 0))
@@ -1231,18 +1198,18 @@ int FileSystem::SymLinkAt(const char* oldPath, int newDirFd, const char* newPath
   struct INode::DataRange* range = x->AllocData(0, oldPathLen);
   if (UNLIKELY(!range) ||
       UNLIKELY(!PushINode(fs, x))) {
-    delete name;
     delete x;
+    delete name;
     return -EIO;
   }
   memcpy(range->data, oldPath, oldPathLen);
-  if (UNLIKELY(!newParent->PushDent(name, x))) {
+  if (UNLIKELY(!(x->target = AbsolutePath(fs, oldPath))) ||
+      UNLIKELY(!newParent->PushDent(name, x))) {
     RemoveINode(fs, x);
     delete name;
     return -EIO;
   }
   x->mode = 0777 | S_IFLNK;
-  x->target = AbsolutePath(fs, oldPath);
   x->nlink = 1;
   x->size = oldPathLen;
   newParent->ctime = newParent->mtime = x->btime;
@@ -1250,21 +1217,21 @@ int FileSystem::SymLinkAt(const char* oldPath, int newDirFd, const char* newPath
 }
 int FileSystem::ReadLinkAt(int dirFd, const char* path, char* buf, int bufLen) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
-  ScopedLock lock(fs->mtx);
   if (UNLIKELY(bufLen <= 0))
     return -EINVAL;
-  struct INode* origCwd = fs->cwd->inode;
+  ScopedLock lock(fs->mtx);
+  struct INode* origCwd = fs->cwd.inode;
   if (dirFd != AT_FDCWD) {
     struct Fd* fd;
     if (UNLIKELY(!(fd = GetFd(fs, dirFd))))
       return -EBADF;
     if (UNLIKELY(!S_ISDIR(fd->inode->mode)))
       return -ENOTDIR;
-    fs->cwd->inode = fd->inode;
+    fs->cwd.inode = fd->inode;
   }
   struct INode* inode;
   int res = GetINode(fs, path, &inode);
-  fs->cwd->inode = origCwd;
+  fs->cwd.inode = origCwd;
   if (UNLIKELY(res != 0))
     return res;
   if (UNLIKELY(!S_ISLNK(inode->mode)))
@@ -1302,7 +1269,7 @@ int FileSystem::GetDents(unsigned int fdNum, struct linux_dirent* dirp, unsigned
     dent->d_reclen = reclen;
     memcpy(dent->d_name, d.name, nameLen);
     dent->d_name[nameLen] = '\0';
-    dirpData[reclen - 1] = (d.inode->mode & S_IFMT) >> 12;
+    dirpData[reclen - 1] = IFTODT(d.inode->mode);
     dirpData += reclen;
     nread += reclen;
   } while (++fd->seekOff != inode->dentCount);
@@ -1314,10 +1281,10 @@ int FileSystem::GetDents(unsigned int fdNum, struct linux_dirent* dirp, unsigned
 }
 int FileSystem::LinkAt(int oldDirFd, const char* oldPath, int newDirFd, const char* newPath, int flags) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
-  ScopedLock lock(fs->mtx);
   if (UNLIKELY(flags & ~(AT_SYMLINK_FOLLOW | AT_EMPTY_PATH)) ||
       UNLIKELY(flags & AT_EMPTY_PATH && oldPath[0] != '\0'))
     return -EINVAL;
+  ScopedLock lock(fs->mtx);
   struct Fd* oldFd;
   struct Fd* newFd;
   if (oldDirFd != AT_FDCWD || flags & AT_EMPTY_PATH) {
@@ -1335,23 +1302,23 @@ int FileSystem::LinkAt(int oldDirFd, const char* oldPath, int newDirFd, const ch
     if (UNLIKELY(!S_ISDIR(newFd->inode->mode)))
       return -ENOTDIR;
   }
-  struct INode* origCwd = fs->cwd->inode;
+  struct INode* origCwd = fs->cwd.inode;
   if (oldDirFd != AT_FDCWD)
-    fs->cwd->inode = oldFd->inode;
+    fs->cwd.inode = oldFd->inode;
   struct INode* oldInode;
   int res = 0;
   if (flags & AT_EMPTY_PATH)
-    oldInode = fs->cwd->inode;
+    oldInode = fs->cwd.inode;
   else res = GetINode(fs, oldPath, &oldInode, NULL, flags & AT_SYMLINK_FOLLOW);
-  fs->cwd->inode = origCwd;
+  fs->cwd.inode = origCwd;
   if (UNLIKELY(res != 0))
     return res;
   if (newDirFd != AT_FDCWD)
-    fs->cwd->inode = newFd->inode;
+    fs->cwd.inode = newFd->inode;
   struct INode* newInode;
   struct INode* newParent = NULL;
   res = GetINode(fs, newPath, &newInode, &newParent);
-  fs->cwd->inode = origCwd;
+  fs->cwd.inode = origCwd;
   if (UNLIKELY(!newParent))
     return res;
   if (UNLIKELY(res == 0))
@@ -1375,22 +1342,22 @@ int FileSystem::LinkAt(int oldDirFd, const char* oldPath, int newDirFd, const ch
 }
 int FileSystem::UnlinkAt(int dirFd, const char* path, int flags) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
-  ScopedLock lock(fs->mtx);
   if (UNLIKELY(flags & ~AT_REMOVEDIR))
     return -EINVAL;
-  struct INode* origCwd = fs->cwd->inode;
+  ScopedLock lock(fs->mtx);
+  struct INode* origCwd = fs->cwd.inode;
   if (dirFd != AT_FDCWD) {
     struct Fd* fd;
     if (UNLIKELY(!(fd = GetFd(fs, dirFd))))
       return -EBADF;
     if (UNLIKELY(!S_ISDIR(fd->inode->mode)))
       return -ENOTDIR;
-    fs->cwd->inode = fd->inode;
+    fs->cwd.inode = fd->inode;
   }
   struct INode* inode;
   struct INode* parent;
   int res = GetINode(fs, path, &inode, &parent);
-  fs->cwd->inode = origCwd;
+  fs->cwd.inode = origCwd;
   if (UNLIKELY(res != 0))
     return res;
   if (flags & AT_REMOVEDIR) {
@@ -1423,7 +1390,8 @@ int FileSystem::UnlinkAt(int dirFd, const char* path, int flags) {
     --parent->nlink;
   struct timespec ts;
   clock_gettime(CLOCK_REALTIME, &ts);
-  if (UNLIKELY(--inode->nlink == 0))
+  --inode->nlink;
+  if (UNLIKELY(inode->IsUnused()))
     RemoveINode(fs, inode);
   else inode->ctime = ts;
   parent->ctime = parent->mtime = ts;
@@ -1431,7 +1399,6 @@ int FileSystem::UnlinkAt(int dirFd, const char* path, int flags) {
 }
 int FileSystem::RenameAt2(int oldDirFd, const char* oldPath, int newDirFd, const char* newPath, unsigned int flags) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
-  ScopedLock lock(fs->mtx);
   if (UNLIKELY(flags & ~(RENAME_NOREPLACE | RENAME_EXCHANGE)) ||
       UNLIKELY(flags & RENAME_NOREPLACE && flags & RENAME_EXCHANGE))
     return -EINVAL;
@@ -1442,6 +1409,7 @@ int FileSystem::RenameAt2(int oldDirFd, const char* oldPath, int newDirFd, const
   delete last;
   if (UNLIKELY(isDot))
     return -EBUSY;
+  ScopedLock lock(fs->mtx);
   struct Fd* oldFd;
   struct Fd* newFd;
   if (oldDirFd != AT_FDCWD) {
@@ -1456,21 +1424,21 @@ int FileSystem::RenameAt2(int oldDirFd, const char* oldPath, int newDirFd, const
     if (UNLIKELY(!S_ISDIR(newFd->inode->mode)))
       return -ENOTDIR;
   }
-  struct INode* origCwd = fs->cwd->inode;
+  struct INode* origCwd = fs->cwd.inode;
   if (oldDirFd != AT_FDCWD)
-    fs->cwd->inode = oldFd->inode;
+    fs->cwd.inode = oldFd->inode;
   struct INode* oldInode;
   struct INode* oldParent;
   int res = GetINode(fs, oldPath, &oldInode, &oldParent);
-  fs->cwd->inode = origCwd;
+  fs->cwd.inode = origCwd;
   if (UNLIKELY(res != 0))
     return res;
   if (newDirFd != AT_FDCWD)
-    fs->cwd->inode = newFd->inode;
+    fs->cwd.inode = newFd->inode;
   struct INode* newInode = NULL;
   struct INode* newParent = NULL;
   res = GetINode(fs, newPath, &newInode, &newParent);
-  fs->cwd->inode = origCwd;
+  fs->cwd.inode = origCwd;
   if (UNLIKELY(!newParent) ||
       (!newInode && UNLIKELY(res != -ENOENT)))
     return res;
@@ -1488,7 +1456,7 @@ int FileSystem::RenameAt2(int oldDirFd, const char* oldPath, int newDirFd, const
         return -ENOTEMPTY;
     }
     if (UNLIKELY(oldInode == fs->inodes[0]) ||
-        UNLIKELY(oldInode == fs->cwd->inode))
+        UNLIKELY(oldInode == fs->cwd.inode))
       return -EBUSY;
   } else if (newInode && UNLIKELY(S_ISDIR(newInode->mode)))
     return -EISDIR;
@@ -1534,7 +1502,8 @@ int FileSystem::RenameAt2(int oldDirFd, const char* oldPath, int newDirFd, const
   clock_gettime(CLOCK_REALTIME, &ts);
   if (!(flags & RENAME_EXCHANGE)) {
     if (newInode) {
-      if (UNLIKELY(--newInode->nlink == 0))
+      --newInode->nlink;
+      if (UNLIKELY(newInode->IsUnused()))
         RemoveINode(fs, newInode);
       else newInode->ctime = ts;
     }
@@ -1546,9 +1515,9 @@ int FileSystem::RenameAt2(int oldDirFd, const char* oldPath, int newDirFd, const
 }
 off_t FileSystem::LSeek(unsigned int fdNum, off_t offset, unsigned int whence) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
-  ScopedLock lock(fs->mtx);
   if (UNLIKELY(offset < 0))
     return -EINVAL;
+  ScopedLock lock(fs->mtx);
   struct Fd* fd;
   if (UNLIKELY(!(fd = GetFd(fs, fdNum))))
     return -EBADF;
@@ -1730,9 +1699,9 @@ ssize_t FileSystem::Readv(unsigned int fdNum, struct iovec* iov, int iovcnt) {
 }
 ssize_t FileSystem::PRead(unsigned int fdNum, char* buf, size_t count, off_t offset) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
-  ScopedLock lock(fs->mtx);
   if (UNLIKELY(offset < 0))
     return -EINVAL;
+  ScopedLock lock(fs->mtx);
   struct Fd* fd;
   if (UNLIKELY(!(fd = GetFd(fs, fdNum))) ||
       UNLIKELY(fd->flags & O_WRONLY))
@@ -1769,9 +1738,9 @@ ssize_t FileSystem::PRead(unsigned int fdNum, char* buf, size_t count, off_t off
 }
 ssize_t FileSystem::PReadv(unsigned int fdNum, struct iovec* iov, int iovcnt, off_t offset) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
-  ScopedLock lock(fs->mtx);
   if (UNLIKELY(offset < 0))
     return -EINVAL;
+  ScopedLock lock(fs->mtx);
   struct Fd* fd;
   if (UNLIKELY(!(fd = GetFd(fs, fdNum))) ||
       UNLIKELY(fd->flags & O_WRONLY))
@@ -1921,9 +1890,9 @@ ssize_t FileSystem::Writev(unsigned int fdNum, struct iovec* iov, int iovcnt) {
 }
 ssize_t FileSystem::PWrite(unsigned int fdNum, const char* buf, size_t count, off_t offset) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
-  ScopedLock lock(fs->mtx);
   if (UNLIKELY(offset < 0))
     return -EINVAL;
+  ScopedLock lock(fs->mtx);
   struct Fd* fd;
   if (UNLIKELY(!(fd = GetFd(fs, fdNum))) ||
       UNLIKELY(!(fd->flags & (O_WRONLY | O_RDWR))))
@@ -1949,9 +1918,9 @@ ssize_t FileSystem::PWrite(unsigned int fdNum, const char* buf, size_t count, of
 }
 ssize_t FileSystem::PWritev(unsigned int fdNum, struct iovec* iov, int iovcnt, off_t offset) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
-  ScopedLock lock(fs->mtx);
   if (UNLIKELY(offset < 0))
     return -EINVAL;
+  ScopedLock lock(fs->mtx);
   struct Fd* fd;
   if (UNLIKELY(!(fd = GetFd(fs, fdNum))) ||
       UNLIKELY(!(fd->flags & (O_WRONLY | O_RDWR))))
@@ -2090,9 +2059,9 @@ ssize_t FileSystem::SendFile(unsigned int outFd, unsigned int inFd, off_t* offse
 }
 int FileSystem::FTruncate(unsigned int fdNum, off_t length) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
-  ScopedLock lock(fs->mtx);
   if (UNLIKELY(length < 0))
     return -EINVAL;
+  ScopedLock lock(fs->mtx);
   struct Fd* fd;
   if (UNLIKELY(!(fd = GetFd(fs, fdNum))))
     return -EBADF;
@@ -2110,9 +2079,9 @@ int FileSystem::FTruncate(unsigned int fdNum, off_t length) {
 }
 int FileSystem::Truncate(const char* path, off_t length) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
-  ScopedLock lock(fs->mtx);
   if (UNLIKELY(length < 0))
     return -EINVAL;
+  ScopedLock lock(fs->mtx);
   struct INode* inode;
   int res = GetINode(fs, path, &inode, NULL, true);
   if (UNLIKELY(res != 0))
@@ -2132,16 +2101,16 @@ int FileSystem::Truncate(const char* path, off_t length) {
 int FileSystem::FChModAt(int dirFd, const char* path, mode_t mode) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
   ScopedLock lock(fs->mtx);
-  struct INode* origCwd = fs->cwd->inode;
+  struct INode* origCwd = fs->cwd.inode;
   if (dirFd != AT_FDCWD) {
     struct Fd* fd;
     if (UNLIKELY(!(fd = GetFd(fs, dirFd))))
       return -EBADF;
-    fs->cwd->inode = fd->inode;
+    fs->cwd.inode = fd->inode;
   }
   struct INode* inode;
   int res = GetINode(fs, path, &inode);
-  fs->cwd->inode = origCwd;
+  fs->cwd.inode = origCwd;
   if (UNLIKELY(res != 0))
     return res;
   inode->mode = (mode & 07777) | (inode->mode & S_IFMT);
@@ -2172,27 +2141,27 @@ int FileSystem::ChDir(const char* path) {
   const char* absPath = AbsolutePath(fs, path);
   if (UNLIKELY(!absPath))
     return -ENOMEM;
-  delete fs->cwd->path;
-  fs->cwd->path = absPath;
-  fs->cwd->inode = inode;
-  fs->cwd->parent = parent;
+  delete fs->cwd.path;
+  fs->cwd.path = absPath;
+  fs->cwd.inode = inode;
+  fs->cwd.parent = parent;
   return 0;
 }
 int FileSystem::GetCwd(char* buf, size_t size) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
   ScopedLock lock(fs->mtx);
-  if (fs->cwd->inode != fs->inodes[0]) {
+  if (fs->cwd.inode != fs->inodes[0]) {
     struct INode* inode;
     struct INode* parent;
-    int res = GetINode(fs, fs->cwd->path, &inode, &parent, true);
+    int res = GetINode(fs, fs->cwd.path, &inode, &parent, true);
     if (UNLIKELY(res != 0))
       return res;
   }
-  size_t cwdLen = strlen(fs->cwd->path);
+  size_t cwdLen = strlen(fs->cwd.path);
   if (UNLIKELY(size <= cwdLen))
     return -ERANGE;
   if (buf) {
-    memcpy(buf, fs->cwd->path, cwdLen);
+    memcpy(buf, fs->cwd.path, cwdLen);
     buf[cwdLen] = '\0';
   }
   return cwdLen;
@@ -2228,24 +2197,24 @@ int FileSystem::LStat(const char* path, struct stat* buf) {
 }
 int FileSystem::Statx(int dirFd, const char* path, int flags, int mask, struct statx* buf) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
-  ScopedLock lock(fs->mtx);
   if (UNLIKELY(flags & ~(AT_SYMLINK_NOFOLLOW | AT_EMPTY_PATH)) ||
       UNLIKELY(mask & ~STATX_ALL) ||
       UNLIKELY(flags & AT_EMPTY_PATH && path[0] != '\0'))
     return -EINVAL;
-  struct INode* origCwd = fs->cwd->inode;
+  ScopedLock lock(fs->mtx);
+  struct INode* origCwd = fs->cwd.inode;
   if (dirFd != AT_FDCWD) {
     struct Fd* fd;
     if (UNLIKELY(!(fd = GetFd(fs, dirFd))))
       return -EBADF;
-    fs->cwd->inode = fd->inode;
+    fs->cwd.inode = fd->inode;
   }
   struct INode* inode;
   int res = 0;
   if (flags & AT_EMPTY_PATH)
-    inode = fs->cwd->inode;
+    inode = fs->cwd.inode;
   else res = GetINode(fs, path, &inode, NULL, !(flags & AT_SYMLINK_NOFOLLOW));
-  fs->cwd->inode = origCwd;
+  fs->cwd.inode = origCwd;
   if (UNLIKELY(res != 0))
     return res;
   inode->FillStatx(buf, mask);
@@ -2253,19 +2222,19 @@ int FileSystem::Statx(int dirFd, const char* path, int flags, int mask, struct s
 }
 int FileSystem::UTimeNsAt(int dirFd, const char* path, const struct timespec* times, int flags) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
-  ScopedLock lock(fs->mtx);
   if (UNLIKELY(flags & ~AT_SYMLINK_NOFOLLOW))
     return -EINVAL;
-  struct INode* origCwd = fs->cwd->inode;
+  ScopedLock lock(fs->mtx);
+  struct INode* origCwd = fs->cwd.inode;
   if (dirFd != AT_FDCWD) {
     struct Fd* fd;
     if (UNLIKELY(!(fd = GetFd(fs, dirFd))))
       return -EBADF;
-    fs->cwd->inode = fd->inode;
+    fs->cwd.inode = fd->inode;
   }
   struct INode* inode;
   int res = GetINode(fs, path, &inode, NULL, !(flags & AT_SYMLINK_NOFOLLOW));
-  fs->cwd->inode = origCwd;
+  fs->cwd.inode = origCwd;
   if (UNLIKELY(res != 0))
     return res;
   struct timespec ts;
@@ -2287,23 +2256,23 @@ int FileSystem::UTimeNsAt(int dirFd, const char* path, const struct timespec* ti
 }
 int FileSystem::FUTimesAt(unsigned int fdNum, const char* path, const struct timeval* times) {
   struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
-  ScopedLock lock(fs->mtx);
   if (times &&
       UNLIKELY(
         UNLIKELY(times[0].tv_usec < 0) || UNLIKELY(times[0].tv_usec >= 1000000) ||
         UNLIKELY(times[1].tv_usec < 0) || UNLIKELY(times[1].tv_usec >= 1000000)
       ))
     return -EINVAL;
-  struct INode* origCwd = fs->cwd->inode;
+  ScopedLock lock(fs->mtx);
+  struct INode* origCwd = fs->cwd.inode;
   if (fdNum != AT_FDCWD) {
     struct Fd* fd;
     if (UNLIKELY(!(fd = GetFd(fs, fdNum))))
       return -EBADF;
-    fs->cwd->inode = fd->inode;
+    fs->cwd.inode = fd->inode;
   }
   struct INode* inode;
   int res = GetINode(fs, path, &inode, NULL, true);
-  fs->cwd->inode = origCwd;
+  fs->cwd.inode = origCwd;
   if (UNLIKELY(res != 0))
     return res;
   struct timespec ts;
@@ -2324,34 +2293,31 @@ bool FileSystem::DumpToFile(const char* filename) {
   int fd = creat(filename, 0644);
   if (UNLIKELY(fd < 0))
     goto err1;
-  {
-    ino_t littleInodeCount = toLittle(fs->inodeCount);
-    if (UNLIKELY(write(fd, "\x7FVFS", 4) != 4) ||
-        UNLIKELY(write(fd, &littleInodeCount, sizeof(ino_t)) != sizeof(ino_t)))
-      goto err2;
-  }
+  if (UNLIKELY(write(fd, "\x7FVFS", 4) != 4) ||
+      UNLIKELY(write(fd, &fs->inodeCount, sizeof(ino_t)) != sizeof(ino_t)))
+    goto err2;
   for (ino_t i = 0; i != fs->inodeCount; ++i) {
     struct INode* inode = fs->inodes[i];
     struct DumpedINode dumped;
-    dumped.id = toLittle(inode->id);
-    dumped.size = toLittle(inode->size);
-    dumped.nlink = toLittle(inode->nlink);
-    dumped.mode = toLittle(inode->mode);
+    dumped.id = inode->id;
+    dumped.size = inode->size;
+    dumped.nlink = inode->nlink;
+    dumped.mode = inode->mode;
     dumped.btime = {
-      toLittle(inode->btime.tv_sec),
-      toLittle(inode->btime.tv_nsec)
+      inode->btime.tv_sec,
+      inode->btime.tv_nsec
     };
     dumped.ctime = {
-      toLittle(inode->ctime.tv_sec),
-      toLittle(inode->ctime.tv_nsec)
+      inode->ctime.tv_sec,
+      inode->ctime.tv_nsec
     };
     dumped.mtime = {
-      toLittle(inode->mtime.tv_sec),
-      toLittle(inode->mtime.tv_nsec)
+      inode->mtime.tv_sec,
+      inode->mtime.tv_nsec
     };
     dumped.atime = {
-      toLittle(inode->atime.tv_sec),
-      toLittle(inode->atime.tv_nsec)
+      inode->atime.tv_sec,
+      inode->atime.tv_nsec
     };
     if (UNLIKELY(write(fd, &dumped, sizeof(struct DumpedINode)) != sizeof(struct DumpedINode)))
       goto err2;
@@ -2363,36 +2329,24 @@ bool FileSystem::DumpToFile(const char* filename) {
         goto err2;
     }
     if (S_ISDIR(inode->mode)) {
-      {
-        off_t littleDentCount = toLittle(inode->dentCount);
-        ino_t littleNdx = toLittle(inode->dents[1].inode->ndx);
-        if (UNLIKELY(write(fd, &littleDentCount, sizeof(off_t)) != sizeof(off_t)) ||
-            UNLIKELY(write(fd, &littleNdx, sizeof(ino_t)) != sizeof(ino_t)))
-          goto err2;
-      }
+      if (UNLIKELY(write(fd, &inode->dentCount, sizeof(off_t)) != sizeof(off_t)) ||
+          UNLIKELY(write(fd, &inode->dents[1].inode->ndx, sizeof(ino_t)) != sizeof(ino_t)))
+        goto err2;
       for (off_t j = 2; j != inode->dentCount; ++j) {
         struct INode::Dent* dent = &inode->dents[j];
         size_t nameLen = strlen(dent->name) + 1;
-        ino_t littleNdx = toLittle(dent->inode->ndx);
-        if (UNLIKELY(write(fd, &littleNdx, sizeof(ino_t)) != sizeof(ino_t)) ||
+        if (UNLIKELY(write(fd, &dent->inode->ndx, sizeof(ino_t)) != sizeof(ino_t)) ||
             UNLIKELY(write(fd, dent->name, nameLen) != nameLen))
           goto err2;
       }
     } else if (inode->size != 0) {
-      {
-        off_t littleDataRangeCount = toLittle(inode->dataRangeCount);
-        if (UNLIKELY(write(fd, &littleDataRangeCount, sizeof(off_t)) != sizeof(off_t)))
-          goto err2;
-      }
+      if (UNLIKELY(write(fd, &inode->dataRangeCount, sizeof(off_t)) != sizeof(off_t)))
+        goto err2;
       for (off_t j = 0; j != inode->dataRangeCount; ++j) {
         struct INode::DataRange* range = inode->dataRanges[j];
-        {
-          off_t littleOffset = toLittle(range->offset);
-          off_t littleSize = toLittle(range->size);
-          if (UNLIKELY(write(fd, &littleOffset, sizeof(off_t)) != sizeof(off_t)) ||
-              UNLIKELY(write(fd, &littleSize, sizeof(off_t)) != sizeof(off_t)))
-            goto err2;
-        }
+        if (UNLIKELY(write(fd, &range->offset, sizeof(off_t)) != sizeof(off_t)) ||
+            UNLIKELY(write(fd, &range->size, sizeof(off_t)) != sizeof(off_t)))
+          goto err2;
         ssize_t written = 0;
         while (written != range->size) {
           size_t amount = range->size - written;
@@ -2424,7 +2378,6 @@ FileSystem* FileSystem::LoadFromFile(const char* filename) {
       UNLIKELY(memcmp(magic, "\x7FVFS", 4) != 0) ||
       UNLIKELY(read(fd, &inodeCount, sizeof(ino_t)) != sizeof(ino_t)))
     goto err_after_open;
-  inodeCount = toHost(inodeCount);
   if (UNLIKELY(!TryAlloc(&inodes, inodeCount)))
     goto err_after_open;
   for (ino_t i = 0; i != inodeCount; ++i) {
@@ -2435,25 +2388,25 @@ FileSystem* FileSystem::LoadFromFile(const char* filename) {
     inode->ndx = i;
     if (UNLIKELY(read(fd, &dumped, sizeof(struct DumpedINode)) != sizeof(struct DumpedINode)))
       goto err_after_inode_init;
-    inode->id = toHost(dumped.id);
-    inode->size = toHost(dumped.size);
-    inode->nlink = toHost(dumped.nlink);
-    inode->mode = toHost(dumped.mode);
+    inode->id = dumped.id;
+    inode->size = dumped.size;
+    inode->nlink = dumped.nlink;
+    inode->mode = dumped.mode;
     inode->btime = {
-      toHost(dumped.btime.tv_sec),
-      toHost(dumped.btime.tv_nsec)
+      dumped.btime.tv_sec,
+      dumped.btime.tv_nsec
     };
     inode->ctime = {
-      toHost(dumped.ctime.tv_sec),
-      toHost(dumped.ctime.tv_nsec)
+      dumped.ctime.tv_sec,
+      dumped.ctime.tv_nsec
     };
     inode->mtime = {
-      toHost(dumped.mtime.tv_sec),
-      toHost(dumped.mtime.tv_nsec)
+      dumped.mtime.tv_sec,
+      dumped.mtime.tv_nsec
     };
     inode->atime = {
-      toHost(dumped.atime.tv_sec),
-      toHost(dumped.atime.tv_nsec)
+      dumped.atime.tv_sec,
+      dumped.atime.tv_nsec
     };
     if (S_ISLNK(inode->mode)) {
       char target[PATH_MAX];
@@ -2477,7 +2430,7 @@ FileSystem* FileSystem::LoadFromFile(const char* filename) {
       goto success_symlink;
 
      err_after_target_alloc:
-      free(const_cast<char*>(inode->target));
+      free((void*)inode->target);
       goto err_after_inode_init;
      success_symlink: {}
     } else inode->target = NULL;
@@ -2485,7 +2438,6 @@ FileSystem* FileSystem::LoadFromFile(const char* filename) {
       off_t dentCount;
       if (UNLIKELY(read(fd, &dentCount, sizeof(off_t)) != sizeof(off_t)))
         goto err_after_inode_init;
-      dentCount = toHost(dentCount);
       if (UNLIKELY(!TryAlloc(&inode->dents, dentCount)))
         goto err_after_inode_init;
       inode->dents[0] = { ".", inode };
@@ -2509,7 +2461,7 @@ FileSystem* FileSystem::LoadFromFile(const char* filename) {
 
        err_after_dent_list_init:
         for (off_t k = 2; k != j; ++k)
-          free(const_cast<char*>(inode->dents[k].name));
+          free((void*)inode->dents[k].name);
         goto err_after_dent_alloc;
        success_dent: {}
       }
@@ -2529,7 +2481,6 @@ FileSystem* FileSystem::LoadFromFile(const char* filename) {
       off_t dataRangeCount;
       if (UNLIKELY(read(fd, &dataRangeCount, sizeof(off_t)) != sizeof(off_t)))
         goto err_after_inode_init;
-      dataRangeCount = toHost(dataRangeCount);
       if (UNLIKELY(!TryAlloc(&inode->dataRanges, dataRangeCount)))
         goto err_after_inode_init;
       for (off_t j = 0; j != dataRangeCount; ++j) {
@@ -2540,8 +2491,6 @@ FileSystem* FileSystem::LoadFromFile(const char* filename) {
         if (UNLIKELY(read(fd, &offset, sizeof(off_t)) != sizeof(off_t)) ||
             UNLIKELY(read(fd, &size, sizeof(off_t)) != sizeof(off_t)))
           goto err_after_dataranges_init;
-        offset = toHost(offset);
-        size = toHost(size);
         if (UNLIKELY(offset < 0) || UNLIKELY(offset > inode->size - size) ||
             UNLIKELY(size < 0) || UNLIKELY(size > inode->size - offset))
           goto err_after_dataranges_init;
@@ -2563,22 +2512,22 @@ FileSystem* FileSystem::LoadFromFile(const char* filename) {
         inode->dataRanges[j] = range;
         goto success_data_range;
 
-        err_after_range_data_alloc:
+       err_after_range_data_alloc:
         free(range->data);
-        err_after_range_alloc:
+       err_after_range_alloc:
         free(range);
         goto err_after_dataranges_init;
-        success_data_range: {}
+       success_data_range: {}
       }
       inode->dataRangeCount = dataRangeCount;
       goto success_data;
 
-      err_after_dataranges_init:
+     err_after_dataranges_init:
       for (off_t k = 0; k != dataRangeCount; ++k)
         delete inode->dataRanges[k];
       delete inode->dataRanges;
       goto err_after_inode_init;
-      success_data: {}
+     success_data: {}
     } else {
       inode->dataRangeCount = 0;
       inode->dataRanges = NULL;
@@ -2599,10 +2548,10 @@ FileSystem* FileSystem::LoadFromFile(const char* filename) {
     if (S_ISDIR(inode->mode)) {
       for (off_t j = 1; j != inode->dentCount; ++j) {
         struct INode::Dent* dent = &inode->dents[j];
-        ino_t hostIno = toHost(reinterpret_cast<ino_t>(dent->inode));
-        if (UNLIKELY(hostIno >= inodeCount))
+        ino_t ino = reinterpret_cast<ino_t>(dent->inode);
+        if (UNLIKELY(ino >= inodeCount))
           goto err_after_inodes;
-        dent->inode = inodes[hostIno];
+        dent->inode = inodes[ino];
       }
     }
   }
@@ -2629,21 +2578,14 @@ FileSystem* FileSystem::LoadFromFile(const char* filename) {
     goto err_after_fs_init;
   data->inodes = inodes;
   data->inodeCount = inodeCount;
-  struct Cwd* cwd;
-  if (UNLIKELY(!TryAlloc(&cwd)))
+  if (UNLIKELY(!(data->cwd.path = strdup("/"))))
     goto err_after_fsdata_init;
-  if (UNLIKELY(!(cwd->path = strdup("/"))))
-    goto err_after_cwd_init;
-  cwd->inode = inodes[0];
-  cwd->parent = inodes[0];
-  data->cwd = cwd;
+  data->cwd.inode = data->cwd.parent = inodes[0];
   fs->data = data;
   return fs;
 
- err_after_cwd_init:
-  free(cwd);
  err_after_fsdata_init:
-  delete data;
+  free(data);
  err_after_fs_init:
   free(fs);
  err_after_inodes:

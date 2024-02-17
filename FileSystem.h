@@ -21,14 +21,20 @@
 #ifndef __linux__
 #error FileSystem is only available in Linux
 #endif
-#include <sys/errno.h>
+
+#define _GNU_SOURCE
+#define _ATFILE_SOURCE
+
 #include <sys/stat.h>
-#include <sys/time.h>
 #include <dirent.h>
+#include <errno.h>
 #include <fcntl.h>
+#include <stdbool.h>
+#include <stdio.h>
 #include <string.h>
-#include <utime.h>
+#include <time.h>
 #include <unistd.h>
+#include <utime.h>
 
 struct linux_dirent {
   unsigned long	d_ino;
@@ -37,135 +43,89 @@ struct linux_dirent {
   char d_name[1];
 };
 
-class FileSystem {
- public:
-  static FileSystem* New();
-  FileSystem() = delete;
-  FileSystem(const FileSystem&) = delete;
-  FileSystem& operator=(const FileSystem&) = delete;
-  FileSystem(FileSystem&&) = delete;
-  FileSystem& operator=(FileSystem&&) = delete;
-  ~FileSystem();
-
-  int FAccessAt2(int dirFd, const char* path, int mode, int flags);
-  int FAccessAt(int dirFd, const char* path, int mode) {
-    return FAccessAt2(dirFd, path, mode, F_OK);
-  }
-  int Access(const char* path, int mode) {
-    return FAccessAt2(AT_FDCWD, path, mode, F_OK);
-  }
-  int OpenAt(int dirFd, const char* path, int flags, mode_t mode);
-  int Open(const char* path, int flags, mode_t mode) {
-    return OpenAt(AT_FDCWD, path, flags, mode);
-  }
-  int Creat(const char* path, mode_t mode) {
-    return OpenAt(AT_FDCWD, path, O_CREAT | O_WRONLY | O_TRUNC, mode);
-  }
-  int Close(unsigned int fd);
-  int CloseRange(unsigned int fd, unsigned int maxFd, unsigned int flags);
-  int MkNodAt(int dirFd, const char* path, mode_t mode, dev_t dev);
-  int MkNod(const char* path, mode_t mode, dev_t dev) {
-    return MkNodAt(AT_FDCWD, path, mode, dev);
-  }
-  int MkDirAt(int dirFd, const char* path, mode_t mode);
-  int MkDir(const char* path, mode_t mode) {
-    return MkDirAt(AT_FDCWD, path, mode);
-  }
-  int SymLinkAt(const char* oldPath, int newDirFd, const char* newPath);
-  int SymLink(const char* oldPath, const char* newPath) {
-    return SymLinkAt(oldPath, AT_FDCWD, newPath);
-  }
-  int ReadLinkAt(int dirFd, const char* path, char* buf, int bufLen);
-  int ReadLink(const char* path, char* buf, int bufLen) {
-    return ReadLinkAt(AT_FDCWD, path, buf, bufLen);
-  }
-  int GetDents(unsigned int fdNum, struct linux_dirent* dirp, unsigned int count);
-  int LinkAt(int oldDirFd, const char* oldPath, int newDirFd, const char* newPath, int flags);
-  int Link(const char* oldPath, const char* newPath) {
-    return LinkAt(AT_FDCWD, oldPath, AT_FDCWD, newPath, 0);
-  }
-  int UnlinkAt(int dirFd, const char* path, int flags);
-  int Unlink(const char* path) {
-    return UnlinkAt(AT_FDCWD, path, 0);
-  }
-  int RmDir(const char* path) {
-    return UnlinkAt(AT_FDCWD, path, AT_REMOVEDIR);
-  }
-  int RenameAt2(int oldDirFd, const char* oldPath, int newDirFd, const char* newPath, unsigned int flags);
-  int RenameAt(int oldDirFd, const char* oldPath, int newDirFd, const char* newPath) {
-    return RenameAt2(oldDirFd, oldPath, newDirFd, newPath, 0);
-  }
-  int Rename(const char* oldPath, const char* newPath) {
-    return RenameAt2(AT_FDCWD, oldPath, AT_FDCWD, newPath, 0);
-  }
-  off_t LSeek(unsigned int fdNum, off_t offset, unsigned int whence);
-  ssize_t Read(unsigned int fdNum, char* buf, size_t count);
-  ssize_t Readv(unsigned int fdNum, struct iovec* iov, int iovcnt);
-  ssize_t PRead(unsigned int fdNum, char* buf, size_t count, off_t offset);
-  ssize_t PReadv(unsigned int fdNum, struct iovec* iov, int iovcnt, off_t offset);
-  ssize_t Write(unsigned int fdNum, const char* buf, size_t count);
-  ssize_t Writev(unsigned int fdNum, struct iovec* iov, int iovcnt);
-  ssize_t PWrite(unsigned int fdNum, const char* buf, size_t count, off_t offset);
-  ssize_t PWritev(unsigned int fdNum, struct iovec* iov, int iovcnt, off_t offset);
-  ssize_t SendFile(unsigned int outFd, unsigned int inFd, off_t* offset, size_t count);
-  int FTruncate(unsigned int fdNum, off_t length);
-  int Truncate(const char* path, off_t length);
-  int FChModAt(int dirFd, const char* path, mode_t mode);
-  int FChMod(unsigned int fdNum, mode_t mode);
-  int ChMod(const char* path, mode_t mode) {
-    return FChModAt(AT_FDCWD, path, mode);
-  }
-  int ChDir(const char* path);
-  int GetCwd(char* buf, size_t size);
-  int FStat(unsigned int fdNum, struct stat* buf);
-  int Stat(const char* path, struct stat* buf);
-  int LStat(const char* path, struct stat* buf);
-  int Statx(int dirFd, const char* path, int flags, int mask, struct statx* buf);
-  int UTimeNsAt(int dirFd, const char* path, const struct timespec* times, int flags);
-  int FUTimesAt(unsigned int fdNum, const char* path, const struct timeval* times);
-  int UTimes(const char* path, const struct timeval* times) {
-    return FUTimesAt(AT_FDCWD, path, times);
-  }
-  int UTime(const char* path, const struct utimbuf* times) {
-    struct timeval ts[2];
-    if (times) {
-      ts[0].tv_sec = times->actime;
-      ts[0].tv_usec = 0;
-      ts[1].tv_sec = times->modtime;
-      ts[1].tv_usec = 0;
-    }
-    return FUTimesAt(AT_FDCWD, path, times ? ts : NULL);
-  }
-
-  /**
-   * format:
-   *   magic number ("\x7FVFS")
-   *   inodeCount
-   *   inodes:
-   *     id
-   *     size
-   *     nlink
-   *     mode
-   *     btime
-   *     ctime
-   *     mtime
-   *     atime
-   *     target (if symlink)
-   *     data (if symlink)
-   *     dentCount (if directory)
-   *     parent (if directory)
-   *     dents (if directory):
-   *       inode index
-   *       name
-   *     dataRangeCount (if regular)
-   *     dataRanges (if regular):
-   *       offset
-   *       size
-   *       data
-   */
-  bool DumpToFile(const char* filename);
-  static FileSystem* LoadFromFile(const char* filename);
-
- private:
+struct FileSystem {
   void* data;
 };
+
+struct FileSystem* FileSystem_New();
+void FileSystem_Delete(struct FileSystem* this);
+
+int FileSystem_FAccessAt2(struct FileSystem* this, int dirFd, const char* path, int mode, int flags);
+int FileSystem_FAccessAt(struct FileSystem* this, int dirFd, const char* path, int mode);
+int FileSystem_Access(struct FileSystem* this, const char* path, int mode);
+int FileSystem_OpenAt(struct FileSystem* this, int dirFd, const char* path, int flags, mode_t mode);
+int FileSystem_Open(struct FileSystem* this, const char* path, int flags, mode_t mode);
+int FileSystem_Creat(struct FileSystem* this, const char* path, mode_t mode);
+int FileSystem_Close(struct FileSystem* this, unsigned int fd);
+int FileSystem_CloseRange(struct FileSystem* this, unsigned int fd, unsigned int maxFd, unsigned int flags);
+int FileSystem_MkNodAt(struct FileSystem* this, int dirFd, const char* path, mode_t mode, dev_t dev);
+int FileSystem_MkNod(struct FileSystem* this, const char* path, mode_t mode, dev_t dev);
+int FileSystem_MkDirAt(struct FileSystem* this, int dirFd, const char* path, mode_t mode);
+int FileSystem_MkDir(struct FileSystem* this, const char* path, mode_t mode);
+int FileSystem_SymLinkAt(struct FileSystem* this, const char* oldPath, int newDirFd, const char* newPath);
+int FileSystem_SymLink(struct FileSystem* this, const char* oldPath, const char* newPath);
+int FileSystem_ReadLinkAt(struct FileSystem* this, int dirFd, const char* path, char* buf, int bufLen);
+int FileSystem_ReadLink(struct FileSystem* this, const char* path, char* buf, int bufLen);
+int FileSystem_GetDents(struct FileSystem* this, unsigned int fdNum, struct linux_dirent* dirp, unsigned int count);
+int FileSystem_LinkAt(struct FileSystem* this, int oldDirFd, const char* oldPath, int newDirFd, const char* newPath, int flags);
+int FileSystem_Link(struct FileSystem* this, const char* oldPath, const char* newPath);
+int FileSystem_UnlinkAt(struct FileSystem* this, int dirFd, const char* path, int flags);
+int FileSystem_Unlink(struct FileSystem* this, const char* path);
+int FileSystem_RmDir(struct FileSystem* this, const char* path);
+int FileSystem_RenameAt2(struct FileSystem* this, int oldDirFd, const char* oldPath, int newDirFd, const char* newPath, unsigned int flags);
+int FileSystem_RenameAt(struct FileSystem* this, int oldDirFd, const char* oldPath, int newDirFd, const char* newPath);
+int FileSystem_Rename(struct FileSystem* this, const char* oldPath, const char* newPath);
+off_t FileSystem_LSeek(struct FileSystem* this, unsigned int fdNum, off_t offset, unsigned int whence);
+ssize_t FileSystem_Read(struct FileSystem* this, unsigned int fdNum, char* buf, size_t count);
+ssize_t FileSystem_Readv(struct FileSystem* this, unsigned int fdNum, struct iovec* iov, int iovcnt);
+ssize_t FileSystem_PRead(struct FileSystem* this, unsigned int fdNum, char* buf, size_t count, off_t offset);
+ssize_t FileSystem_PReadv(struct FileSystem* this, unsigned int fdNum, struct iovec* iov, int iovcnt, off_t offset);
+ssize_t FileSystem_Write(struct FileSystem* this, unsigned int fdNum, const char* buf, size_t count);
+ssize_t FileSystem_Writev(struct FileSystem* this, unsigned int fdNum, struct iovec* iov, int iovcnt);
+ssize_t FileSystem_PWrite(struct FileSystem* this, unsigned int fdNum, const char* buf, size_t count, off_t offset);
+ssize_t FileSystem_PWritev(struct FileSystem* this, unsigned int fdNum, struct iovec* iov, int iovcnt, off_t offset);
+ssize_t FileSystem_SendFile(struct FileSystem* this, unsigned int outFd, unsigned int inFd, off_t* offset, size_t count);
+int FileSystem_FTruncate(struct FileSystem* this, unsigned int fdNum, off_t length);
+int FileSystem_Truncate(struct FileSystem* this, const char* path, off_t length);
+int FileSystem_FChModAt(struct FileSystem* this, int dirFd, const char* path, mode_t mode);
+int FileSystem_FChMod(struct FileSystem* this, unsigned int fdNum, mode_t mode);
+int FileSystem_ChMod(struct FileSystem* this, const char* path, mode_t mode);
+int FileSystem_ChDir(struct FileSystem* this, const char* path);
+int FileSystem_GetCwd(struct FileSystem* this, char* buf, size_t size);
+int FileSystem_FStat(struct FileSystem* this, unsigned int fdNum, struct stat* buf);
+int FileSystem_Stat(struct FileSystem* this, const char* path, struct stat* buf);
+int FileSystem_LStat(struct FileSystem* this, const char* path, struct stat* buf);
+int FileSystem_Statx(struct FileSystem* this, int dirFd, const char* path, int flags, int mask, struct statx* buf);
+int FileSystem_UTimeNsAt(struct FileSystem* this, int dirFd, const char* path, const struct timespec* times, int flags);
+int FileSystem_FUTimesAt(struct FileSystem* this, unsigned int fdNum, const char* path, const struct timeval* times);
+int FileSystem_UTimes(struct FileSystem* this, const char* path, const struct timeval* times);
+int FileSystem_UTime(struct FileSystem* this, const char* path, const struct utimbuf* times);
+
+/**
+ * format:
+ *   magic number ("\x7FVFS")
+ *   inodeCount
+ *   inodes:
+ *     id
+ *     size
+ *     nlink
+ *     mode
+ *     btime
+ *     ctime
+ *     mtime
+ *     atime
+ *     target (if symlink)
+ *     data (if symlink)
+ *     dentCount (if directory)
+ *     parent (if directory)
+ *     dents (if directory):
+ *       inode index
+ *       name
+ *     dataRangeCount (if regular)
+ *     dataRanges (if regular):
+ *       offset
+ *       size
+ *       data
+ */
+bool FileSystem_DumpToFile(struct FileSystem* this, const char* filename);
+struct FileSystem* FileSystem_LoadFromFile(const char* filename);
