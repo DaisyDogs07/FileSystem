@@ -22,8 +22,13 @@
 #error FileSystem is only available in Linux
 #endif
 
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif
+
+#ifndef _ATFILE_SOURCE
 #define _ATFILE_SOURCE
+#endif
 
 #include <sys/stat.h>
 #include <dirent.h>
