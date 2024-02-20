@@ -54,14 +54,19 @@ Persistent<ObjectTemplate> FSInstanceTmpl;
   } while (0)
 #define THROWERR(code) \
   do { \
-    isolate->ThrowException( \
-      Exception::Error( \
-        String::NewFromUtf8( \
-          isolate, \
-          strerror(-(code)) \
-        ).ToLocalChecked() \
-      ) \
+    int errnum = -(code); \
+    Local<Value> err = Exception::Error( \
+      String::NewFromUtf8( \
+        isolate, \
+        strerror(errnum) \
+      ).ToLocalChecked() \
     ); \
+    err.As<Object>()->Set( \
+      isolate->GetCurrentContext(), \
+      String::NewFromUtf8Literal(isolate, "errno"), \
+      Int32::New(isolate, errnum) \
+    ).ToChecked(); \
+    isolate->ThrowException(err); \
     return; \
   } while (0)
 #define THROWIFERR(res) \
@@ -1543,6 +1548,24 @@ void DefineConstants(Isolate* isolate, Local<FunctionTemplate> func) {
   DefineFlag(W_OK);
   DefineFlag(X_OK);
   DefineFlag(F_OK);
+
+  DefineFlag(EPERM);
+  DefineFlag(ENOENT);
+  DefineFlag(EIO);
+  DefineFlag(EBADF);
+  DefineFlag(ENOMEM);
+  DefineFlag(EACCES);
+  DefineFlag(EBUSY);
+  DefineFlag(EEXIST);
+  DefineFlag(ENOTDIR);
+  DefineFlag(EISDIR);
+  DefineFlag(EINVAL);
+  DefineFlag(EFBIG);
+  DefineFlag(ERANGE);
+  DefineFlag(ENAMETOOLONG);
+  DefineFlag(ENOTEMPTY);
+  DefineFlag(ELOOP);
+  DefineFlag(EOVERFLOW);
 #undef DefineFlag
 }
 
