@@ -93,6 +93,24 @@ declare module "FileSystem" {
     static X_OK: number;
     static F_OK: number;
 
+    static EPERM: number;
+    static ENOENT: number;
+    static EIO: number;
+    static EBADF: number;
+    static ENOMEM: number;
+    static EACCES: number;
+    static EBUSY: number;
+    static EEXIST: number;
+    static ENOTDIR: number;
+    static EISDIR: number;
+    static EINVAL: number;
+    static EFBIG: number;
+    static ERANGE: number;
+    static ENAMETOOLONG: number;
+    static ENOTEMPTY: number;
+    static ELOOP: number;
+    static EOVERFLOW: number;
+
     constructor();
     faccessat2(dirFd: number | BigInt, path: string, mode: number | BigInt, flags: number | BigInt): void;
     faccessat(dirFd: number | BigInt, path: string, mode: number | BigInt): void;
