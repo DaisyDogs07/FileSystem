@@ -316,14 +316,14 @@ struct DataRange* INode_InsertRange(struct INode* this, off_t offset, off_t leng
 }
 void INode_RemoveRange(struct INode* this, off_t index) {
   struct DataRange* range = this->dataRanges[index];
-  free(range);
+  DataRange_Delete(range);
   if (index != this->dataRangeCount - 1)
     memmove(&this->dataRanges[index], &this->dataRanges[index + 1], sizeof(struct DataRange*) * (this->dataRangeCount - index));
   this->dataRanges = realloc(this->dataRanges, sizeof(struct DataRange*) * --this->dataRangeCount);
 }
 void INode_RemoveRanges(struct INode* this, off_t index, off_t count) {
   for (off_t i = index; i != index + count; ++i)
-    free(this->dataRanges[i]);
+    DataRange_Delete(this->dataRanges[i]);
   if (index + count < this->dataRangeCount)
     memmove(&this->dataRanges[index], &this->dataRanges[index + count], sizeof(struct DataRange*) * (this->dataRangeCount - (index + count)));
   this->dataRangeCount -= count;
