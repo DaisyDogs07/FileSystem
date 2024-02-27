@@ -1178,20 +1178,20 @@ int FileSystem_MkNodAt(struct FileSystem* thisArg, int dirFd, const char* path, 
   struct INode* x;
   if (UNLIKELY(!TryAlloc((void**)&x, sizeof(struct INode)))) {
     pthread_mutex_unlock(&fs->mtx);
-    free(name);
+    free((void*)name);
     return -EIO;
   }
   INode_New(x);
   if (UNLIKELY(!PushINode(fs, x))) {
     pthread_mutex_unlock(&fs->mtx);
     INode_Delete(x);
-    free(name);
+    free((void*)name);
     return -EIO;
   }
   if (UNLIKELY(!INode_PushDent(parent, name, x))) {
     RemoveINode(fs, x);
     pthread_mutex_unlock(&fs->mtx);
-    free(name);
+    free((void*)name);
     return -EIO;
   }
   x->mode = (mode & 07777) | S_IFREG;
@@ -1240,7 +1240,7 @@ int FileSystem_MkDirAt(struct FileSystem* thisArg, int dirFd, const char* path, 
   struct INode* x;
   if (UNLIKELY(!TryAlloc((void**)&x, sizeof(struct INode)))) {
     pthread_mutex_unlock(&fs->mtx);
-    free(name);
+    free((void*)name);
     return -EIO;
   }
   INode_New(x);
@@ -1248,13 +1248,13 @@ int FileSystem_MkDirAt(struct FileSystem* thisArg, int dirFd, const char* path, 
       UNLIKELY(!PushINode(fs, x))) {
     pthread_mutex_unlock(&fs->mtx);
     INode_Delete(x);
-    free(name);
+    free((void*)name);
     return -EIO;
   }
   if (UNLIKELY(!INode_PushDent(parent, name, x))) {
     RemoveINode(fs, x);
     pthread_mutex_unlock(&fs->mtx);
-    free(name);
+    free((void*)name);
     return -EIO;
   }
   x->mode = (mode & 07777) | S_IFDIR;
@@ -1317,7 +1317,7 @@ int FileSystem_SymLinkAt(struct FileSystem* thisArg, const char* oldPath, int ne
   struct INode* x;
   if (UNLIKELY(!TryAlloc((void**)&x, sizeof(struct INode)))) {
     pthread_mutex_unlock(&fs->mtx);
-    free(name);
+    free((void*)name);
     return -EIO;
   }
   INode_New(x);
@@ -1327,7 +1327,7 @@ int FileSystem_SymLinkAt(struct FileSystem* thisArg, const char* oldPath, int ne
       UNLIKELY(!PushINode(fs, x))) {
     pthread_mutex_unlock(&fs->mtx);
     INode_Delete(x);
-    free(name);
+    free((void*)name);
     return -EIO;
   }
   memcpy(range->data, oldPath, oldPathLen);
@@ -1335,7 +1335,7 @@ int FileSystem_SymLinkAt(struct FileSystem* thisArg, const char* oldPath, int ne
       UNLIKELY(!INode_PushDent(newParent, name, x))) {
     RemoveINode(fs, x);
     pthread_mutex_unlock(&fs->mtx);
-    free(name);
+    free((void*)name);
     return -EIO;
   }
   x->mode = 0777 | S_IFLNK;
@@ -1405,7 +1405,7 @@ int FileSystem_GetDents(struct FileSystem* thisArg, unsigned int fdNum, struct l
     return 0;
   }
   unsigned int nread = 0;
-  char* dirpData = dirp;
+  char* dirpData = (char*)dirp;
   do {
     struct Dent d = inode->dents[fd->seekOff];
     size_t nameLen = strlen(d.name);
@@ -1414,7 +1414,7 @@ int FileSystem_GetDents(struct FileSystem* thisArg, unsigned int fdNum, struct l
 #undef ALIGN
     if (nread + reclen > count)
       break;
-    struct linux_dirent* dent = dirpData;
+    struct linux_dirent* dent = (struct linux_dirent*)dirpData;
     dent->d_ino = d.inode->id;
     dent->d_off = fd->seekOff + 1;
     dent->d_reclen = reclen;
@@ -1508,7 +1508,7 @@ int FileSystem_LinkAt(struct FileSystem* thisArg, int oldDirFd, const char* oldP
   }
   if (UNLIKELY(!INode_PushDent(newParent, name, oldInode))) {
     pthread_mutex_unlock(&fs->mtx);
-    free(name);
+    free((void*)name);
     return -EIO;
   }
   ++oldInode->nlink;
@@ -1572,7 +1572,7 @@ int FileSystem_UnlinkAt(struct FileSystem* thisArg, int dirFd, const char* path,
       return -ENOMEM;
     }
     bool isDot = strcmp(last, ".") == 0;
-    free(last);
+    free((void*)last);
     if (UNLIKELY(isDot)) {
       pthread_mutex_unlock(&fs->mtx);
       return -EINVAL;
@@ -1588,7 +1588,7 @@ int FileSystem_UnlinkAt(struct FileSystem* thisArg, int dirFd, const char* path,
     return -ENOMEM;
   }
   INode_RemoveDent(parent, name);
-  free(name);
+  free((void*)name);
   if (flags & AT_REMOVEDIR)
     --parent->nlink;
   struct timespec ts;
@@ -1615,7 +1615,7 @@ int FileSystem_RenameAt2(struct FileSystem* thisArg, int oldDirFd, const char* o
   if (UNLIKELY(!last))
     return -ENOMEM;
   bool isDot = strcmp(last, ".") == 0 || strcmp(last, "..") == 0;
-  free(last);
+  free((void*)last);
   if (UNLIKELY(isDot))
     return -EBUSY;
   struct FSInternal* fs = thisArg->data;
@@ -1708,7 +1708,7 @@ int FileSystem_RenameAt2(struct FileSystem* thisArg, int oldDirFd, const char* o
   const char* newName = GetAbsoluteLast(fs, newPath);
   if (UNLIKELY(!newName)) {
     pthread_mutex_unlock(&fs->mtx);
-    free(oldName);
+    free((void*)oldName);
     return -ENOMEM;
   }
   if (flags & RENAME_EXCHANGE) {
@@ -1722,17 +1722,17 @@ int FileSystem_RenameAt2(struct FileSystem* thisArg, int oldDirFd, const char* o
           }
         break;
       }
-    free(oldName);
-    free(newName);
+    free((void*)oldName);
+    free((void*)newName);
   } else {
     if (UNLIKELY(!INode_PushDent(newParent, newName, oldInode))) {
       pthread_mutex_unlock(&fs->mtx);
-      free(oldName);
-      free(newName);
+      free((void*)oldName);
+      free((void*)newName);
       return -EIO;
     }
     INode_RemoveDent(oldParent, oldName);
-    free(oldName);
+    free((void*)oldName);
     if (newInode)
       INode_RemoveDent(newParent, newName);
     if (S_ISDIR(oldInode->mode)) {
@@ -2571,7 +2571,7 @@ int FileSystem_ChDir(struct FileSystem* thisArg, const char* path) {
     pthread_mutex_unlock(&fs->mtx);
     return -ENOMEM;
   }
-  free(fs->cwd.path);
+  free((void*)fs->cwd.path);
   fs->cwd.path = absPath;
   fs->cwd.inode = inode;
   fs->cwd.parent = parent;
