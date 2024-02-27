@@ -1,4 +1,4 @@
-## The Linux File System in C++
+## The Linux File System in C/C++
 
 ```
 npm i github:DaisyDogs07/FileSystem
