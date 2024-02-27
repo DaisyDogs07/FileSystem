@@ -898,11 +898,11 @@ FileSystem::~FileSystem() {
   delete reinterpret_cast<struct FSInternal*>(data);
 }
 int FileSystem::FAccessAt2(int dirFd, const char* path, int mode, int flags) {
-  struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
   if (UNLIKELY(mode & ~(F_OK | R_OK | W_OK | X_OK)) ||
       UNLIKELY(flags & ~(AT_SYMLINK_NOFOLLOW | AT_EMPTY_PATH)) ||
       UNLIKELY(flags & AT_EMPTY_PATH && path[0] != '\0'))
     return -EINVAL;
+  struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
   ScopedLock lock(fs->mtx);
   struct INode* origCwd = fs->cwd.inode;
   if (dirFd != AT_FDCWD) {
@@ -926,7 +926,6 @@ int FileSystem::FAccessAt2(int dirFd, const char* path, int mode, int flags) {
   return 0;
 }
 int FileSystem::OpenAt(int dirFd, const char* path, int flags, mode_t mode) {
-  struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
   if (UNLIKELY(flags & ~(O_RDONLY | O_WRONLY | O_RDWR | O_CREAT | O_EXCL | O_APPEND | O_TRUNC | 020000000 | O_DIRECTORY | O_NOFOLLOW | O_NOATIME)))
     return -EINVAL;
   if (flags & 020000000) {
@@ -943,6 +942,7 @@ int FileSystem::OpenAt(int dirFd, const char* path, int flags, mode_t mode) {
     mode |= S_IFREG;
   } else if (UNLIKELY(mode != 0))
     return -EINVAL;
+  struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
   ScopedLock lock(fs->mtx);
   struct INode* origCwd = fs->cwd.inode;
   if (dirFd != AT_FDCWD) {
@@ -1038,16 +1038,16 @@ int FileSystem::Close(unsigned int fd) {
   return RemoveFd(fs, fd);
 }
 int FileSystem::CloseRange(unsigned int fd, unsigned int maxFd, unsigned int flags) {
-  struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
   if (UNLIKELY(flags != 0) ||
       UNLIKELY(fd > maxFd))
     return -EINVAL;
+  struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
   ScopedLock lock(fs->mtx);
   for (int i = 0; i != fs->fdCount; ++i) {
     struct Fd* f = fs->fds[i];
-    if (f->fd > fd) {
+    if (f->fd >= fd) {
       RemoveFd2(fs, f, i);
-      for (++i; i != fs->fdCount; ++i) {
+      while (i != fs->fdCount) {
         f = fs->fds[i];
         if (f->fd < maxFd)
           RemoveFd2(fs, f, i);
@@ -1059,7 +1059,6 @@ int FileSystem::CloseRange(unsigned int fd, unsigned int maxFd, unsigned int fla
   return 0;
 }
 int FileSystem::MkNodAt(int dirFd, const char* path, mode_t mode, dev_t dev) {
-  struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
   if (mode & S_IFMT) {
     if (UNLIKELY(S_ISDIR(mode)))
       return -EPERM;
@@ -1068,6 +1067,7 @@ int FileSystem::MkNodAt(int dirFd, const char* path, mode_t mode, dev_t dev) {
   }
   if (UNLIKELY(dev != 0))
     return -EINVAL;
+  struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
   ScopedLock lock(fs->mtx);
   struct INode* origCwd = fs->cwd.inode;
   if (dirFd != AT_FDCWD) {
@@ -1216,9 +1216,9 @@ int FileSystem::SymLinkAt(const char* oldPath, int newDirFd, const char* newPath
   return 0;
 }
 int FileSystem::ReadLinkAt(int dirFd, const char* path, char* buf, int bufLen) {
-  struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
   if (UNLIKELY(bufLen <= 0))
     return -EINVAL;
+  struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
   ScopedLock lock(fs->mtx);
   struct INode* origCwd = fs->cwd.inode;
   if (dirFd != AT_FDCWD) {
@@ -1280,10 +1280,10 @@ int FileSystem::GetDents(unsigned int fdNum, struct linux_dirent* dirp, unsigned
   return nread;
 }
 int FileSystem::LinkAt(int oldDirFd, const char* oldPath, int newDirFd, const char* newPath, int flags) {
-  struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
   if (UNLIKELY(flags & ~(AT_SYMLINK_FOLLOW | AT_EMPTY_PATH)) ||
       UNLIKELY(flags & AT_EMPTY_PATH && oldPath[0] != '\0'))
     return -EINVAL;
+  struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
   ScopedLock lock(fs->mtx);
   struct Fd* oldFd;
   struct Fd* newFd;
@@ -1341,9 +1341,9 @@ int FileSystem::LinkAt(int oldDirFd, const char* oldPath, int newDirFd, const ch
   return 0;
 }
 int FileSystem::UnlinkAt(int dirFd, const char* path, int flags) {
-  struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
   if (UNLIKELY(flags & ~AT_REMOVEDIR))
     return -EINVAL;
+  struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
   ScopedLock lock(fs->mtx);
   struct INode* origCwd = fs->cwd.inode;
   if (dirFd != AT_FDCWD) {
@@ -1398,7 +1398,6 @@ int FileSystem::UnlinkAt(int dirFd, const char* path, int flags) {
   return 0;
 }
 int FileSystem::RenameAt2(int oldDirFd, const char* oldPath, int newDirFd, const char* newPath, unsigned int flags) {
-  struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
   if (UNLIKELY(flags & ~(RENAME_NOREPLACE | RENAME_EXCHANGE)) ||
       UNLIKELY(flags & RENAME_NOREPLACE && flags & RENAME_EXCHANGE))
     return -EINVAL;
@@ -1409,6 +1408,7 @@ int FileSystem::RenameAt2(int oldDirFd, const char* oldPath, int newDirFd, const
   delete last;
   if (UNLIKELY(isDot))
     return -EBUSY;
+  struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
   ScopedLock lock(fs->mtx);
   struct Fd* oldFd;
   struct Fd* newFd;
@@ -1514,9 +1514,9 @@ int FileSystem::RenameAt2(int oldDirFd, const char* oldPath, int newDirFd, const
   return 0;
 }
 off_t FileSystem::LSeek(unsigned int fdNum, off_t offset, unsigned int whence) {
-  struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
   if (UNLIKELY(offset < 0))
     return -EINVAL;
+  struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
   ScopedLock lock(fs->mtx);
   struct Fd* fd;
   if (UNLIKELY(!(fd = GetFd(fs, fdNum))))
@@ -1698,9 +1698,9 @@ ssize_t FileSystem::Readv(unsigned int fdNum, struct iovec* iov, int iovcnt) {
   return totalLen;
 }
 ssize_t FileSystem::PRead(unsigned int fdNum, char* buf, size_t count, off_t offset) {
-  struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
   if (UNLIKELY(offset < 0))
     return -EINVAL;
+  struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
   ScopedLock lock(fs->mtx);
   struct Fd* fd;
   if (UNLIKELY(!(fd = GetFd(fs, fdNum))) ||
@@ -1737,9 +1737,9 @@ ssize_t FileSystem::PRead(unsigned int fdNum, char* buf, size_t count, off_t off
   return count;
 }
 ssize_t FileSystem::PReadv(unsigned int fdNum, struct iovec* iov, int iovcnt, off_t offset) {
-  struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
   if (UNLIKELY(offset < 0))
     return -EINVAL;
+  struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
   ScopedLock lock(fs->mtx);
   struct Fd* fd;
   if (UNLIKELY(!(fd = GetFd(fs, fdNum))) ||
@@ -1889,9 +1889,9 @@ ssize_t FileSystem::Writev(unsigned int fdNum, struct iovec* iov, int iovcnt) {
   return count;
 }
 ssize_t FileSystem::PWrite(unsigned int fdNum, const char* buf, size_t count, off_t offset) {
-  struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
   if (UNLIKELY(offset < 0))
     return -EINVAL;
+  struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
   ScopedLock lock(fs->mtx);
   struct Fd* fd;
   if (UNLIKELY(!(fd = GetFd(fs, fdNum))) ||
@@ -1917,9 +1917,9 @@ ssize_t FileSystem::PWrite(unsigned int fdNum, const char* buf, size_t count, of
   return count;
 }
 ssize_t FileSystem::PWritev(unsigned int fdNum, struct iovec* iov, int iovcnt, off_t offset) {
-  struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
   if (UNLIKELY(offset < 0))
     return -EINVAL;
+  struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
   ScopedLock lock(fs->mtx);
   struct Fd* fd;
   if (UNLIKELY(!(fd = GetFd(fs, fdNum))) ||
@@ -2058,9 +2058,9 @@ ssize_t FileSystem::SendFile(unsigned int outFd, unsigned int inFd, off_t* offse
   return count;
 }
 int FileSystem::FTruncate(unsigned int fdNum, off_t length) {
-  struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
   if (UNLIKELY(length < 0))
     return -EINVAL;
+  struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
   ScopedLock lock(fs->mtx);
   struct Fd* fd;
   if (UNLIKELY(!(fd = GetFd(fs, fdNum))))
@@ -2078,9 +2078,9 @@ int FileSystem::FTruncate(unsigned int fdNum, off_t length) {
   return 0;
 }
 int FileSystem::Truncate(const char* path, off_t length) {
-  struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
   if (UNLIKELY(length < 0))
     return -EINVAL;
+  struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
   ScopedLock lock(fs->mtx);
   struct INode* inode;
   int res = GetINode(fs, path, &inode, NULL, true);
@@ -2196,11 +2196,11 @@ int FileSystem::LStat(const char* path, struct stat* buf) {
   return 0;
 }
 int FileSystem::Statx(int dirFd, const char* path, int flags, int mask, struct statx* buf) {
-  struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
   if (UNLIKELY(flags & ~(AT_SYMLINK_NOFOLLOW | AT_EMPTY_PATH)) ||
       UNLIKELY(mask & ~STATX_ALL) ||
       UNLIKELY(flags & AT_EMPTY_PATH && path[0] != '\0'))
     return -EINVAL;
+  struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
   ScopedLock lock(fs->mtx);
   struct INode* origCwd = fs->cwd.inode;
   if (dirFd != AT_FDCWD) {
@@ -2221,9 +2221,9 @@ int FileSystem::Statx(int dirFd, const char* path, int flags, int mask, struct s
   return 0;
 }
 int FileSystem::UTimeNsAt(int dirFd, const char* path, const struct timespec* times, int flags) {
-  struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
   if (UNLIKELY(flags & ~AT_SYMLINK_NOFOLLOW))
     return -EINVAL;
+  struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
   ScopedLock lock(fs->mtx);
   struct INode* origCwd = fs->cwd.inode;
   if (dirFd != AT_FDCWD) {
@@ -2255,13 +2255,13 @@ int FileSystem::UTimeNsAt(int dirFd, const char* path, const struct timespec* ti
   return 0;
 }
 int FileSystem::FUTimesAt(unsigned int fdNum, const char* path, const struct timeval* times) {
-  struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
   if (times &&
       UNLIKELY(
         UNLIKELY(times[0].tv_usec < 0) || UNLIKELY(times[0].tv_usec >= 1000000) ||
         UNLIKELY(times[1].tv_usec < 0) || UNLIKELY(times[1].tv_usec >= 1000000)
       ))
     return -EINVAL;
+  struct FSInternal* fs = reinterpret_cast<struct FSInternal*>(data);
   ScopedLock lock(fs->mtx);
   struct INode* origCwd = fs->cwd.inode;
   if (fdNum != AT_FDCWD) {
