@@ -111,40 +111,44 @@ void DataIterator_New(struct DataIterator* thisArg, struct INode* inode, off_t o
     thisArg->rangeIdx = 0;
     thisArg->atData = false;
     thisArg->isBeforeFirstRange = true;
-  } else if (offset >= inode->dataRanges[inode->dataRangeCount - 1]->offset + inode->dataRanges[inode->dataRangeCount - 1]->size) {
-    thisArg->rangeIdx = inode->dataRangeCount - 1;
-    thisArg->atData = false;
-    thisArg->isBeforeFirstRange = false;
-  } else {
-    thisArg->isBeforeFirstRange = false;
-    off_t low = 0;
-    off_t high = inode->dataRangeCount - 1;
-    while (low <= high) {
-      off_t mid = low + ((high - low) / 2);
-      struct DataRange* range = inode->dataRanges[mid];
-      if (offset >= range->offset) {
-        if (offset < range->offset + range->size) {
-          thisArg->rangeIdx = mid;
-          thisArg->atData = true;
-          break;
-        }
-        low = mid + 1;
-        struct DataRange* nextRange = inode->dataRanges[low];
-        if (offset >= range->offset + range->size &&
-            offset < nextRange->offset) {
-          thisArg->rangeIdx = mid;
-          thisArg->atData = false;
-          break;
-        }
-      } else {
-        high = mid - 1;
-        struct DataRange* prevRange = inode->dataRanges[high];
-        if (offset >= prevRange->offset + prevRange->size &&
-            offset < range->offset) {
-          thisArg->rangeIdx = high;
-          thisArg->atData = false;
-          break;
-        }
+    return;
+  }
+  thisArg->isBeforeFirstRange = false;
+  {
+    struct DataRange* lastRange = inode->dataRanges[inode->dataRangeCount - 1];
+    if (offset >= lastRange->offset + lastRange->size) {
+      thisArg->rangeIdx = inode->dataRangeCount - 1;
+      thisArg->atData = false;
+      return;
+    }
+  }
+  off_t low = 0;
+  off_t high = inode->dataRangeCount - 1;
+  while (low <= high) {
+    off_t mid = low + ((high - low) / 2);
+    struct DataRange* range = inode->dataRanges[mid];
+    if (offset >= range->offset) {
+      if (offset < range->offset + range->size) {
+        thisArg->rangeIdx = mid;
+        thisArg->atData = true;
+        break;
+      }
+      low = mid + 1;
+      struct DataRange* nextRange = inode->dataRanges[low];
+      if (offset >= range->offset + range->size &&
+          offset < nextRange->offset) {
+        thisArg->rangeIdx = mid;
+        thisArg->atData = false;
+        break;
+      }
+    } else {
+      high = mid - 1;
+      struct DataRange* prevRange = inode->dataRanges[high];
+      if (offset >= prevRange->offset + prevRange->size &&
+          offset < range->offset) {
+        thisArg->rangeIdx = high;
+        thisArg->atData = false;
+        break;
       }
     }
   }
@@ -264,30 +268,8 @@ bool INode_IsInSelf(struct INode* thisArg, struct INode* inode) {
 }
 
 struct DataRange* INode_InsertRange(struct INode* thisArg, off_t offset, off_t length, off_t* index) {
-  struct DataRange* range;
-  if (UNLIKELY(!TryAlloc((void**)&range, sizeof(struct DataRange))))
-    goto err_alloc_failed;
-  if (thisArg->dataRangeCount == 0) {
-    if (UNLIKELY(!TryAlloc((void**)&thisArg->dataRanges, sizeof(struct DataRange*))))
-      goto err_after_alloc;
-    range->offset = offset;
-    range->size = length;
-    *index = 0;
-    thisArg->dataRanges[0] = range;
-    thisArg->dataRangeCount = 1;
-    return range;
-  }
-  if (UNLIKELY(!TryRealloc((void**)&thisArg->dataRanges, sizeof(struct DataRange*) * (thisArg->dataRangeCount + 1))))
-    goto err_after_alloc;
-  if (offset > thisArg->dataRanges[thisArg->dataRangeCount - 1]->offset) {
-    range->offset = offset;
-    range->size = length;
-    *index = thisArg->dataRangeCount;
-    thisArg->dataRanges[thisArg->dataRangeCount++] = range;
-    return range;
-  }
-  off_t rangeIdx = -1;
-  {
+  off_t rangeIdx = thisArg->dataRangeCount;
+  if (thisArg->dataRangeCount != 0) {
     off_t low = 0;
     off_t high = thisArg->dataRangeCount - 1;
     while (low <= high) {
@@ -301,12 +283,18 @@ struct DataRange* INode_InsertRange(struct INode* thisArg, off_t offset, off_t l
       }
     }
   }
+  struct DataRange* range;
+  if (UNLIKELY(!TryAlloc((void**)&range, sizeof(struct DataRange))))
+    goto err_alloc_failed;
+  if (UNLIKELY(!TryRealloc((void**)&thisArg->dataRanges, sizeof(struct DataRange*) * (thisArg->dataRangeCount + 1))))
+    goto err_after_alloc;
+  if (rangeIdx != thisArg->dataRangeCount)
+    memmove(&thisArg->dataRanges[rangeIdx + 1], &thisArg->dataRanges[rangeIdx], sizeof(struct DataRange*) * (thisArg->dataRangeCount - rangeIdx));
   range->offset = offset;
   range->size = length;
-  memmove(&thisArg->dataRanges[rangeIdx + 1], &thisArg->dataRanges[rangeIdx], sizeof(struct DataRange*) * (thisArg->dataRangeCount - rangeIdx));
-  *index = rangeIdx;
   thisArg->dataRanges[rangeIdx] = range;
   ++thisArg->dataRangeCount;
+  *index = rangeIdx;
   return range;
 
  err_after_alloc:
@@ -409,18 +397,16 @@ struct DataRange* INode_AllocData(struct INode* thisArg, off_t offset, off_t len
   range->size = newRangeLength;
   if (thisArg->size < offset + length)
     thisArg->size = offset + length;
+  off_t n = 0;
   for (off_t i = rangeIdx + 1; i < thisArg->dataRangeCount; ++i) {
     struct DataRange* range2 = thisArg->dataRanges[i];
-    if (range2->offset < offset + length)
+    if (range2->offset < offset + length) {
       memcpy(&range->data[range2->offset - range->offset], range2->data, range2->size);
-    else {
-      off_t n = i - (rangeIdx + 1);
-      if (UNLIKELY(n == 0))
-        break;
-      INode_RemoveRanges(thisArg, rangeIdx + 1, n);
-      break;
-    }
+      ++n;
+    } else break;
   }
+  if (LIKELY(n != 0))
+    INode_RemoveRanges(thisArg, rangeIdx + 1, n);
   return range;
 }
 void INode_TruncateData(struct INode* thisArg, off_t length) {
@@ -680,12 +666,8 @@ int GetINode(
   struct INode** inode,
   struct INode** parent,
   bool followResolved,
-  int* follow
+  int follow
 ) {
-  int followCount;
-  if (follow)
-    followCount = *follow;
-  else followCount = 0;
   size_t pathLen = strlen(path);
   if (UNLIKELY(pathLen == 0))
     return -ENOENT;
@@ -724,12 +706,12 @@ int GetINode(
         current = current->dents[j].inode;
       }
       if (S_ISLNK(current->mode)) {
-        if (UNLIKELY(followCount++ == 40)) {
+        if (UNLIKELY(follow++ == 40)) {
           err = -ELOOP;
           goto resetName;
         }
         struct INode* targetParent;
-        int res = GetINode(fs, current->target, &current, &targetParent, true, &followCount);
+        int res = GetINode(fs, current->target, &current, &targetParent, true, follow);
         if (UNLIKELY(res != 0)) {
           err = res;
           goto resetName;
@@ -766,10 +748,10 @@ int GetINode(
  out:
   if (followResolved) {
     if (S_ISLNK(current->mode)) {
-      if (UNLIKELY(followCount++ == 40))
+      if (UNLIKELY(follow++ == 40))
         return -ELOOP;
       struct INode* targetParent;
-      int res = GetINode(fs, current->target, &current, &targetParent, true, &followCount);
+      int res = GetINode(fs, current->target, &current, &targetParent, true, follow);
       if (UNLIKELY(res != 0))
         return res;
     }
@@ -779,13 +761,13 @@ int GetINode(
 }
 
 #define GetINodeParent(fs, path, inode, parent) \
-  GetINode(fs, path, inode, parent, false, NULL)
+  GetINode(fs, path, inode, parent, false, 0)
 #define GetINodeParentFollow(fs, path, inode, parent, followResolved) \
-  GetINode(fs, path, inode, parent, followResolved, NULL)
+  GetINode(fs, path, inode, parent, followResolved, 0)
 #define GetINodeNoParent(fs, path, inode) \
-  GetINode(fs, path, inode, NULL, false, NULL)
+  GetINode(fs, path, inode, NULL, false, 0)
 #define GetINodeNoParentFollow(fs, path, inode, followResolved) \
-  GetINode(fs, path, inode, NULL, followResolved, NULL)
+  GetINode(fs, path, inode, NULL, followResolved, 0)
 
 const char* GetLast(const char* path) {
   int pathLen = strlen(path);
