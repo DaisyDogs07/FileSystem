@@ -1,6 +1,21 @@
 #include "FileSystemCpp.h"
 #include "node.h"
 #include "node_buffer.h"
+#include <type_traits>
+
+#define LIKELY(expr) __builtin_expect(!!(expr), 1)
+#define UNLIKELY(expr) __builtin_expect(!!(expr), 0)
+
+namespace {
+  template<typename T>
+  bool TryAlloc(T** ptr, size_t length = 1) {
+    T* newPtr = reinterpret_cast<T*>(malloc(sizeof(T) * length));
+    if (UNLIKELY(!newPtr))
+      return false;
+    *ptr = newPtr;
+    return true;
+  }
+}
 
 using namespace node;
 using namespace v8;
@@ -12,22 +27,15 @@ Persistent<ObjectTemplate> FSInstanceTmpl;
   (x->IsNumber() || x->IsBigInt())
 #define IsStrOrBuf(x) \
   (x->IsString() || Buffer::HasInstance(x))
-#define Int32Val(x) \
-  (x->IsBigInt() \
-    ? static_cast<int32_t>(x.As<BigInt>()->Int64Value()) \
-    : static_cast<int32_t>(x.As<Number>()->Value()))
-#define Uint32Val(x) \
-  (x->IsBigInt() \
-    ? static_cast<uint32_t>(x.As<BigInt>()->Uint64Value()) \
-    : static_cast<uint32_t>(x.As<Number>()->Value()))
-#define Int64Val(x) \
-  (x->IsBigInt() \
-    ? x.As<BigInt>()->Int64Value() \
-    : static_cast<int64_t>(x.As<Number>()->Value()))
-#define Uint64Val(x) \
-  (x->IsBigInt() \
-    ? x.As<BigInt>()->Uint64Value() \
-    : static_cast<uint64_t>(x.As<Number>()->Value()))
+template<typename T>
+T Val(Local<Value> x) {
+  if (x->IsBigInt()) {
+    if (std::is_signed<T>::value)
+      return x.As<BigInt>()->Int64Value();
+    return x.As<BigInt>()->Uint64Value();
+  }
+  return x.As<Number>()->Value();
+}
 #define StringVal(x) \
   (x->IsString() \
     ? *String::Utf8Value(isolate, x.As<String>()) \
@@ -39,7 +47,7 @@ Persistent<ObjectTemplate> FSInstanceTmpl;
 
 #define THROWIFNOTFS(self, method) \
   do { \
-    if (self.IsEmpty()) { \
+    if (UNLIKELY(self.IsEmpty())) { \
       isolate->ThrowException( \
         Exception::TypeError( \
           String::NewFromUtf8Literal( \
@@ -63,7 +71,7 @@ Persistent<ObjectTemplate> FSInstanceTmpl;
     err.As<Object>()->Set( \
       isolate->GetCurrentContext(), \
       String::NewFromUtf8Literal(isolate, "errno"), \
-      Int32::New(isolate, errnum) \
+      Integer::New(isolate, errnum) \
     ).ToChecked(); \
     isolate->ThrowException(err); \
     return; \
@@ -76,7 +84,7 @@ Persistent<ObjectTemplate> FSInstanceTmpl;
   } while (0)
 
 #define ASSERT(expr) { \
-  if (!(expr)) { \
+  if (UNLIKELY(!(expr))) { \
     isolate->ThrowException( \
       Exception::Error( \
         String::NewFromUtf8Literal( \
@@ -89,13 +97,13 @@ Persistent<ObjectTemplate> FSInstanceTmpl;
   } \
 }
 
-void FileSystemCleanup(void*, size_t, void* data) {
+void FileSystemCleanup(void* data, size_t, void*) {
   delete reinterpret_cast<FileSystem*>(data);
 }
 
 void FileSystemConstructor(const FunctionCallbackInfo<Value>& args) {
   Isolate* isolate = args.GetIsolate();
-  if (!args.IsConstructCall()) {
+  if (UNLIKELY(!args.IsConstructCall())) {
     isolate->ThrowException(
       Exception::TypeError(
         String::NewFromUtf8Literal(
@@ -107,9 +115,9 @@ void FileSystemConstructor(const FunctionCallbackInfo<Value>& args) {
     return;
   }
   FileSystem* fs = FileSystem::New();
-  if (!fs)
+  if (UNLIKELY(!fs))
     THROWERR(-errno);
-  std::unique_ptr<BackingStore> ab = ArrayBuffer::NewBackingStore(fs, sizeof(FileSystem), FileSystemCleanup, fs);
+  std::unique_ptr<BackingStore> ab = ArrayBuffer::NewBackingStore(fs, sizeof(FileSystem), FileSystemCleanup, NULL);
   Local<ArrayBuffer> abuf = ArrayBuffer::New(isolate, std::move(ab));
   args.This()->SetInternalField(0, External::New(isolate, fs));
   args.This()->SetInternalField(1, abuf);
@@ -129,10 +137,10 @@ void FileSystemFAccessAt2(const FunctionCallbackInfo<Value>& args) {
   );
   THROWIFERR(
     fs->FAccessAt2(
-      Int32Val(args[0]),
+      Val<int>(args[0]),
       *String::Utf8Value(isolate, args[1].As<String>()),
-      Int32Val(args[2]),
-      Uint32Val(args[3])
+      Val<int>(args[2]),
+      Val<int>(args[3])
     )
   );
 }
@@ -149,9 +157,9 @@ void FileSystemFAccessAt(const FunctionCallbackInfo<Value>& args) {
   );
   THROWIFERR(
     fs->FAccessAt(
-      Int32Val(args[0]),
+      Val<int>(args[0]),
       *String::Utf8Value(isolate, args[1].As<String>()),
-      Int32Val(args[2])
+      Val<int>(args[2])
     )
   );
 }
@@ -168,7 +176,7 @@ void FileSystemAccess(const FunctionCallbackInfo<Value>& args) {
   THROWIFERR(
     fs->Access(
       *String::Utf8Value(isolate, args[0].As<String>()),
-      Int32Val(args[1])
+      Val<int>(args[1])
     )
   );
 }
@@ -187,14 +195,14 @@ void FileSystemOpenAt(const FunctionCallbackInfo<Value>& args) {
   int res;
   THROWIFERR(
     res = fs->OpenAt(
-      Int32Val(args[0]),
+      Val<int>(args[0]),
       *String::Utf8Value(isolate, args[1].As<String>()),
-      Int32Val(args[2]),
-      Uint32Val(args[3])
+      Val<int>(args[2]),
+      Val<mode_t>(args[3])
     )
   );
   args.GetReturnValue().Set(
-    Int32::New(
+    Integer::New(
       isolate,
       res
     )
@@ -215,12 +223,12 @@ void FileSystemOpen(const FunctionCallbackInfo<Value>& args) {
   THROWIFERR(
     res = fs->Open(
       *String::Utf8Value(isolate, args[0].As<String>()),
-      Int32Val(args[1]),
-      Uint32Val(args[2])
+      Val<int>(args[1]),
+      Val<mode_t>(args[2])
     )
   );
   args.GetReturnValue().Set(
-    Int32::New(
+    Integer::New(
       isolate,
       res
     )
@@ -240,11 +248,11 @@ void FileSystemCreat(const FunctionCallbackInfo<Value>& args) {
   THROWIFERR(
     res = fs->Creat(
       *String::Utf8Value(isolate, args[0].As<String>()),
-      Uint32Val(args[1])
+      Val<mode_t>(args[1])
     )
   );
   args.GetReturnValue().Set(
-    Int32::New(
+    Integer::New(
       isolate,
       res
     )
@@ -260,7 +268,7 @@ void FileSystemClose(const FunctionCallbackInfo<Value>& args) {
     self->GetInternalField(0).As<External>()->Value()
   );
   THROWIFERR(
-    fs->Close(Int32Val(args[0]))
+    fs->Close(Val<unsigned int>(args[0]))
   );
 }
 void FileSystemCloseRange(const FunctionCallbackInfo<Value>& args) {
@@ -275,8 +283,8 @@ void FileSystemCloseRange(const FunctionCallbackInfo<Value>& args) {
   );
   THROWIFERR(
     fs->CloseRange(
-      Int32Val(args[0]),
-      Int32Val(args[1]),
+      Val<unsigned int>(args[0]),
+      Val<unsigned int>(args[1]),
       0
     )
   );
@@ -294,9 +302,9 @@ void FileSystemMkNodAt(const FunctionCallbackInfo<Value>& args) {
   );
   THROWIFERR(
     fs->MkNodAt(
-      Int32Val(args[0]),
+      Val<int>(args[0]),
       *String::Utf8Value(isolate, args[1].As<String>()),
-      Uint32Val(args[2]),
+      Val<mode_t>(args[2]),
       0
     )
   );
@@ -314,7 +322,7 @@ void FileSystemMkNod(const FunctionCallbackInfo<Value>& args) {
   THROWIFERR(
     fs->MkNod(
       *String::Utf8Value(isolate, args[0].As<String>()),
-      Uint32Val(args[1]),
+      Val<mode_t>(args[1]),
       0
     )
   );
@@ -332,9 +340,9 @@ void FileSystemMkDirAt(const FunctionCallbackInfo<Value>& args) {
   );
   THROWIFERR(
     fs->MkDirAt(
-      Int32Val(args[0]),
+      Val<int>(args[0]),
       *String::Utf8Value(isolate, args[1].As<String>()),
-      Uint32Val(args[2])
+      Val<mode_t>(args[2])
     )
   );
 }
@@ -351,7 +359,7 @@ void FileSystemMkDir(const FunctionCallbackInfo<Value>& args) {
   THROWIFERR(
     fs->MkDir(
       *String::Utf8Value(isolate, args[0].As<String>()),
-      Uint32Val(args[1])
+      Val<mode_t>(args[1])
     )
   );
 }
@@ -369,7 +377,7 @@ void FileSystemSymLinkAt(const FunctionCallbackInfo<Value>& args) {
   THROWIFERR(
     fs->SymLinkAt(
       *String::Utf8Value(isolate, args[0].As<String>()),
-      Int32Val(args[1]),
+      Val<int>(args[1]),
       *String::Utf8Value(isolate, args[2].As<String>())
     )
   );
@@ -401,20 +409,25 @@ void FileSystemReadLinkAt(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  char buf[PATH_MAX];
+  char* buf;
+  if (UNLIKELY(!TryAlloc(&buf, PATH_MAX)))
+    THROWERR(-ENOMEM);
   int res;
   THROWIFERR(
     res = fs->ReadLinkAt(
-      Int32Val(args[0]),
+      Val<int>(args[0]),
       *String::Utf8Value(isolate, args[1].As<String>()),
       buf,
       PATH_MAX
     )
   );
-  buf[res] = '\0';
-  args.GetReturnValue().Set(
-    String::NewFromUtf8(isolate, buf).ToLocalChecked()
+  buf = reinterpret_cast<char*>(
+    realloc(buf, res)
   );
+  args.GetReturnValue().Set(
+    String::NewFromUtf8(isolate, buf, NewStringType::kNormal, res).ToLocalChecked()
+  );
+  delete buf;
 }
 void FileSystemReadLink(const FunctionCallbackInfo<Value>& args) {
   Isolate* isolate = args.GetIsolate();
@@ -425,7 +438,9 @@ void FileSystemReadLink(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  char buf[PATH_MAX];
+  char* buf;
+  if (UNLIKELY(!TryAlloc(&buf, PATH_MAX)))
+    THROWERR(-ENOMEM);
   int res;
   THROWIFERR(
     res = fs->ReadLink(
@@ -434,10 +449,13 @@ void FileSystemReadLink(const FunctionCallbackInfo<Value>& args) {
       PATH_MAX
     )
   );
-  buf[res] = '\0';
-  args.GetReturnValue().Set(
-    String::NewFromUtf8(isolate, buf).ToLocalChecked()
+  buf = reinterpret_cast<char*>(
+    realloc(buf, res)
   );
+  args.GetReturnValue().Set(
+    String::NewFromUtf8(isolate, buf, NewStringType::kNormal, res).ToLocalChecked()
+  );
+  delete buf;
 }
 void FileSystemGetDents(const FunctionCallbackInfo<Value>& args) {
   Isolate* isolate = args.GetIsolate();
@@ -452,11 +470,13 @@ void FileSystemGetDents(const FunctionCallbackInfo<Value>& args) {
   uint32_t count = std::numeric_limits<uint32_t>::max();
   if (args.Length() == 2) {
     ASSERT(IsNumeric(args[1]));
-    count = Uint32Val(args[1]);
+    count = Val<uint32_t>(args[1]);
   }
   Local<Array> dentArr = Array::New(isolate);
-  char buf[1024];
-  unsigned int fdNum = Uint32Val(args[0]);
+  char* buf;
+  if (UNLIKELY(!TryAlloc(&buf, 1024)))
+    THROWERR(-ENOMEM);
+  unsigned int fdNum = Val<unsigned int>(args[0]);
   off_t off = fs->LSeek(fdNum, 0, SEEK_CUR);
   uint32_t i = 0;
   while (i < count) {
@@ -501,6 +521,7 @@ void FileSystemGetDents(const FunctionCallbackInfo<Value>& args) {
       j += dent->d_reclen;
     }
   }
+  delete buf;
   fs->LSeek(fdNum, off, SEEK_SET);
   args.GetReturnValue().Set(dentArr);
 }
@@ -519,11 +540,11 @@ void FileSystemLinkAt(const FunctionCallbackInfo<Value>& args) {
   );
   THROWIFERR(
     fs->LinkAt(
-      Int32Val(args[0]),
+      Val<int>(args[0]),
       *String::Utf8Value(isolate, args[1].As<String>()),
-      Int32Val(args[2]),
+      Val<int>(args[2]),
       *String::Utf8Value(isolate, args[3].As<String>()),
-      Int32Val(args[4])
+      Val<int>(args[4])
     )
   );
 }
@@ -557,9 +578,9 @@ void FileSystemUnlinkAt(const FunctionCallbackInfo<Value>& args) {
   );
   THROWIFERR(
     fs->UnlinkAt(
-      Int32Val(args[0]),
+      Val<int>(args[0]),
       *String::Utf8Value(isolate, args[1].As<String>()),
-      Int32Val(args[2])
+      Val<int>(args[2])
     )
   );
 }
@@ -608,11 +629,11 @@ void FileSystemRenameAt2(const FunctionCallbackInfo<Value>& args) {
   );
   THROWIFERR(
     fs->RenameAt2(
-      Int32Val(args[0]),
+      Val<int>(args[0]),
       *String::Utf8Value(isolate, args[1].As<String>()),
-      Int32Val(args[2]),
+      Val<int>(args[2]),
       *String::Utf8Value(isolate, args[3].As<String>()),
-      Int32Val(args[4])
+      Val<unsigned int>(args[4])
     )
   );
 }
@@ -630,9 +651,9 @@ void FileSystemRenameAt(const FunctionCallbackInfo<Value>& args) {
   );
   THROWIFERR(
     fs->RenameAt(
-      Int32Val(args[0]),
+      Val<int>(args[0]),
       *String::Utf8Value(isolate, args[1].As<String>()),
-      Int32Val(args[2]),
+      Val<int>(args[2]),
       *String::Utf8Value(isolate, args[3].As<String>())
     )
   );
@@ -668,9 +689,9 @@ void FileSystemLSeek(const FunctionCallbackInfo<Value>& args) {
   off_t res;
   THROWIFERR(
     res = fs->LSeek(
-      Uint32Val(args[0]),
-      Int64Val(args[1]),
-      Uint32Val(args[2])
+      Val<unsigned int>(args[0]),
+      Val<off_t>(args[1]),
+      Val<unsigned int>(args[2])
     )
   );
   args.GetReturnValue().Set(BigInt::New(isolate, res));
@@ -685,19 +706,22 @@ void FileSystemRead(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  unsigned int fdNum = Uint32Val(args[0]);
+  unsigned int fdNum = Val<unsigned int>(args[0]);
   struct stat s;
-  ssize_t res;
-  THROWIFERR(res = fs->FStat(fdNum, &s));
+  off_t off;
+  THROWIFERR(fs->FStat(fdNum, &s));
+  THROWIFERR(off = fs->LSeek(fdNum, 0, SEEK_CUR));
   size_t bufLen = std::min(
     std::min(
-      Uint64Val(args[1]),
-      (size_t)s.st_size
+      Val<size_t>(args[1]),
+      (size_t)(s.st_size - off)
     ),
-    (size_t)std::numeric_limits<int>::max()
+    (size_t)0x7ffff000
   );
-  char* buf = new char[bufLen + 1];
-  res = fs->Read(
+  char* buf;
+  if (UNLIKELY(!TryAlloc(&buf, bufLen + 1)))
+    THROWERR(-ENOMEM);
+  ssize_t res = fs->Read(
     fdNum,
     buf,
     bufLen
@@ -729,8 +753,18 @@ void FileSystemReadv(const FunctionCallbackInfo<Value>& args) {
   );
   Local<Context> context = isolate->GetCurrentContext();
   Local<Array> buffers = args[1].As<Array>();
-  struct iovec* iov = new iovec[buffers->Length()];
-  for (uint32_t i = 0; i != buffers->Length(); ++i) {
+  uint32_t length = std::min(buffers->Length(), (uint32_t)1024);
+  for (uint32_t i = 0; i != length; ++i) {
+    Local<Value> buf = buffers->Get(
+      context,
+      i
+    ).ToLocalChecked();
+    ASSERT(Buffer::HasInstance(buf));
+  }
+  struct iovec* iov;
+  if (UNLIKELY(!TryAlloc(&iov, length)))
+    THROWERR(-ENOMEM);
+  for (uint32_t i = 0; i != length; ++i) {
     Local<Value> buf = buffers->Get(
       context,
       i
@@ -740,11 +774,11 @@ void FileSystemReadv(const FunctionCallbackInfo<Value>& args) {
     iov[i].iov_len = Buffer::Length(buf);
   }
   ssize_t res = fs->Readv(
-    Uint32Val(args[0]),
+    Val<unsigned int>(args[0]),
     iov,
-    buffers->Length()
+    length
   );
-  delete[] iov;
+  delete iov;
   if (res < 0)
     THROWERR(res);
   args.GetReturnValue().Set(BigInt::New(isolate, res));
@@ -760,23 +794,26 @@ void FileSystemPRead(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  unsigned int fdNum = Uint32Val(args[0]);
+  unsigned int fdNum = Val<unsigned int>(args[0]);
   struct stat s;
-  ssize_t res;
-  THROWIFERR(res = fs->FStat(fdNum, &s));
+  off_t off;
+  THROWIFERR(fs->FStat(fdNum, &s));
+  THROWIFERR(off = fs->LSeek(fdNum, 0, SEEK_CUR));
   size_t bufLen = std::min(
     std::min(
-      Uint64Val(args[2]),
-      (size_t)s.st_size
+      Val<size_t>(args[2]),
+      (size_t)(s.st_size - off)
     ),
-    (size_t)std::numeric_limits<int>::max()
+    (size_t)0x7ffff000
   );
-  char* buf = new char[bufLen + 1];
-  res = fs->PRead(
+  char* buf;
+  if (UNLIKELY(!TryAlloc(&buf, bufLen + 1)))
+    THROWERR(-ENOMEM);
+  ssize_t res = fs->PRead(
     fdNum,
     buf,
     bufLen,
-    Int64Val(args[1])
+    Val<off_t>(args[1])
   );
   if (res < 0) {
     delete buf;
@@ -806,23 +843,32 @@ void FileSystemPReadv(const FunctionCallbackInfo<Value>& args) {
   );
   Local<Context> context = isolate->GetCurrentContext();
   Local<Array> buffers = args[1].As<Array>();
-  struct iovec* iov = new iovec[buffers->Length()];
-  for (uint32_t i = 0; i != buffers->Length(); ++i) {
+  uint32_t length = std::min(buffers->Length(), (uint32_t)1024);
+  for (uint32_t i = 0; i != length; ++i) {
     Local<Value> buf = buffers->Get(
       context,
       i
     ).ToLocalChecked();
     ASSERT(Buffer::HasInstance(buf));
+  }
+  struct iovec* iov;
+  if (UNLIKELY(!TryAlloc(&iov, length)))
+    THROWERR(-ENOMEM);
+  for (uint32_t i = 0; i != length; ++i) {
+    Local<Value> buf = buffers->Get(
+      context,
+      i
+    ).ToLocalChecked();
     iov[i].iov_base = Buffer::Data(buf);
     iov[i].iov_len = Buffer::Length(buf);
   }
   ssize_t res = fs->PReadv(
-    Uint32Val(args[0]),
+    Val<unsigned int>(args[0]),
     iov,
-    buffers->Length(),
-    Int64Val(args[2])
+    length,
+    Val<off_t>(args[2])
   );
-  delete[] iov;
+  delete iov;
   if (res < 0)
     THROWERR(res);
   args.GetReturnValue().Set(BigInt::New(isolate, res));
@@ -842,14 +888,14 @@ void FileSystemWrite(const FunctionCallbackInfo<Value>& args) {
   size_t count;
   if (args.Length() == 3) {
     size_t strLen = StringLen(args[1]);
-    count = Uint64Val(args[2]);
+    count = Val<size_t>(args[2]);
     if (count > strLen)
       count = strLen;
   } else count = StringLen(args[1]);
   ssize_t res;
   THROWIFERR(
     res = fs->Write(
-      Uint32Val(args[0]),
+      Val<unsigned int>(args[0]),
       StringVal(args[1]),
       count
     )
@@ -868,22 +914,31 @@ void FileSystemWritev(const FunctionCallbackInfo<Value>& args) {
   );
   Local<Context> context = isolate->GetCurrentContext();
   Local<Array> buffers = args[1].As<Array>();
-  struct iovec* iov = new iovec[buffers->Length()];
-  for (uint32_t i = 0; i != buffers->Length(); ++i) {
+  uint32_t length = std::min(buffers->Length(), (uint32_t)1024);
+  for (uint32_t i = 0; i != length; ++i) {
     Local<Value> buf = buffers->Get(
       context,
       i
     ).ToLocalChecked();
     ASSERT(Buffer::HasInstance(buf));
+  }
+  struct iovec* iov;
+  if (UNLIKELY(!TryAlloc(&iov, length)))
+    THROWERR(-ENOMEM);
+  for (uint32_t i = 0; i != length; ++i) {
+    Local<Value> buf = buffers->Get(
+      context,
+      i
+    ).ToLocalChecked();
     iov[i].iov_base = Buffer::Data(buf);
     iov[i].iov_len = Buffer::Length(buf);
   }
   ssize_t res = fs->Writev(
-    Uint32Val(args[0]),
+    Val<unsigned int>(args[0]),
     iov,
-    buffers->Length()
+    length
   );
-  delete[] iov;
+  delete iov;
   if (res < 0)
     THROWERR(res);
   args.GetReturnValue().Set(BigInt::New(isolate, res));
@@ -904,17 +959,17 @@ void FileSystemPWrite(const FunctionCallbackInfo<Value>& args) {
   size_t count;
   if (args.Length() == 4) {
     size_t strLen = StringLen(args[1]);
-    count = Uint64Val(args[3]);
+    count = Val<size_t>(args[3]);
     if (count > strLen)
       count = strLen;
   } else count = StringLen(args[1]);
   ssize_t res;
   THROWIFERR(
     res = fs->PWrite(
-      Uint32Val(args[0]),
+      Val<unsigned int>(args[0]),
       StringVal(args[1]),
       count,
-      Uint64Val(args[2])
+      Val<off_t>(args[2])
     )
   );
   args.GetReturnValue().Set(BigInt::New(isolate, res));
@@ -932,23 +987,32 @@ void FileSystemPWritev(const FunctionCallbackInfo<Value>& args) {
   );
   Local<Context> context = isolate->GetCurrentContext();
   Local<Array> buffers = args[1].As<Array>();
-  struct iovec* iov = new iovec[buffers->Length()];
-  for (uint32_t i = 0; i != buffers->Length(); ++i) {
+  uint32_t length = std::min(buffers->Length(), (uint32_t)1024);
+  for (uint32_t i = 0; i != length; ++i) {
     Local<Value> buf = buffers->Get(
       context,
       i
     ).ToLocalChecked();
     ASSERT(Buffer::HasInstance(buf));
+  }
+  struct iovec* iov;
+  if (UNLIKELY(!TryAlloc(&iov, length)))
+    THROWERR(-ENOMEM);
+  for (uint32_t i = 0; i != length; ++i) {
+    Local<Value> buf = buffers->Get(
+      context,
+      i
+    ).ToLocalChecked();
     iov[i].iov_base = Buffer::Data(buf);
     iov[i].iov_len = Buffer::Length(buf);
   }
   ssize_t res = fs->PWritev(
-    Uint32Val(args[0]),
+    Val<unsigned int>(args[0]),
     iov,
-    buffers->Length(),
-    Int64Val(args[2])
+    length,
+    Val<off_t>(args[2])
   );
-  delete[] iov;
+  delete iov;
   if (res < 0)
     THROWERR(res);
   args.GetReturnValue().Set(BigInt::New(isolate, res));
@@ -967,14 +1031,14 @@ void FileSystemSendFile(const FunctionCallbackInfo<Value>& args) {
   );
   off_t off;
   if (!args[2]->IsNull())
-    off = Int64Val(args[2]);
+    off = Val<off_t>(args[2]);
   ssize_t res;
   THROWIFERR(
     res = fs->SendFile(
-      Uint32Val(args[0]),
-      Uint32Val(args[1]),
+      Val<unsigned int>(args[0]),
+      Val<unsigned int>(args[1]),
       args[2]->IsNull() ? NULL : &off,
-      Uint64Val(args[3])
+      Val<size_t>(args[3])
     )
   );
   args.GetReturnValue().Set(BigInt::New(isolate, res));
@@ -991,8 +1055,8 @@ void FileSystemFTruncate(const FunctionCallbackInfo<Value>& args) {
   );
   THROWIFERR(
     fs->FTruncate(
-      Uint32Val(args[0]),
-      Int64Val(args[1])
+      Val<unsigned int>(args[0]),
+      Val<off_t>(args[1])
     )
   );
 }
@@ -1009,7 +1073,7 @@ void FileSystemTruncate(const FunctionCallbackInfo<Value>& args) {
   THROWIFERR(
     fs->Truncate(
       *String::Utf8Value(isolate, args[0].As<String>()),
-      Int64Val(args[1])
+      Val<off_t>(args[1])
     )
   );
 }
@@ -1026,9 +1090,9 @@ void FileSystemFChModAt(const FunctionCallbackInfo<Value>& args) {
   );
   THROWIFERR(
     fs->FChModAt(
-      Int32Val(args[0]),
+      Val<int>(args[0]),
       *String::Utf8Value(isolate, args[1].As<String>()),
-      Uint32Val(args[2])
+      Val<mode_t>(args[2])
     )
   );
 }
@@ -1044,8 +1108,8 @@ void FileSystemFChMod(const FunctionCallbackInfo<Value>& args) {
   );
   THROWIFERR(
     fs->FChMod(
-      Uint32Val(args[0]),
-      Uint32Val(args[1])
+      Val<unsigned int>(args[0]),
+      Val<mode_t>(args[1])
     )
   );
 }
@@ -1062,7 +1126,7 @@ void FileSystemChMod(const FunctionCallbackInfo<Value>& args) {
   THROWIFERR(
     fs->ChMod(
       *String::Utf8Value(isolate, args[0].As<String>()),
-      Uint32Val(args[1])
+      Val<mode_t>(args[1])
     )
   );
 }
@@ -1142,11 +1206,6 @@ Local<Object> StatToObj(Isolate* isolate, struct stat s) {
   SetTimeProp(isolate, statObj, "st_atim", s.st_atim.tv_sec, s.st_atim.tv_nsec);
   SetTimeProp(isolate, statObj, "st_mtim", s.st_mtim.tv_sec, s.st_mtim.tv_nsec);
   SetTimeProp(isolate, statObj, "st_ctim", s.st_ctim.tv_sec, s.st_ctim.tv_nsec);
-  statObj->Set(
-    context,
-    String::NewFromUtf8Literal(isolate, "st_blocks"),
-    BigInt::NewFromUnsigned(isolate, s.st_blocks)
-  ).Check();
   return statObj;
 }
 
@@ -1162,7 +1221,7 @@ void FileSystemFStat(const FunctionCallbackInfo<Value>& args) {
   struct stat s;
   THROWIFERR(
     fs->FStat(
-      Uint32Val(args[0]),
+      Val<unsigned int>(args[0]),
       &s
     )
   );
@@ -1238,11 +1297,6 @@ Local<Object> StatxToObj(Isolate* isolate, struct statx s) {
   SetTimeProp(isolate, statxObj, "stx_mtime", s.stx_mtime.tv_sec, s.stx_mtime.tv_nsec);
   SetTimeProp(isolate, statxObj, "stx_ctime", s.stx_ctime.tv_sec, s.stx_ctime.tv_nsec);
   SetTimeProp(isolate, statxObj, "stx_btime", s.stx_btime.tv_sec, s.stx_btime.tv_nsec);
-  statxObj->Set(
-    context,
-    String::NewFromUtf8Literal(isolate, "stx_blocks"),
-    BigInt::NewFromUnsigned(isolate, s.stx_blocks)
-  ).Check();
   return statxObj;
 }
 
@@ -1261,10 +1315,10 @@ void FileSystemStatx(const FunctionCallbackInfo<Value>& args) {
   struct statx s;
   THROWIFERR(
     fs->Statx(
-      Int32Val(args[0]),
+      Val<int>(args[0]),
       *String::Utf8Value(isolate, args[1].As<String>()),
-      Int32Val(args[2]),
-      Int32Val(args[3]),
+      Val<int>(args[2]),
+      Val<int>(args[3]),
       &s
     )
   );
@@ -1314,10 +1368,10 @@ void FileSystemUTimeNsAt(const FunctionCallbackInfo<Value>& args) {
   }
   THROWIFERR(
     fs->UTimeNsAt(
-      Int32Val(args[0]),
+      Val<int>(args[0]),
       *String::Utf8Value(isolate, args[1].As<String>()),
       args[2]->IsNull() ? NULL : times,
-      Int32Val(args[3])
+      Val<int>(args[3])
     )
   );
 }
@@ -1356,7 +1410,7 @@ void FileSystemFUTimesAt(const FunctionCallbackInfo<Value>& args) {
   }
   THROWIFERR(
     fs->FUTimesAt(
-      Int32Val(args[0]),
+      Val<unsigned int>(args[0]),
       *String::Utf8Value(isolate, args[1].As<String>()),
       args[2]->IsNull() ? NULL : times
     )
@@ -1462,6 +1516,7 @@ void FileSystemLoadFrom(const FunctionCallbackInfo<Value>& args) {
   Isolate* isolate = args.GetIsolate();
   ASSERT(args.Length() == 1);
   ASSERT(args[0]->IsString());
+  errno = 0;
   FileSystem* fs = fs->LoadFromFile(
     *String::Utf8Value(isolate, args[0].As<String>())
   );
@@ -1472,7 +1527,6 @@ void FileSystemLoadFrom(const FunctionCallbackInfo<Value>& args) {
           String::NewFromUtf8(isolate, strerror(errno)).ToLocalChecked()
         )
       );
-      errno = 0;
     } else {
       isolate->ThrowException(
         Exception::Error(
@@ -1484,7 +1538,7 @@ void FileSystemLoadFrom(const FunctionCallbackInfo<Value>& args) {
   }
   Local<Context> context = isolate->GetCurrentContext();
   Local<Object> fsObj = FSInstanceTmpl.Get(isolate)->NewInstance(context).ToLocalChecked();
-  std::unique_ptr<BackingStore> ab = ArrayBuffer::NewBackingStore(fs, sizeof(FileSystem), FileSystemCleanup, fs);
+  std::unique_ptr<BackingStore> ab = ArrayBuffer::NewBackingStore(fs, sizeof(FileSystem), FileSystemCleanup, NULL);
   Local<ArrayBuffer> abuf = ArrayBuffer::New(isolate, std::move(ab));
   fsObj->SetInternalField(0, External::New(isolate, fs));
   fsObj->SetInternalField(1, abuf);

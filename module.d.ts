@@ -17,7 +17,6 @@ declare module "@daisydogs07/filesystem" {
     st_atim: TimeSpec;
     st_mtim: TimeSpec;
     st_ctim: TimeSpec;
-    st_blocks: BigInt;
   }
   interface Statx {
     stx_ino: BigInt;
@@ -28,7 +27,6 @@ declare module "@daisydogs07/filesystem" {
     stx_mtime: TimeSpec;
     stx_ctime: TimeSpec;
     stx_btime: TimeSpec;
-    stx_blocks: BigInt;
   }
 
   class FileSystem {
