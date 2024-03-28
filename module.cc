@@ -6,6 +6,9 @@
 #define LIKELY(expr) __builtin_expect(!!(expr), 1)
 #define UNLIKELY(expr) __builtin_expect(!!(expr), 0)
 
+using namespace node;
+using namespace v8;
+
 namespace {
   template<typename T>
   bool TryAlloc(T** ptr, size_t length = 1) {
@@ -15,35 +18,23 @@ namespace {
     *ptr = newPtr;
     return true;
   }
+  template<typename T>
+  T Val(Local<Value> x) {
+    if (x->IsBigInt()) {
+      if (std::is_signed<T>::value)
+        return x.As<BigInt>()->Int64Value();
+      return x.As<BigInt>()->Uint64Value();
+    }
+    return x.As<Number>()->Value();
+  }
+  Persistent<FunctionTemplate> FSConstructorTmpl;
+  Persistent<ObjectTemplate> FSInstanceTmpl;
 }
-
-using namespace node;
-using namespace v8;
-
-Persistent<FunctionTemplate> FSConstructorTmpl;
-Persistent<ObjectTemplate> FSInstanceTmpl;
 
 #define IsNumeric(x) \
   (x->IsNumber() || x->IsBigInt())
 #define IsStrOrBuf(x) \
   (x->IsString() || Buffer::HasInstance(x))
-template<typename T>
-T Val(Local<Value> x) {
-  if (x->IsBigInt()) {
-    if (std::is_signed<T>::value)
-      return x.As<BigInt>()->Int64Value();
-    return x.As<BigInt>()->Uint64Value();
-  }
-  return x.As<Number>()->Value();
-}
-#define StringVal(x) \
-  (x->IsString() \
-    ? *String::Utf8Value(isolate, x.As<String>()) \
-    : Buffer::Data(x))
-#define StringLen(x) \
-  (x->IsString() \
-    ? static_cast<size_t>(x.As<String>()->Utf8Length(isolate)) \
-    : Buffer::Length(x))
 
 #define THROWIFNOTFS(self, method) \
   do { \
@@ -801,7 +792,7 @@ void FileSystemPRead(const FunctionCallbackInfo<Value>& args) {
   THROWIFERR(off = fs->LSeek(fdNum, 0, SEEK_CUR));
   size_t bufLen = std::min(
     std::min(
-      Val<size_t>(args[2]),
+      Val<size_t>(args[1]),
       (size_t)(s.st_size - off)
     ),
     (size_t)0x7ffff000
@@ -813,7 +804,7 @@ void FileSystemPRead(const FunctionCallbackInfo<Value>& args) {
     fdNum,
     buf,
     bufLen,
-    Val<off_t>(args[1])
+    Val<off_t>(args[2])
   );
   if (res < 0) {
     delete buf;
@@ -885,21 +876,33 @@ void FileSystemWrite(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
+  bool isString = args[1]->IsString();
+  size_t strLen = isString
+    ? args[1].As<String>()->Utf8Length(isolate)
+    : Buffer::Length(args[1]);
   size_t count;
   if (args.Length() == 3) {
-    size_t strLen = StringLen(args[1]);
     count = Val<size_t>(args[2]);
     if (count > strLen)
       count = strLen;
-  } else count = StringLen(args[1]);
+  } else count = strLen;
+  char* buf;
+  if (isString) {
+    if (UNLIKELY(!TryAlloc(&buf, count)))
+      THROWERR(-ENOMEM);
+    Local<String> str = args[1].As<String>();
+    str->WriteUtf8(isolate, buf, count);
+  } else buf = Buffer::Data(args[1]);
   ssize_t res;
   THROWIFERR(
     res = fs->Write(
       Val<unsigned int>(args[0]),
-      StringVal(args[1]),
+      buf,
       count
     )
   );
+  if (isString)
+    delete buf;
   args.GetReturnValue().Set(BigInt::New(isolate, res));
 }
 void FileSystemWritev(const FunctionCallbackInfo<Value>& args) {
@@ -956,22 +959,34 @@ void FileSystemPWrite(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
+  bool isString = args[1]->IsString();
+  size_t strLen = isString
+    ? args[1].As<String>()->Utf8Length(isolate)
+    : Buffer::Length(args[1]);
   size_t count;
   if (args.Length() == 4) {
-    size_t strLen = StringLen(args[1]);
     count = Val<size_t>(args[3]);
     if (count > strLen)
       count = strLen;
-  } else count = StringLen(args[1]);
+  } else count = strLen;
+  char* buf;
+  if (isString) {
+    if (UNLIKELY(!TryAlloc(&buf, count)))
+      THROWERR(-ENOMEM);
+    Local<String> str = args[1].As<String>();
+    str->WriteUtf8(isolate, buf, count);
+  } else buf = Buffer::Data(args[1]);
   ssize_t res;
   THROWIFERR(
     res = fs->PWrite(
       Val<unsigned int>(args[0]),
-      StringVal(args[1]),
+      buf,
       count,
       Val<off_t>(args[2])
     )
   );
+  if (isString)
+    delete buf;
   args.GetReturnValue().Set(BigInt::New(isolate, res));
 }
 void FileSystemPWritev(const FunctionCallbackInfo<Value>& args) {
