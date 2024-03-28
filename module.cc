@@ -21,7 +21,7 @@ namespace {
   template<typename T>
   T Val(Local<Value> x) {
     if (x->IsBigInt()) {
-      if (std::is_signed<T>::value)
+      if constexpr (std::is_signed<T>::value)
         return x.As<BigInt>()->Int64Value();
       return x.As<BigInt>()->Uint64Value();
     }
@@ -43,7 +43,8 @@ namespace {
         Exception::TypeError( \
           String::NewFromUtf8Literal( \
             isolate, \
-            method " requires that 'this' be a FileSystem" \
+            method " requires that 'this' be a FileSystem", \
+            NewStringType::kInternalized \
           ) \
         ) \
       ); \
@@ -56,12 +57,13 @@ namespace {
     Local<Value> err = Exception::Error( \
       String::NewFromUtf8( \
         isolate, \
-        strerror(errnum) \
+        strerror(errnum), \
+        NewStringType::kInternalized \
       ).ToLocalChecked() \
     ); \
     err.As<Object>()->Set( \
       isolate->GetCurrentContext(), \
-      String::NewFromUtf8Literal(isolate, "errno"), \
+      String::NewFromUtf8Literal(isolate, "errno", NewStringType::kInternalized), \
       Integer::New(isolate, errnum) \
     ).ToChecked(); \
     isolate->ThrowException(err); \
@@ -80,7 +82,8 @@ namespace {
       Exception::Error( \
         String::NewFromUtf8Literal( \
           isolate, \
-          "Assertion \"" #expr "\" failed" \
+          "Assertion \"" #expr "\" failed", \
+          NewStringType::kInternalized \
         ) \
       ) \
     ); \
@@ -99,7 +102,8 @@ void FileSystemConstructor(const FunctionCallbackInfo<Value>& args) {
       Exception::TypeError(
         String::NewFromUtf8Literal(
           isolate,
-          "Constructor FileSystem requires 'new'"
+          "Constructor FileSystem requires 'new'",
+          NewStringType::kInternalized
         )
       )
     );
@@ -416,7 +420,7 @@ void FileSystemReadLinkAt(const FunctionCallbackInfo<Value>& args) {
     realloc(buf, res)
   );
   args.GetReturnValue().Set(
-    String::NewFromUtf8(isolate, buf, NewStringType::kNormal, res).ToLocalChecked()
+    String::NewFromUtf8(isolate, buf, NewStringType::kInternalized, res).ToLocalChecked()
   );
   delete buf;
 }
@@ -444,7 +448,7 @@ void FileSystemReadLink(const FunctionCallbackInfo<Value>& args) {
     realloc(buf, res)
   );
   args.GetReturnValue().Set(
-    String::NewFromUtf8(isolate, buf, NewStringType::kNormal, res).ToLocalChecked()
+    String::NewFromUtf8(isolate, buf, NewStringType::kInternalized, res).ToLocalChecked()
   );
   delete buf;
 }
@@ -486,22 +490,22 @@ void FileSystemGetDents(const FunctionCallbackInfo<Value>& args) {
       Local<Object> dentObj = Object::New(isolate);
       dentObj->Set(
         context,
-        String::NewFromUtf8Literal(isolate, "d_ino"),
+        String::NewFromUtf8Literal(isolate, "d_ino", NewStringType::kInternalized),
         BigInt::NewFromUnsigned(isolate, dent->d_ino)
       ).Check();
       dentObj->Set(
         context,
-        String::NewFromUtf8Literal(isolate, "d_off"),
+        String::NewFromUtf8Literal(isolate, "d_off", NewStringType::kInternalized),
         BigInt::NewFromUnsigned(isolate, dent->d_off)
       ).Check();
       dentObj->Set(
         context,
-        String::NewFromUtf8Literal(isolate, "d_name"),
+        String::NewFromUtf8Literal(isolate, "d_name", NewStringType::kInternalized),
         String::NewFromUtf8(isolate, dent->d_name).ToLocalChecked()
       ).Check();
       dentObj->Set(
         context,
-        String::NewFromUtf8Literal(isolate, "d_type"),
+        String::NewFromUtf8Literal(isolate, "d_type", NewStringType::kInternalized),
         Integer::New(isolate, (buf + j)[dent->d_reclen - 1])
       ).Check();
       dentArr->Set(
@@ -1171,7 +1175,7 @@ void FileSystemGetCwd(const FunctionCallbackInfo<Value>& args) {
   char buf[PATH_MAX];
   THROWIFERR(fs->GetCwd(buf, PATH_MAX));
   args.GetReturnValue().Set(
-    String::NewFromUtf8(isolate, buf).ToLocalChecked()
+    String::NewFromUtf8(isolate, buf, NewStringType::kInternalized).ToLocalChecked()
   );
 }
 
@@ -1180,17 +1184,17 @@ void SetTimeProp(Isolate* isolate, Local<Object> obj, const char* prop, time_t s
   Local<Object> tim = Object::New(isolate);
   tim->Set(
     context,
-    String::NewFromUtf8Literal(isolate, "tv_sec"),
+    String::NewFromUtf8Literal(isolate, "tv_sec", NewStringType::kInternalized),
     Integer::NewFromUnsigned(isolate, sec)
   ).Check();
   tim->Set(
     context,
-    String::NewFromUtf8Literal(isolate, "tv_nsec"),
+    String::NewFromUtf8Literal(isolate, "tv_nsec", NewStringType::kInternalized),
     Integer::NewFromUnsigned(isolate, nsec)
   ).Check();
   obj->Set(
     context,
-    String::NewFromUtf8(isolate, prop).ToLocalChecked(),
+    String::NewFromUtf8(isolate, prop, NewStringType::kInternalized).ToLocalChecked(),
     tim
   ).Check();
 }
@@ -1200,22 +1204,22 @@ Local<Object> StatToObj(Isolate* isolate, struct stat s) {
   Local<Object> statObj = Object::New(isolate);
   statObj->Set(
     context,
-    String::NewFromUtf8Literal(isolate, "st_ino"),
+    String::NewFromUtf8Literal(isolate, "st_ino", NewStringType::kInternalized),
     BigInt::NewFromUnsigned(isolate, s.st_ino)
   ).Check();
   statObj->Set(
     context,
-    String::NewFromUtf8Literal(isolate, "st_mode"),
+    String::NewFromUtf8Literal(isolate, "st_mode", NewStringType::kInternalized),
     Integer::NewFromUnsigned(isolate, s.st_mode)
   ).Check();
   statObj->Set(
     context,
-    String::NewFromUtf8Literal(isolate, "st_nlink"),
+    String::NewFromUtf8Literal(isolate, "st_nlink", NewStringType::kInternalized),
     BigInt::NewFromUnsigned(isolate, s.st_nlink)
   ).Check();
   statObj->Set(
     context,
-    String::NewFromUtf8Literal(isolate, "st_size"),
+    String::NewFromUtf8Literal(isolate, "st_size", NewStringType::kInternalized),
     BigInt::NewFromUnsigned(isolate, s.st_size)
   ).Check();
   SetTimeProp(isolate, statObj, "st_atim", s.st_atim.tv_sec, s.st_atim.tv_nsec);
@@ -1290,22 +1294,22 @@ Local<Object> StatxToObj(Isolate* isolate, struct statx s) {
   Local<Object> statxObj = Object::New(isolate);
   statxObj->Set(
     context,
-    String::NewFromUtf8Literal(isolate, "stx_ino"),
+    String::NewFromUtf8Literal(isolate, "stx_ino", NewStringType::kInternalized),
     BigInt::NewFromUnsigned(isolate, s.stx_ino)
   ).Check();
   statxObj->Set(
     context,
-    String::NewFromUtf8Literal(isolate, "stx_mode"),
+    String::NewFromUtf8Literal(isolate, "stx_mode", NewStringType::kInternalized),
     Integer::NewFromUnsigned(isolate, s.stx_mode)
   ).Check();
   statxObj->Set(
     context,
-    String::NewFromUtf8Literal(isolate, "stx_nlink"),
+    String::NewFromUtf8Literal(isolate, "stx_nlink", NewStringType::kInternalized),
     BigInt::NewFromUnsigned(isolate, s.stx_nlink)
   ).Check();
   statxObj->Set(
     context,
-    String::NewFromUtf8Literal(isolate, "stx_size"),
+    String::NewFromUtf8Literal(isolate, "stx_size", NewStringType::kInternalized),
     BigInt::NewFromUnsigned(isolate, s.stx_size)
   ).Check();
   SetTimeProp(isolate, statxObj, "stx_atime", s.stx_atime.tv_sec, s.stx_atime.tv_nsec);
@@ -1520,7 +1524,7 @@ void FileSystemDumpTo(const FunctionCallbackInfo<Value>& args) {
       )) {
     isolate->ThrowException(
       Exception::Error(
-        String::NewFromUtf8(isolate, strerror(errno)).ToLocalChecked()
+        String::NewFromUtf8(isolate, strerror(errno), NewStringType::kInternalized).ToLocalChecked()
       )
     );
     errno = 0;
@@ -1539,13 +1543,13 @@ void FileSystemLoadFrom(const FunctionCallbackInfo<Value>& args) {
     if (errno) {
       isolate->ThrowException(
         Exception::Error(
-          String::NewFromUtf8(isolate, strerror(errno)).ToLocalChecked()
+          String::NewFromUtf8(isolate, strerror(errno), NewStringType::kInternalized).ToLocalChecked()
         )
       );
     } else {
       isolate->ThrowException(
         Exception::Error(
-          String::NewFromUtf8Literal(isolate, "FileSystem corrupt or invalid")
+          String::NewFromUtf8Literal(isolate, "FileSystem corrupt or invalid", NewStringType::kInternalized)
         )
       );
     }
@@ -1564,7 +1568,7 @@ void DefineConstants(Isolate* isolate, Local<FunctionTemplate> func) {
 #define DefineFlag(v) \
   do { \
     func->Set( \
-      String::NewFromUtf8Literal(isolate, #v), \
+      String::NewFromUtf8Literal(isolate, #v, NewStringType::kInternalized), \
       Integer::New(isolate, v) \
     ); \
   } while (0)
@@ -1667,7 +1671,7 @@ void DefineFunction(
     ConstructorBehavior::kThrow,
     SideEffectType::kHasSideEffect
   );
-  Local<String> name = String::NewFromUtf8Literal(isolate, prop);
+  Local<String> name = String::NewFromUtf8Literal(isolate, prop, NewStringType::kInternalized);
   obj->Set(
     name,
     funcTmpl,
@@ -1675,7 +1679,6 @@ void DefineFunction(
   );
 }
 void DefineTemplateFunctions(Isolate* isolate, Local<ObjectTemplate> tmpl) {
-  tmpl->SetInternalFieldCount(2);
   DefineFunction(isolate, tmpl, "faccessat2",  FileSystemFAccessAt2, 4);
   DefineFunction(isolate, tmpl, "faccessat",   FileSystemFAccessAt,  3);
   DefineFunction(isolate, tmpl, "access",      FileSystemAccess,     2);
@@ -1735,18 +1738,18 @@ NODE_MODULE_INIT() {
     isolate,
     FileSystemConstructor
   );
-  FSTmpl->SetClassName(String::NewFromUtf8Literal(isolate, "FileSystem"));
+  FSTmpl->SetClassName(String::NewFromUtf8Literal(isolate, "FileSystem", NewStringType::kInternalized));
   DefineConstants(isolate, FSTmpl);
+  DefineFunction(isolate, FSTmpl, "loadFrom", FileSystemLoadFrom, 1, PropertyAttribute::None);
   FSConstructorTmpl.Reset(isolate, FSTmpl);
   Local<ObjectTemplate> instTmpl = FSTmpl->InstanceTemplate();
-  DefineTemplateFunctions(isolate, instTmpl);
-  DefineTemplateFunctions(isolate, FSTmpl->PrototypeTemplate());
-  DefineFunction(isolate, FSTmpl, "loadFrom", FileSystemLoadFrom, 1, PropertyAttribute::None);
+  instTmpl->SetInternalFieldCount(2);
   FSInstanceTmpl.Reset(isolate, instTmpl);
+  DefineTemplateFunctions(isolate, FSTmpl->PrototypeTemplate());
   Local<Function> FSFunc = FSTmpl->GetFunction(context).ToLocalChecked();
   module.As<Object>()->Set(
     context,
-    String::NewFromUtf8Literal(isolate, "exports"),
+    String::NewFromUtf8Literal(isolate, "exports", NewStringType::kInternalized),
     FSFunc
   ).Check();
 }
