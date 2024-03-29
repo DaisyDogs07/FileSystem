@@ -128,14 +128,15 @@ void DataIterator_New(struct DataIterator* thisArg, struct INode* inode, off_t o
     off_t mid = low + ((high - low) / 2);
     struct DataRange* range = inode->dataRanges[mid];
     if (offset >= range->offset) {
-      if (offset < range->offset + range->size) {
+      off_t end = range->offset + range->size;
+      if (offset < end) {
         thisArg->rangeIdx = mid;
         thisArg->atData = true;
         break;
       }
       low = mid + 1;
       struct DataRange* nextRange = inode->dataRanges[low];
-      if (offset >= range->offset + range->size &&
+      if (offset >= end &&
           offset < nextRange->offset) {
         thisArg->rangeIdx = mid;
         thisArg->atData = false;
@@ -223,14 +224,16 @@ void INode_New(struct INode* thisArg) {
 }
 void INode_Delete(struct INode* thisArg) {
   if (thisArg->dataRanges) {
-    for (off_t i = 0; i != thisArg->dataRangeCount; ++i)
+    off_t len = thisArg->dataRangeCount;
+    for (off_t i = 0; i != len; ++i)
       DataRange_Delete(thisArg->dataRanges[i]);
     free(thisArg->dataRanges);
   }
   if (thisArg->target)
     free((void*)thisArg->target);
   if (thisArg->dents) {
-    for (off_t i = 2; i != thisArg->dentCount; ++i)
+    off_t len = thisArg->dentCount;
+    for (off_t i = 2; i != len; ++i)
       free((void*)thisArg->dents[i].name);
     free(thisArg->dents);
   }
@@ -245,12 +248,13 @@ bool INode_PushDent(struct INode* thisArg, const char* name, struct INode* inode
   return true;
 }
 void INode_RemoveDent(struct INode* thisArg, const char* name) {
-  for (off_t i = 2; i != thisArg->dentCount; ++i) {
+  off_t len = thisArg->dentCount;
+  for (off_t i = 2; i != len; ++i) {
     const char* d_name = thisArg->dents[i].name;
     if (strcmp(d_name, name) == 0) {
       free((void*)d_name);
-      if (i != thisArg->dentCount - 1)
-        memmove(&thisArg->dents[i], &thisArg->dents[i + 1], sizeof(struct Dent) * (thisArg->dentCount - i));
+      if (i != len - 1)
+        memmove(&thisArg->dents[i], &thisArg->dents[i + 1], sizeof(struct Dent) * (len - i));
       thisArg->dents = realloc(thisArg->dents, sizeof(struct Dent) * --thisArg->dentCount);
       thisArg->size -= strlen(name);
       break;
@@ -258,7 +262,8 @@ void INode_RemoveDent(struct INode* thisArg, const char* name) {
   }
 }
 bool INode_IsInSelf(struct INode* thisArg, struct INode* inode) {
-  for (off_t i = 2; i != thisArg->dentCount; ++i) {
+  off_t len = thisArg->dentCount;
+  for (off_t i = 2; i != len; ++i) {
     struct INode* dentInode = thisArg->dents[i].inode;
     if (dentInode == inode ||
         (S_ISDIR(dentInode->mode) && INode_IsInSelf(dentInode, inode)))
@@ -310,10 +315,11 @@ void INode_RemoveRange(struct INode* thisArg, off_t index) {
   thisArg->dataRanges = realloc(thisArg->dataRanges, sizeof(struct DataRange*) * --thisArg->dataRangeCount);
 }
 void INode_RemoveRanges(struct INode* thisArg, off_t index, off_t count) {
-  for (off_t i = index; i != index + count; ++i)
+  off_t endIdx = index + count;
+  for (off_t i = index; i != endIdx; ++i)
     DataRange_Delete(thisArg->dataRanges[i]);
-  if (index + count < thisArg->dataRangeCount)
-    memmove(&thisArg->dataRanges[index], &thisArg->dataRanges[index + count], sizeof(struct DataRange*) * (thisArg->dataRangeCount - (index + count)));
+  if (endIdx < thisArg->dataRangeCount)
+    memmove(&thisArg->dataRanges[index], &thisArg->dataRanges[endIdx], sizeof(struct DataRange*) * (thisArg->dataRangeCount - (endIdx)));
   thisArg->dataRangeCount -= count;
   thisArg->dataRanges = realloc(thisArg->dataRanges, sizeof(struct DataRange*) * thisArg->dataRangeCount);
 }
@@ -321,12 +327,13 @@ struct DataRange* INode_AllocData(struct INode* thisArg, off_t offset, off_t len
   off_t rangeIdx;
   bool createdRange = false;
   struct DataRange* range = NULL;
+  off_t end = offset + length;
   if (thisArg->dataRangeCount != 0) {
     struct DataIterator it;
     DataIterator_New(&it, thisArg, offset);
     for (off_t i = DataIterator_GetRangeIdx(&it); i != thisArg->dataRangeCount; ++i) {
       struct DataRange* range2 = thisArg->dataRanges[i];
-      if (offset + length == range2->offset) {
+      if (end == range2->offset) {
         struct DataRange* range3 = NULL;
         for (off_t j = i - 1; j >= 0; --j) {
           struct DataRange* range4 = thisArg->dataRanges[j];
@@ -358,7 +365,7 @@ struct DataRange* INode_AllocData(struct INode* thisArg, off_t offset, off_t len
           range2->offset = offset;
           return range2;
         }
-      } else if (offset + length < range2->offset)
+      } else if (end < range2->offset)
         break;
     }
     if (!DataIterator_BeforeFirstRange(&it)) {
@@ -375,14 +382,15 @@ struct DataRange* INode_AllocData(struct INode* thisArg, off_t offset, off_t len
       return NULL;
     createdRange = true;
   } else if (offset >= range->offset &&
-      offset + length <= range->offset + range->size)
+      end <= range->offset + range->size)
     return range;
-  off_t newRangeLength = length + (offset - range->offset);
+  off_t newRangeLength = end - range->offset;
   for (off_t i = rangeIdx + 1; i < thisArg->dataRangeCount; ++i) {
     struct DataRange* range2 = thisArg->dataRanges[i];
-    if (range2->offset < offset + length) {
-      if (newRangeLength < (range2->offset - range->offset) + range2->size) {
-        newRangeLength = (range2->offset - range->offset) + range2->size;
+    if (range2->offset < end) {
+      off_t newLength = (range2->offset - range->offset) + range2->size;
+      if (newRangeLength < newLength) {
+        newRangeLength = newLength;
         break;
       }
     } else break;
@@ -395,12 +403,12 @@ struct DataRange* INode_AllocData(struct INode* thisArg, off_t offset, off_t len
   } else if (UNLIKELY(!TryRealloc((void**)&range->data, newRangeLength)))
     return NULL;
   range->size = newRangeLength;
-  if (thisArg->size < offset + length)
-    thisArg->size = offset + length;
+  if (thisArg->size < end)
+    thisArg->size = end;
   off_t n = 0;
   for (off_t i = rangeIdx + 1; i < thisArg->dataRangeCount; ++i) {
     struct DataRange* range2 = thisArg->dataRanges[i];
-    if (range2->offset < offset + length) {
+    if (range2->offset < end) {
       memcpy(&range->data[range2->offset - range->offset], range2->data, range2->size);
       ++n;
     } else break;
@@ -416,7 +424,8 @@ void INode_TruncateData(struct INode* thisArg, off_t length) {
   }
   thisArg->size = length;
   if (length == 0) {
-    for (off_t i = 0; i != thisArg->dataRangeCount; ++i)
+    off_t len = thisArg->dataRangeCount;
+    for (off_t i = 0; i != len; ++i)
       DataRange_Delete(thisArg->dataRanges[i]);
     free(thisArg->dataRanges);
     thisArg->dataRanges = NULL;
@@ -528,11 +537,15 @@ void FSInternal_New(struct FSInternal* thisArg) {
 }
 void FSInternal_Delete(struct FSInternal* thisArg) {
   pthread_mutex_destroy(&thisArg->mtx);
-  for (ino_t i = 0; i != thisArg->inodeCount; ++i)
-    INode_Delete(thisArg->inodes[i]);
+  {
+    ino_t len = thisArg->inodeCount;
+    for (ino_t i = 0; i != len; ++i)
+      INode_Delete(thisArg->inodes[i]);
+  }
   free(thisArg->inodes);
   if (thisArg->fds) {
-    for (int i = 0; i != thisArg->fdCount; ++i)
+    int len = thisArg->fdCount;
+    for (int i = 0; i != len; ++i)
       free(thisArg->fds[i]);
     free(thisArg->fds);
   }
@@ -560,7 +573,8 @@ bool PushINode(struct FSInternal* fs, struct INode* inode) {
     return false;
   if (id != fs->inodeCount) {
     memmove(&fs->inodes[id + 1], &fs->inodes[id], sizeof(struct INode*) * (fs->inodeCount - id));
-    for (ino_t i = id + 1; i != fs->inodeCount + 1; ++i)
+    ino_t endIdx = fs->inodeCount + 1;
+    for (ino_t i = id + 1; i != endIdx; ++i)
       ++fs->inodes[i]->ndx;
   }
   inode->ndx = id;
@@ -574,9 +588,10 @@ void RemoveINode(struct FSInternal* fs, struct INode* inode) {
   INode_Delete(inode);
   if (i != fs->inodeCount - 1) {
     memmove(&fs->inodes[i], &fs->inodes[i + 1], sizeof(struct INode*) * (fs->inodeCount - i));
+    ino_t endIdx = fs->inodeCount - 1;
     do {
       --fs->inodes[i++]->ndx;
-    } while (i != fs->inodeCount - 1);
+    } while (i != endIdx);
   }
   fs->inodes = realloc(fs->inodes, sizeof(struct INode*) * --fs->inodeCount);
 }
@@ -696,10 +711,11 @@ int GetINode(
       }
       {
         off_t j = 0;
-        for (; j != current->dentCount; ++j)
+        off_t len = current->dentCount;
+        for (; j != len; ++j)
           if (strcmp(current->dents[j].name, name) == 0)
             break;
-        if (UNLIKELY(j == current->dentCount)) {
+        if (UNLIKELY(j == len)) {
           err = -ENOENT;
           goto resetName;
         }
@@ -738,7 +754,8 @@ int GetINode(
       *parent = current;
     if (UNLIKELY(!INode_CanUse(current, X_OK)))
       return -EACCES;
-    for (off_t i = 0; i != current->dentCount; ++i)
+    off_t len = current->dentCount;
+    for (off_t i = 0; i != len; ++i)
       if (strcmp(current->dents[i].name, name) == 0) {
         current = current->dents[i].inode;
         goto out;
@@ -1099,15 +1116,18 @@ int FileSystem_CloseRange(struct FileSystem* thisArg, unsigned int fd, unsigned 
     return -EINVAL;
   struct FSInternal* fs = thisArg->data;
   pthread_mutex_lock(&fs->mtx);
-  for (int i = 0; i != fs->fdCount; ++i) {
+  int endIdx = fs->fdCount;
+  for (int i = 0; i != endIdx; ++i) {
     struct Fd* f = fs->fds[i];
     if (f->fd >= fd) {
       RemoveFd2(fs, f, i);
-      while (i != fs->fdCount) {
+      --endIdx;
+      while (i != endIdx) {
         f = fs->fds[i];
-        if (f->fd < maxFd)
+        if (f->fd < maxFd) {
           RemoveFd2(fs, f, i);
-        else break;
+          --endIdx;
+        } else break;
       }
       break;
     }
@@ -1388,6 +1408,7 @@ int FileSystem_GetDents(struct FileSystem* thisArg, unsigned int fdNum, struct l
   }
   unsigned int nread = 0;
   char* dirpData = (char*)dirp;
+  off_t endIdx = inode->dentCount;
   do {
     struct Dent d = inode->dents[fd->seekOff];
     size_t nameLen = strlen(d.name);
@@ -1405,7 +1426,7 @@ int FileSystem_GetDents(struct FileSystem* thisArg, unsigned int fdNum, struct l
     dirpData[reclen - 1] = IFTODT(d.inode->mode);
     dirpData += reclen;
     nread += reclen;
-  } while (++fd->seekOff != inode->dentCount);
+  } while (++fd->seekOff != endIdx);
   if (UNLIKELY(nread == 0)) {
     pthread_mutex_unlock(&fs->mtx);
     return -EINVAL;
@@ -1542,11 +1563,14 @@ int FileSystem_UnlinkAt(struct FileSystem* thisArg, int dirFd, const char* path,
     pthread_mutex_unlock(&fs->mtx);
     return -EISDIR;
   }
-  for (int i = 0; i != fs->fdCount; ++i)
-    if (UNLIKELY(fs->fds[i]->inode == inode)) {
-      pthread_mutex_unlock(&fs->mtx);
-      return -EBUSY;
-    }
+  {
+    int fdCount = fs->fdCount;
+    for (int i = 0; i != fdCount; ++i)
+      if (UNLIKELY(fs->fds[i]->inode == inode)) {
+        pthread_mutex_unlock(&fs->mtx);
+        return -EBUSY;
+      }
+  }
   if (flags & AT_REMOVEDIR) {
     const char* last = GetLast(path);
     if (UNLIKELY(!last)) {
@@ -1694,9 +1718,11 @@ int FileSystem_RenameAt2(struct FileSystem* thisArg, int oldDirFd, const char* o
     return -ENOMEM;
   }
   if (flags & RENAME_EXCHANGE) {
-    for (off_t i = 0; i != oldParent->dentCount; ++i)
+    off_t oldDentCount = oldParent->dentCount;
+    for (off_t i = 0; i != oldDentCount; ++i)
       if (strcmp(oldParent->dents[i].name, oldName) == 0) {
-        for (off_t j = 0; j != newParent->dentCount; ++j)
+        off_t newDentCount = newParent->dentCount;
+        for (off_t j = 0; j != newDentCount; ++j)
           if (strcmp(newParent->dents[j].name, newName) == 0) {
             oldParent->dents[i].inode = newInode;
             newParent->dents[j].inode = oldInode;
@@ -1885,13 +1911,14 @@ ssize_t FileSystem_Read(struct FileSystem* thisArg, unsigned int fdNum, char* bu
   DataIterator_New(&it, inode, fd->seekOff);
   for (size_t amountRead = 0; amountRead != count; DataIterator_Next(&it)) {
     size_t amount;
+    size_t currEnd = fd->seekOff + amountRead;
     if (DataIterator_IsInData(&it)) {
       struct DataRange* range = DataIterator_GetRange(&it);
-      amount = MinUnsigned((range->offset + range->size) - (fd->seekOff + amountRead), count - amountRead);
-      memcpy(buf + amountRead, range->data + (fd->seekOff + amountRead) - range->offset, amount);
+      amount = MinUnsigned((range->offset + range->size) - currEnd, count - amountRead);
+      memcpy(buf + amountRead, range->data + (currEnd - range->offset), amount);
     } else {
       struct HoleRange hole = DataIterator_GetHole(&it);
-      amount = MinUnsigned((hole.offset + hole.size) - (fd->seekOff + amountRead), count - amountRead);
+      amount = MinUnsigned((hole.offset + hole.size) - currEnd, count - amountRead);
       memset(buf + amountRead, '\0', amount);
     }
     amountRead += amount;
@@ -1935,9 +1962,9 @@ ssize_t FileSystem_Readv(struct FileSystem* thisArg, unsigned int fdNum, struct 
       pthread_mutex_unlock(&fs->mtx);
       return -EINVAL;
     }
-    if (len > 0x7ffff000 - totalLen) {
-      len = 0x7ffff000 - totalLen;
-      iov[i].iov_len = len;
+    size_t limit = 0x7ffff000 - totalLen;
+    if (len > limit) {
+      len = limit;
       totalLen += len;
       break;
     }
@@ -1955,24 +1982,27 @@ ssize_t FileSystem_Readv(struct FileSystem* thisArg, unsigned int fdNum, struct 
   for (size_t iovIdx = 0, amountRead = 0, count = 0; count != totalLen; DataIterator_Next(&it)) {
     struct iovec curr = iov[iovIdx];
     size_t amount;
+    size_t end = totalLen - count;
+    size_t iovEnd = curr.iov_len - amountRead;
+    size_t currEnd = fd->seekOff + count;
     if (DataIterator_IsInData(&it)) {
       struct DataRange* range = DataIterator_GetRange(&it);
       amount = MinUnsigned(
         MinUnsigned(
-          (range->offset + range->size) - (fd->seekOff + count),
-          curr.iov_len - amountRead),
-        totalLen - count
+          (range->offset + range->size) - currEnd,
+          iovEnd),
+        end
       );
-      memcpy(((char*)curr.iov_base) + amountRead, range->data + (fd->seekOff + count) - range->offset, amount);
+      memcpy((char*)curr.iov_base + amountRead, range->data + (currEnd - range->offset), amount);
     } else {
       struct HoleRange hole = DataIterator_GetHole(&it);
       amount = MinUnsigned(
         MinUnsigned(
-          (hole.offset + hole.size) - (fd->seekOff + count),
-          curr.iov_len - amountRead),
-        totalLen - count
+          (hole.offset + hole.size) - currEnd,
+          iovEnd),
+        end
       );
-      memset(((char*)curr.iov_base) + amountRead, '\0', amount);
+      memset((char*)curr.iov_base + amountRead, '\0', amount);
     }
     amountRead += amount;
     count += amount;
@@ -2020,13 +2050,14 @@ ssize_t FileSystem_PRead(struct FileSystem* thisArg, unsigned int fdNum, char* b
   DataIterator_New(&it, inode, offset);
   for (size_t amountRead = 0; amountRead != count; DataIterator_Next(&it)) {
     size_t amount;
+    size_t currEnd = offset + amountRead;
     if (DataIterator_IsInData(&it)) {
       struct DataRange* range = DataIterator_GetRange(&it);
-      amount = MinUnsigned((range->offset + range->size) - (offset + amountRead), count - amountRead);
-      memcpy(buf + amountRead, range->data + (offset + amountRead) - range->offset, amount);
+      amount = MinUnsigned((range->offset + range->size) - currEnd, count - amountRead);
+      memcpy(buf + amountRead, range->data + (currEnd - range->offset), amount);
     } else {
       struct HoleRange hole = DataIterator_GetHole(&it);
-      amount = MinUnsigned((hole.offset + hole.size) - (offset + amountRead), count - amountRead);
+      amount = MinUnsigned((hole.offset + hole.size) - currEnd, count - amountRead);
       memset(buf + amountRead, '\0', amount);
     }
     amountRead += amount;
@@ -2070,8 +2101,9 @@ ssize_t FileSystem_PReadv(struct FileSystem* thisArg, unsigned int fdNum, struct
       pthread_mutex_unlock(&fs->mtx);
       return -EINVAL;
     }
-    if (len > 0x7ffff000 - totalLen) {
-      len = 0x7ffff000 - totalLen;
+    size_t limit = 0x7ffff000 - totalLen;
+    if (len > limit) {
+      len = limit;
       iov[i].iov_len = len;
       totalLen += len;
       break;
@@ -2086,28 +2118,31 @@ ssize_t FileSystem_PReadv(struct FileSystem* thisArg, unsigned int fdNum, struct
   if (end < totalLen)
     totalLen = end;
   struct DataIterator it;
-  DataIterator_New(&it, inode, fd->seekOff);
+  DataIterator_New(&it, inode, offset);
   for (size_t iovIdx = 0, amountRead = 0, count = 0; count != totalLen; DataIterator_Next(&it)) {
     struct iovec curr = iov[iovIdx];
     size_t amount;
+    size_t end = totalLen - count;
+    size_t iovEnd = curr.iov_len - amountRead;
+    size_t currEnd = offset + count;
     if (DataIterator_IsInData(&it)) {
       struct DataRange* range = DataIterator_GetRange(&it);
       amount = MinUnsigned(
         MinUnsigned(
-          (range->offset + range->size) - (fd->seekOff + count),
-          curr.iov_len - amountRead),
-        totalLen - count
+          (range->offset + range->size) - currEnd,
+          iovEnd),
+        end
       );
-      memcpy(((char*)curr.iov_base) + amountRead, range->data + (fd->seekOff + count) - range->offset, amount);
+      memcpy((char*)curr.iov_base + amountRead, range->data + (currEnd - range->offset), amount);
     } else {
       struct HoleRange hole = DataIterator_GetHole(&it);
       amount = MinUnsigned(
         MinUnsigned(
-          (hole.offset + hole.size) - (fd->seekOff + count),
-          curr.iov_len - amountRead),
-        totalLen - count
+          (hole.offset + hole.size) - currEnd,
+          iovEnd),
+        end
       );
-      memset(((char*)curr.iov_base) + amountRead, '\0', amount);
+      memset((char*)curr.iov_base + amountRead, '\0', amount);
     }
     amountRead += amount;
     count += amount;
@@ -2185,8 +2220,9 @@ ssize_t FileSystem_Writev(struct FileSystem* thisArg, unsigned int fdNum, struct
       pthread_mutex_unlock(&fs->mtx);
       return -EINVAL;
     }
-    if (len > 0x7ffff000 - totalLen) {
-      len = 0x7ffff000 - totalLen;
+    size_t limit = 0x7ffff000 - totalLen;
+    if (len > limit) {
+      len = limit;
       iov[i].iov_len = len;
     }
     totalLen += len;
@@ -2292,8 +2328,9 @@ ssize_t FileSystem_PWritev(struct FileSystem* thisArg, unsigned int fdNum, struc
       pthread_mutex_unlock(&fs->mtx);
       return -EINVAL;
     }
-    if (len > 0x7ffff000 - totalLen) {
-      len = 0x7ffff000 - totalLen;
+    size_t limit = 0x7ffff000 - totalLen;
+    if (len > limit) {
+      len = limit;
       iov[i].iov_len = len;
     }
     totalLen += len;
@@ -2377,56 +2414,66 @@ ssize_t FileSystem_SendFile(struct FileSystem* thisArg, unsigned int outFd, unsi
     fdIn->seekOff += count;
   else *offset += count;
   if (outSeekEnd > inodeOut->size)
-    INode_TruncateData(inodeOut, outSeekEnd);
+    inodeOut->size = outSeekEnd;
   struct DataIterator itIn;
   struct DataIterator itOut;
   DataIterator_New(&itIn, inodeIn, off);
   DataIterator_New(&itOut, inodeOut, fdOut->seekOff);
   for (size_t amountRead = 0; amountRead != count;) {
     size_t amount;
+    size_t amountToRead = count - amountRead;
+    size_t currEndIn = off + amountRead;
+    size_t currEndOut = currEndOut;
     if (!DataIterator_IsInData(&itIn)) {
       struct HoleRange holeIn = DataIterator_GetHole(&itIn);
+      off_t holeInEnd = holeIn.offset + holeIn.size;
       if (!DataIterator_IsInData(&itOut)) {
         struct HoleRange holeOut = DataIterator_GetHole(&itOut);
-        amount = (holeOut.offset + holeOut.size) - (fdOut->seekOff + amountRead);
-        if (amount > (holeIn.offset + holeIn.size) - (off + amountRead)) {
-          amount = (holeIn.offset + holeIn.size) - (off + amountRead);
-          DataIterator_Next(&itIn);
-        } else DataIterator_Next(&itOut);
+        amount = (holeOut.offset + holeOut.size) - currEndOut;
+        {
+          size_t newAmount = holeInEnd - currEndIn;
+          if (amount > newAmount) {
+            amount = newAmount;
+            DataIterator_Next(&itIn);
+          } else DataIterator_Next(&itOut);
+        }
         if (amount == 0)
           continue;
-        amountRead += MinUnsigned(amount, count - amountRead);
+        amountRead += MinUnsigned(amount, amountToRead);
         continue;
       }
       struct DataRange* rangeOut = DataIterator_GetRange(&itOut);
-      amount = (rangeOut->offset + rangeOut->size) - (fdOut->seekOff + amountRead);
-      if (amount > (holeIn.offset + holeIn.size) - (off + amountRead)) {
-        amount = (holeIn.offset + holeIn.size) - (off + amountRead);
-        DataIterator_Next(&itIn);
-      } else DataIterator_Next(&itOut);
+      amount = (rangeOut->offset + rangeOut->size) - currEndOut;
+      {
+        size_t newAmount = holeInEnd - currEndIn;
+        if (amount > newAmount) {
+          amount = newAmount;
+          DataIterator_Next(&itIn);
+        } else DataIterator_Next(&itOut);
+      }
       if (amount == 0)
         continue;
-      if (amount > count - amountRead)
-        amount = count - amountRead;
-      memset(rangeOut->data + ((fdOut->seekOff + amountRead) - rangeOut->offset), '\0', amount);
+      if (amount > amountToRead)
+        amount = amountToRead;
+      memset(rangeOut->data + (currEndOut - rangeOut->offset), '\0', amount);
       amountRead += amount;
       continue;
     }
     struct DataRange* rangeIn = DataIterator_GetRange(&itIn);
-    amount = MinUnsigned((rangeIn->offset + rangeIn->size) - (off + amountRead), count - amountRead);
-    struct DataRange* rangeOut = INode_AllocData(inodeOut, fdOut->seekOff + amountRead, amount);
+    amount = MinUnsigned((rangeIn->offset + rangeIn->size) - currEndIn, amountToRead);
+    struct DataRange* rangeOut = INode_AllocData(inodeOut, currEndOut, amount);
     if (UNLIKELY(!rangeOut)) {
       pthread_mutex_unlock(&fs->mtx);
       return -EIO;
     }
     memcpy(
-      rangeOut->data + ((fdOut->seekOff + amountRead) - rangeOut->offset),
-      rangeIn->data + ((off + amountRead) - rangeIn->offset),
+      rangeOut->data + (currEndOut - rangeOut->offset),
+      rangeIn->data + (currEndIn - rangeIn->offset),
       amount
     );
     amountRead += amount;
     DataIterator_Next(&itIn);
-    DataIterator_SeekTo(&itOut, fdOut->seekOff + amountRead);
+    DataIterator_SeekTo(&itOut, currEndOut);
   }
   struct timespec ts;
   clock_gettime(CLOCK_REALTIME, &ts);
@@ -2758,7 +2805,7 @@ bool FileSystem_DumpToFile(struct FileSystem* thisArg, const char* filename) {
   if (UNLIKELY(write(fd, "\x7FVFS", 4) != 4) ||
       UNLIKELY(write(fd, &fs->inodeCount, sizeof(ino_t)) != sizeof(ino_t)))
     goto err2;
-  for (ino_t i = 0; i != fs->inodeCount; ++i) {
+  for (ino_t i = 0, inodeCount = fs->inodeCount; i != inodeCount; ++i) {
     struct INode* inode = fs->inodes[i];
     struct DumpedINode dumped;
     dumped.id = inode->id;
@@ -2804,7 +2851,8 @@ bool FileSystem_DumpToFile(struct FileSystem* thisArg, const char* filename) {
     } else if (inode->size != 0) {
       if (UNLIKELY(write(fd, &inode->dataRangeCount, sizeof(off_t)) != sizeof(off_t)))
         goto err2;
-      for (off_t j = 0; j != inode->dataRangeCount; ++j) {
+      off_t dataRangeCount = inode->dataRangeCount;
+      for (off_t j = 0; j != dataRangeCount; ++j) {
         struct DataRange* range = inode->dataRanges[j];
         if (UNLIKELY(write(fd, &range->offset, sizeof(off_t)) != sizeof(off_t)) ||
             UNLIKELY(write(fd, &range->size, sizeof(off_t)) != sizeof(off_t)))
@@ -3010,7 +3058,8 @@ struct FileSystem* FileSystem_LoadFromFile(const char* filename) {
   for (ino_t i = 0; i != inodeCount; ++i) {
     struct INode* inode = inodes[i];
     if (S_ISDIR(inode->mode)) {
-      for (off_t j = 1; j != inode->dentCount; ++j) {
+      off_t dentCount = inode->dentCount;
+      for (off_t j = 1; j != dentCount; ++j) {
         struct Dent* dent = &inode->dents[j];
         ino_t ino = (ino_t)dent->inode;
         if (UNLIKELY(ino >= inodeCount))
