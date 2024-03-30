@@ -1246,8 +1246,14 @@ int FileSystem_MkDirAt(struct FileSystem* thisArg, int dirFd, const char* path, 
     return -EIO;
   }
   INode_New(x);
-  if (UNLIKELY(!TryAlloc((void**)&x->dents, sizeof(struct Dent) * 2)) ||
-      UNLIKELY(!PushINode(fs, x))) {
+  if (UNLIKELY(!TryAlloc((void**)&x->dents, sizeof(struct Dent) * 2))) {
+    pthread_mutex_unlock(&fs->mtx);
+    INode_Delete(x);
+    free((void*)name);
+    return -EIO;
+  }
+  x->dentCount = 2;
+  if (UNLIKELY(!PushINode(fs, x))) {
     pthread_mutex_unlock(&fs->mtx);
     INode_Delete(x);
     free((void*)name);
@@ -1263,7 +1269,6 @@ int FileSystem_MkDirAt(struct FileSystem* thisArg, int dirFd, const char* path, 
   x->nlink = 2;
   x->dents[0] = Dent_Create(".", x);
   x->dents[1] = Dent_Create("..", parent);
-  x->dentCount = 2;
   ++parent->nlink;
   parent->ctime = parent->mtime = x->btime;
   pthread_mutex_unlock(&fs->mtx);

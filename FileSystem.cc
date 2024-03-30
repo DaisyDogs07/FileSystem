@@ -1141,8 +1141,13 @@ int FileSystem::MkDirAt(int dirFd, const char* path, mode_t mode) {
     delete name;
     return -EIO;
   }
-  if (UNLIKELY(!TryAlloc(&x->dents, 2)) ||
-      UNLIKELY(!PushINode(fs, x))) {
+  if (UNLIKELY(!TryAlloc(&x->dents, 2))) {
+    delete x;
+    delete name;
+    return -EIO;
+  }
+  x->dentCount = 2;
+  if (UNLIKELY(!PushINode(fs, x))) {
     delete x;
     delete name;
     return -EIO;
@@ -1156,7 +1161,6 @@ int FileSystem::MkDirAt(int dirFd, const char* path, mode_t mode) {
   x->nlink = 2;
   x->dents[0] = { ".", x };
   x->dents[1] = { "..", parent };
-  x->dentCount = 2;
   ++parent->nlink;
   parent->ctime = parent->mtime = x->btime;
   return 0;
