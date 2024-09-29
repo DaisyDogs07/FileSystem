@@ -38,6 +38,7 @@ declare module "@daisydogs07/filesystem" {
     static DT_REG: number;
     static DT_DIR: number;
     static DT_LNK: number;
+    static FALLOC_FL_KEEP_SIZE: number;
     static FALLOC_FL_PUNCH_HOLE: number;
     static FALLOC_FL_COLLAPSE_RANGE: number;
     static FALLOC_FL_ZERO_RANGE: number;
