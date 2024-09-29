@@ -99,6 +99,7 @@ class FileSystem {
   int Rename(const char* oldPath, const char* newPath) {
     return RenameAt2(AT_FDCWD, oldPath, AT_FDCWD, newPath, 0);
   }
+  int FAllocate(int fdNum, int mode, off_t offset, off_t len);
   off_t LSeek(unsigned int fdNum, off_t offset, unsigned int whence);
   ssize_t Read(unsigned int fdNum, char* buf, size_t count);
   ssize_t Readv(unsigned int fdNum, struct iovec* iov, int iovcnt);

@@ -670,6 +670,28 @@ void FileSystemRename(const FunctionCallbackInfo<Value>& args) {
     )
   );
 }
+void FileSystemFAllocate(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "FileSystem.prototype.fallocate");
+  ASSERT(args.Length() == 4);
+  ASSERT(IsNumeric(args[0]));
+  ASSERT(IsNumeric(args[1]));
+  ASSERT(IsNumeric(args[2]));
+  ASSERT(IsNumeric(args[3]));
+  FileSystem* fs = reinterpret_cast<FileSystem*>(
+    self->GetInternalField(0).As<External>()->Value()
+  );
+  off_t res;
+  THROWIFERR(
+    res = fs->FAllocate(
+      Val<int>(args[0]),
+      Val<int>(args[1]),
+      Val<off_t>(args[2]),
+      Val<off_t>(args[3])
+    )
+  );
+}
 void FileSystemLSeek(const FunctionCallbackInfo<Value>& args) {
   Isolate* isolate = args.GetIsolate();
   Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
@@ -1580,6 +1602,11 @@ void DefineConstants(Isolate* isolate, Local<FunctionTemplate> func) {
   DefineFlag(DT_REG);
   DefineFlag(DT_DIR);
   DefineFlag(DT_LNK);
+  DefineFlag(FALLOC_FL_KEEP_SIZE);
+  DefineFlag(FALLOC_FL_PUNCH_HOLE);
+  DefineFlag(FALLOC_FL_COLLAPSE_RANGE);
+  DefineFlag(FALLOC_FL_ZERO_RANGE);
+  DefineFlag(FALLOC_FL_INSERT_RANGE);
   DefineFlag(O_APPEND);
   DefineFlag(O_CREAT);
   DefineFlag(O_DIRECTORY);
@@ -1641,6 +1668,7 @@ void DefineConstants(Isolate* isolate, Local<FunctionTemplate> func) {
   DefineFlag(EACCES);
   DefineFlag(EBUSY);
   DefineFlag(EEXIST);
+  DefineFlag(ENODEV);
   DefineFlag(ENOTDIR);
   DefineFlag(EISDIR);
   DefineFlag(EINVAL);
@@ -1650,6 +1678,7 @@ void DefineConstants(Isolate* isolate, Local<FunctionTemplate> func) {
   DefineFlag(ENOTEMPTY);
   DefineFlag(ELOOP);
   DefineFlag(EOVERFLOW);
+  DefineFlag(EOPNOTSUPP);
 #undef DefineFlag
 }
 
@@ -1704,6 +1733,7 @@ void DefineTemplateFunctions(Isolate* isolate, Local<ObjectTemplate> tmpl) {
   DefineFunction(isolate, tmpl, "renameat2",   FileSystemRenameAt2,  5);
   DefineFunction(isolate, tmpl, "renameat",    FileSystemRenameAt,   4);
   DefineFunction(isolate, tmpl, "rename",      FileSystemRename,     2);
+  DefineFunction(isolate, tmpl, "fallocate",   FileSystemFAllocate,  4);
   DefineFunction(isolate, tmpl, "lseek",       FileSystemLSeek,      3);
   DefineFunction(isolate, tmpl, "read",        FileSystemRead,       2);
   DefineFunction(isolate, tmpl, "readv",       FileSystemReadv,      2);

@@ -80,6 +80,7 @@ int FileSystem_RmDir(struct FileSystem* thisArg, const char* path);
 int FileSystem_RenameAt2(struct FileSystem* thisArg, int oldDirFd, const char* oldPath, int newDirFd, const char* newPath, unsigned int flags);
 int FileSystem_RenameAt(struct FileSystem* thisArg, int oldDirFd, const char* oldPath, int newDirFd, const char* newPath);
 int FileSystem_Rename(struct FileSystem* thisArg, const char* oldPath, const char* newPath);
+int FileSystem_FAllocate(struct FileSystem* thisArg, int fdNum, int mode, off_t offset, off_t len);
 off_t FileSystem_LSeek(struct FileSystem* thisArg, unsigned int fdNum, off_t offset, unsigned int whence);
 ssize_t FileSystem_Read(struct FileSystem* thisArg, unsigned int fdNum, char* buf, size_t count);
 ssize_t FileSystem_Readv(struct FileSystem* thisArg, unsigned int fdNum, struct iovec* iov, int iovcnt);

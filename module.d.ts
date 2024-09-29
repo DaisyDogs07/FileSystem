@@ -38,6 +38,10 @@ declare module "@daisydogs07/filesystem" {
     static DT_REG: number;
     static DT_DIR: number;
     static DT_LNK: number;
+    static FALLOC_FL_PUNCH_HOLE: number;
+    static FALLOC_FL_COLLAPSE_RANGE: number;
+    static FALLOC_FL_ZERO_RANGE: number;
+    static FALLOC_FL_INSERT_RANGE: number;
     static O_APPEND: number;
     static O_CREAT: number;
     static O_DIRECTORY: number;
@@ -99,6 +103,7 @@ declare module "@daisydogs07/filesystem" {
     static EACCES: number;
     static EBUSY: number;
     static EEXIST: number;
+    static ENODEV: number;
     static ENOTDIR: number;
     static EISDIR: number;
     static EINVAL: number;
@@ -108,6 +113,7 @@ declare module "@daisydogs07/filesystem" {
     static ENOTEMPTY: number;
     static ELOOP: number;
     static EOVERFLOW: number;
+    static EOPNOTSUPP: number;
 
     constructor();
     faccessat2(dirFd: number | BigInt, path: string, mode: number | BigInt, flags: number | BigInt): void;
@@ -135,6 +141,7 @@ declare module "@daisydogs07/filesystem" {
     renameat2(oldDirFd: number | BigInt, oldPath: string, newDirFd: number | BigInt, newPath: string, flags: number | BigInt): void;
     renameat(oldDirFd: number | BigInt, oldPath: string, newDirFd: number | BigInt, newPath: string): void;
     rename(oldPath: string, newPath: string): void;
+    fallocate(fd: number | BigInt, mode: number | BigInt, offset: number | BigInt, len: number | BigInt): void;
     lseek(fd: number | BigInt, offset: number | BigInt, whence: number | BigInt): BigInt;
     read(fd: number | BigInt, count: number | BigInt): Buffer;
     readv(fd: number | BigInt, iov: Buffer[]): BigInt;

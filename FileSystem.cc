@@ -1554,6 +1554,203 @@ int FileSystem::RenameAt2(int oldDirFd, const char* oldPath, int newDirFd, const
   newParent->ctime = newParent->mtime = ts;
   return 0;
 }
+#define FALLOC_FL_ALLOCATE_RANGE 0x00
+#define FALLOC_FL_MODE_MASK	(FALLOC_FL_ALLOCATE_RANGE |	\
+  FALLOC_FL_ZERO_RANGE | \
+  FALLOC_FL_PUNCH_HOLE | \
+  FALLOC_FL_COLLAPSE_RANGE | \
+  FALLOC_FL_INSERT_RANGE)
+int FileSystem::FAllocate(int fdNum, int mode, off_t offset, off_t len) {
+  struct FSInternal* fs = (struct FSInternal*)data;
+  ScopedLock lock(fs->mtx);
+  struct Fd* fd;
+  if (UNLIKELY(!(fd = GetFd(fs, fdNum))))
+    return -EBADF;
+  if (offset < 0 || len < 0)
+    return -EINVAL;
+  if (mode & ~(FALLOC_FL_MODE_MASK | FALLOC_FL_KEEP_SIZE))
+    return -EOPNOTSUPP;
+  switch (mode & FALLOC_FL_MODE_MASK) {
+    case FALLOC_FL_ALLOCATE_RANGE:
+    case FALLOC_FL_ZERO_RANGE:
+      break;
+    case FALLOC_FL_PUNCH_HOLE:
+      if (!(mode & FALLOC_FL_KEEP_SIZE))
+        return -EOPNOTSUPP;
+      break;
+    case FALLOC_FL_COLLAPSE_RANGE:
+    case FALLOC_FL_INSERT_RANGE:
+      if (mode & FALLOC_FL_KEEP_SIZE)
+        return -EOPNOTSUPP;
+      break;
+    default:
+      return -EOPNOTSUPP;
+  }
+  if (!(fd->flags & (O_WRONLY | O_RDWR)))
+    return -EBADF;
+  if ((mode & ~FALLOC_FL_KEEP_SIZE) && fd->flags & O_APPEND)
+		return -EPERM;
+  struct BaseINode* baseInode = fd->inode;
+  if (S_ISDIR(baseInode->mode))
+    return -EISDIR;
+  if (!S_ISREG(baseInode->mode))
+    return -ENODEV;
+  struct RegularINode* inode = (struct RegularINode*)baseInode;
+  off_t end;
+  if (__builtin_add_overflow(offset, len, &end))
+    return -EFBIG;
+  switch (mode & FALLOC_FL_MODE_MASK) {
+    case FALLOC_FL_ALLOCATE_RANGE: {
+      if (mode & FALLOC_FL_KEEP_SIZE) {
+        if (offset + len > inode->size) {
+          if (offset >= inode->size)
+            break;
+          len = inode->size - offset;
+        }
+      } else {
+        if (inode->size < end)
+          inode->size = end;
+      }
+      if (!inode->AllocData(offset, len))
+        return -EIO;
+      break;
+    }
+    case FALLOC_FL_ZERO_RANGE: {
+      if (mode & FALLOC_FL_KEEP_SIZE) {
+        if (offset + len > inode->size) {
+          if (offset >= inode->size)
+            break;
+          len = inode->size - offset;
+        }
+      } else {
+        if (inode->size < end)
+          inode->size = end;
+      }
+      struct DataRange* range = inode->AllocData(offset, len);
+      if (!range)
+        return -EIO;
+      memset(range->data, '\0', len);
+      break;
+    }
+    case FALLOC_FL_PUNCH_HOLE: {
+      for (off_t i = 0; i != inode->dataRangeCount;) {
+        struct DataRange* range = inode->dataRanges[i];
+        if (offset <= range->offset) {
+          if (offset + len <= range->offset)
+            break;
+          if (offset + len < range->offset + range->size) {
+            off_t amountToRemove = len - (range->offset - offset);
+            range->size -= amountToRemove;
+            range->offset += amountToRemove;
+            memmove(range->data, range->data + amountToRemove, range->size);
+            range->data = (char*)realloc(range->data, range->size);
+          } else {
+            inode->RemoveRange(i);
+            continue;
+          }
+        } else {
+          if (offset >= range->offset + range->size) {
+            ++i;
+            continue;
+          }
+          if (offset + len < range->offset + range->size) {
+            off_t rangeSize = range->size;
+            range->size = offset - range->offset;
+            off_t offsetAfterHole = (offset - range->offset) + len;
+            off_t newRangeLength = rangeSize - offsetAfterHole;
+            struct DataRange* newRange = inode->AllocData(offset + len, newRangeLength);
+            if (!newRange)
+              return -ENOMEM;
+            memcpy(newRange->data, range->data + offsetAfterHole, newRangeLength);
+            range->data = (char*)realloc(range->data, range->size);
+            break;
+          } else {
+            range->size = (range->offset + range->size) - offset;
+            range->data = (char*)realloc(range->data, range->size);
+          }
+        }
+        ++i;
+      }
+      break;
+    }
+    case FALLOC_FL_COLLAPSE_RANGE: {
+      for (off_t i = 0; i != inode->dataRangeCount;) {
+        struct DataRange* range = inode->dataRanges[i];
+        if (offset <= range->offset) {
+          if (offset + len < range->offset) {
+            range->offset -= len;
+            ++i;
+            continue;
+          }
+          if (offset + len == range->offset) {
+            range->offset -= len;
+            if (i != 0) {
+              struct DataRange* prevRange = inode->dataRanges[i - 1];
+              if (!TryRealloc(&prevRange->data, prevRange->size + range->size))
+                return -ENOMEM;
+              memcpy(prevRange->data + prevRange->size, range->data, range->size);
+              prevRange->size += range->size;
+              inode->RemoveRange(i);
+            } else ++i;
+            continue;
+          }
+          if (offset + len < range->offset + range->size) {
+            off_t amountToRemove = len - (range->offset - offset);
+            range->size -= amountToRemove;
+            memmove(range->data, range->data + amountToRemove, range->size);
+            range->data = (char*)realloc(range->data, range->size);
+          } else {
+            inode->RemoveRange(i);
+            continue;
+          }
+        } else {
+          if (offset >= range->offset + range->size) {
+            ++i;
+            continue;
+          }
+          if (offset + len < range->offset + range->size) {
+            off_t rangeSize = range->size;
+            range->size -= len;
+            off_t offsetAfterHole = (offset - range->offset) + len;
+            memcpy(range->data + (offset - range->offset), range->data + offsetAfterHole, rangeSize - offsetAfterHole);
+            range->data = (char*)realloc(range->data, range->size);
+          } else {
+            range->size = (range->offset + range->size) - offset;
+            range->data = (char*)realloc(range->data, range->size);
+          }
+        }
+        ++i;
+      }
+      break;
+    }
+    case FALLOC_FL_INSERT_RANGE: {
+      for (off_t i = 0; i != inode->dataRangeCount;) {
+        struct DataRange* range = inode->dataRanges[i];
+        if (offset <= range->offset) {
+          range->offset += len;
+        } else {
+          if (offset >= range->offset + range->size) {
+            ++i;
+            continue;
+          }
+          off_t rangeSize = range->size;
+          off_t offsetAfterHole = offset - range->offset;
+          range->size = offsetAfterHole;
+          off_t newRangeLength = rangeSize - offsetAfterHole;
+          struct DataRange* newRange = inode->AllocData(offset + len, newRangeLength);
+          if (!newRange)
+            return -ENOMEM;
+          memcpy(newRange->data, range->data + offsetAfterHole, newRangeLength);
+          range->data = (char*)realloc(range->data, range->size);
+          ++i;
+        }
+        ++i;
+      }
+      break;
+    }
+  }
+  return 0;
+}
 off_t FileSystem::LSeek(unsigned int fdNum, off_t offset, unsigned int whence) {
   if (UNLIKELY(offset < 0))
     return -EINVAL;
