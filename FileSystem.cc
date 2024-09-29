@@ -1602,7 +1602,7 @@ int FileSystem::FAllocate(int fdNum, int mode, off_t offset, off_t len) {
   switch (mode & FALLOC_FL_MODE_MASK) {
     case FALLOC_FL_ALLOCATE_RANGE: {
       if (mode & FALLOC_FL_KEEP_SIZE) {
-        if (offset + len > inode->size) {
+        if (end > inode->size) {
           if (offset >= inode->size)
             break;
           len = inode->size - offset;
@@ -1617,7 +1617,7 @@ int FileSystem::FAllocate(int fdNum, int mode, off_t offset, off_t len) {
     }
     case FALLOC_FL_ZERO_RANGE: {
       if (mode & FALLOC_FL_KEEP_SIZE) {
-        if (offset + len > inode->size) {
+        if (end > inode->size) {
           if (offset >= inode->size)
             break;
           len = inode->size - offset;
@@ -1636,9 +1636,9 @@ int FileSystem::FAllocate(int fdNum, int mode, off_t offset, off_t len) {
       for (off_t i = 0; i != inode->dataRangeCount;) {
         struct DataRange* range = inode->dataRanges[i];
         if (offset <= range->offset) {
-          if (offset + len <= range->offset)
+          if (end <= range->offset)
             break;
-          if (offset + len < range->offset + range->size) {
+          if (end < range->offset + range->size) {
             off_t amountToRemove = len - (range->offset - offset);
             range->size -= amountToRemove;
             range->offset += amountToRemove;
@@ -1653,12 +1653,12 @@ int FileSystem::FAllocate(int fdNum, int mode, off_t offset, off_t len) {
             ++i;
             continue;
           }
-          if (offset + len < range->offset + range->size) {
+          if (end < range->offset + range->size) {
             off_t rangeSize = range->size;
             range->size = offset - range->offset;
             off_t offsetAfterHole = (offset - range->offset) + len;
             off_t newRangeLength = rangeSize - offsetAfterHole;
-            struct DataRange* newRange = inode->AllocData(offset + len, newRangeLength);
+            struct DataRange* newRange = inode->AllocData(end, newRangeLength);
             if (!newRange)
               return -ENOMEM;
             memcpy(newRange->data, range->data + offsetAfterHole, newRangeLength);
@@ -1677,12 +1677,12 @@ int FileSystem::FAllocate(int fdNum, int mode, off_t offset, off_t len) {
       for (off_t i = 0; i != inode->dataRangeCount;) {
         struct DataRange* range = inode->dataRanges[i];
         if (offset <= range->offset) {
-          if (offset + len < range->offset) {
+          if (end < range->offset) {
             range->offset -= len;
             ++i;
             continue;
           }
-          if (offset + len == range->offset) {
+          if (end == range->offset) {
             range->offset -= len;
             if (i != 0) {
               struct DataRange* prevRange = inode->dataRanges[i - 1];
@@ -1694,7 +1694,7 @@ int FileSystem::FAllocate(int fdNum, int mode, off_t offset, off_t len) {
             } else ++i;
             continue;
           }
-          if (offset + len < range->offset + range->size) {
+          if (end < range->offset + range->size) {
             off_t amountToRemove = len - (range->offset - offset);
             range->size -= amountToRemove;
             memmove(range->data, range->data + amountToRemove, range->size);
@@ -1708,7 +1708,7 @@ int FileSystem::FAllocate(int fdNum, int mode, off_t offset, off_t len) {
             ++i;
             continue;
           }
-          if (offset + len < range->offset + range->size) {
+          if (end < range->offset + range->size) {
             off_t rangeSize = range->size;
             range->size -= len;
             off_t offsetAfterHole = (offset - range->offset) + len;
@@ -1737,7 +1737,7 @@ int FileSystem::FAllocate(int fdNum, int mode, off_t offset, off_t len) {
           off_t offsetAfterHole = offset - range->offset;
           range->size = offsetAfterHole;
           off_t newRangeLength = rangeSize - offsetAfterHole;
-          struct DataRange* newRange = inode->AllocData(offset + len, newRangeLength);
+          struct DataRange* newRange = inode->AllocData(end, newRangeLength);
           if (!newRange)
             return -ENOMEM;
           memcpy(newRange->data, range->data + offsetAfterHole, newRangeLength);

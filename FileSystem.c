@@ -1910,7 +1910,7 @@ int FileSystem_FAllocate(struct FileSystem* thisArg, int fdNum, int mode, off_t 
   switch (mode & FALLOC_FL_MODE_MASK) {
     case FALLOC_FL_ALLOCATE_RANGE: {
       if (mode & FALLOC_FL_KEEP_SIZE) {
-        if (offset + len > inode->base.size) {
+        if (end > inode->base.size) {
           if (offset >= inode->base.size)
             break;
           len = inode->base.size - offset;
@@ -1927,7 +1927,7 @@ int FileSystem_FAllocate(struct FileSystem* thisArg, int fdNum, int mode, off_t 
     }
     case FALLOC_FL_ZERO_RANGE: {
       if (mode & FALLOC_FL_KEEP_SIZE) {
-        if (offset + len > inode->base.size) {
+        if (end > inode->base.size) {
           if (offset >= inode->base.size)
             break;
           len = inode->base.size - offset;
@@ -1948,9 +1948,9 @@ int FileSystem_FAllocate(struct FileSystem* thisArg, int fdNum, int mode, off_t 
       for (off_t i = 0; i != inode->dataRangeCount;) {
         struct DataRange* range = inode->dataRanges[i];
         if (offset <= range->offset) {
-          if (offset + len <= range->offset)
+          if (end <= range->offset)
             break;
-          if (offset + len < range->offset + range->size) {
+          if (end < range->offset + range->size) {
             off_t amountToRemove = len - (range->offset - offset);
             range->size -= amountToRemove;
             range->offset += amountToRemove;
@@ -1965,12 +1965,12 @@ int FileSystem_FAllocate(struct FileSystem* thisArg, int fdNum, int mode, off_t 
             ++i;
             continue;
           }
-          if (offset + len < range->offset + range->size) {
+          if (end < range->offset + range->size) {
             off_t rangeSize = range->size;
             range->size = offset - range->offset;
             off_t offsetAfterHole = (offset - range->offset) + len;
             off_t newRangeLength = rangeSize - offsetAfterHole;
-            struct DataRange* newRange = RegularINode_AllocData(inode, offset + len, newRangeLength);
+            struct DataRange* newRange = RegularINode_AllocData(inode, end, newRangeLength);
             if (!newRange) {
               pthread_mutex_unlock(&fs->mtx);
               return -ENOMEM;
@@ -1991,12 +1991,12 @@ int FileSystem_FAllocate(struct FileSystem* thisArg, int fdNum, int mode, off_t 
       for (off_t i = 0; i != inode->dataRangeCount;) {
         struct DataRange* range = inode->dataRanges[i];
         if (offset <= range->offset) {
-          if (offset + len < range->offset) {
+          if (end < range->offset) {
             range->offset -= len;
             ++i;
             continue;
           }
-          if (offset + len == range->offset) {
+          if (end == range->offset) {
             range->offset -= len;
             if (i != 0) {
               struct DataRange* prevRange = inode->dataRanges[i - 1];
@@ -2010,7 +2010,7 @@ int FileSystem_FAllocate(struct FileSystem* thisArg, int fdNum, int mode, off_t 
             } else ++i;
             continue;
           }
-          if (offset + len < range->offset + range->size) {
+          if (end < range->offset + range->size) {
             off_t amountToRemove = len - (range->offset - offset);
             range->size -= amountToRemove;
             memmove(range->data, range->data + amountToRemove, range->size);
@@ -2024,7 +2024,7 @@ int FileSystem_FAllocate(struct FileSystem* thisArg, int fdNum, int mode, off_t 
             ++i;
             continue;
           }
-          if (offset + len < range->offset + range->size) {
+          if (end < range->offset + range->size) {
             off_t rangeSize = range->size;
             range->size -= len;
             off_t offsetAfterHole = (offset - range->offset) + len;
@@ -2053,7 +2053,7 @@ int FileSystem_FAllocate(struct FileSystem* thisArg, int fdNum, int mode, off_t 
           off_t offsetAfterHole = offset - range->offset;
           range->size = offsetAfterHole;
           off_t newRangeLength = rangeSize - offsetAfterHole;
-          struct DataRange* newRange = RegularINode_AllocData(inode, offset + len, newRangeLength);
+          struct DataRange* newRange = RegularINode_AllocData(inode, end, newRangeLength);
           if (!newRange) {
             pthread_mutex_unlock(&fs->mtx);
             return -ENOMEM;
