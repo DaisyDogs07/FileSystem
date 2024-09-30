@@ -112,7 +112,12 @@ void FileSystemConstructor(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = FileSystem::New();
   if (UNLIKELY(!fs))
     THROWERR(-errno);
-  std::unique_ptr<BackingStore> ab = ArrayBuffer::NewBackingStore(fs, sizeof(FileSystem), FileSystemCleanup, NULL);
+  std::unique_ptr<BackingStore> ab = ArrayBuffer::NewBackingStore(
+    fs,
+    sizeof(FileSystem),
+    FileSystemCleanup,
+    NULL
+  );
   Local<ArrayBuffer> abuf = ArrayBuffer::New(isolate, std::move(ab));
   args.This()->SetInternalField(0, External::New(isolate, fs));
   args.This()->SetInternalField(1, abuf);
@@ -1565,13 +1570,21 @@ void FileSystemLoadFrom(const FunctionCallbackInfo<Value>& args) {
     if (errno) {
       isolate->ThrowException(
         Exception::Error(
-          String::NewFromUtf8(isolate, strerror(errno), NewStringType::kInternalized).ToLocalChecked()
+          String::NewFromUtf8(
+            isolate,
+            strerror(errno),
+            NewStringType::kInternalized
+          ).ToLocalChecked()
         )
       );
     } else {
       isolate->ThrowException(
         Exception::Error(
-          String::NewFromUtf8Literal(isolate, "FileSystem corrupt or invalid", NewStringType::kInternalized)
+          String::NewFromUtf8Literal(
+            isolate,
+            "FileSystem corrupt or invalid",
+            NewStringType::kInternalized
+          )
         )
       );
     }
@@ -1579,7 +1592,12 @@ void FileSystemLoadFrom(const FunctionCallbackInfo<Value>& args) {
   }
   Local<Context> context = isolate->GetCurrentContext();
   Local<Object> fsObj = FSInstanceTmpl.Get(isolate)->NewInstance(context).ToLocalChecked();
-  std::unique_ptr<BackingStore> ab = ArrayBuffer::NewBackingStore(fs, sizeof(FileSystem), FileSystemCleanup, NULL);
+  std::unique_ptr<BackingStore> ab = ArrayBuffer::NewBackingStore(
+    fs,
+    sizeof(FileSystem),
+    FileSystemCleanup,
+    NULL
+  );
   Local<ArrayBuffer> abuf = ArrayBuffer::New(isolate, std::move(ab));
   fsObj->SetInternalField(0, External::New(isolate, fs));
   fsObj->SetInternalField(1, abuf);
@@ -1768,7 +1786,9 @@ NODE_MODULE_INIT() {
     isolate,
     FileSystemConstructor
   );
-  FSTmpl->SetClassName(String::NewFromUtf8Literal(isolate, "FileSystem", NewStringType::kInternalized));
+  FSTmpl->SetClassName(
+    String::NewFromUtf8Literal(isolate, "FileSystem", NewStringType::kInternalized)
+  );
   DefineConstants(isolate, FSTmpl);
   DefineFunction(isolate, FSTmpl, "loadFrom", FileSystemLoadFrom, 1, PropertyAttribute::None);
   FSConstructorTmpl.Reset(isolate, FSTmpl);

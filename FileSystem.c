@@ -1,39 +1,49 @@
 // Copyright (c) 2024 DaisyDogs07
 //
-// Permission is hereby granted, free of charge, to any person obtaining a copy of
-// this software and associated documentation files (the "Software"), to deal in
-// the Software without restriction, including without limitation the rights to
-// use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
-// of the Software, and to permit persons to whom the Software is furnished to
-// do so, subject to the following conditions:
+// Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+// associated documentation files (the "Software"), to deal in the Software without restriction,
+// including without limitation the rights to use, copy, modify, merge, publish, distribute,
+// sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
 //
-// The above copyright notice and this permission notice shall be included in all
-// copies or substantial portions of the Software.
+// The above copyright notice and this permission notice shall be included in all copies or
+// substantial portions of the Software.
 //
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
-// INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
-// HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
-// SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+// NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+// NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #include "FileSystem.h"
 #include <pthread.h>
 #include <stdlib.h>
 
-#define LIKELY(expr) __builtin_expect(!!(expr), 1)
-#define UNLIKELY(expr) __builtin_expect(!!(expr), 0)
+#ifdef O_TMPFILE
+#undef O_TMPFILE
+#endif
+#define O_TMPFILE 020000000
+#define FOLLOW_MAX 40
+#define ALIGN(x, a) (((x) + ((a) - 1)) & ~((a) - 1))
+#define FALLOC_FL_ALLOCATE_RANGE 0x00
+#define FALLOC_FL_MODE_MASK	(FALLOC_FL_ALLOCATE_RANGE |	\
+  FALLOC_FL_ZERO_RANGE | \
+  FALLOC_FL_PUNCH_HOLE | \
+  FALLOC_FL_COLLAPSE_RANGE | \
+  FALLOC_FL_INSERT_RANGE)
+#define RW_MAX 0x7ffff000
+#define IOV_MAX 1024
 
 bool TryAlloc(void** ptr, size_t length) {
   void* newPtr = malloc(length);
-  if (UNLIKELY(!newPtr))
+  if (!newPtr)
     return false;
   *ptr = newPtr;
   return true;
 }
 bool TryRealloc(void** ptr, size_t length) {
   void* newPtr = realloc(*ptr, length);
-  if (UNLIKELY(!newPtr))
+  if (!newPtr)
     return false;
   *ptr = newPtr;
   return true;
@@ -49,7 +59,6 @@ ssize_t MinSigned(ssize_t a, ssize_t b) {
     return a;
   return b;
 }
-
 struct BaseINode {
   ino_t ndx;
   ino_t id;
@@ -131,49 +140,16 @@ struct RegularINode {
   struct DataRange** dataRanges;
   off_t dataRangeCount;
 };
-
-void RegularINode_New(struct RegularINode* thisArg) {
-  BaseINode_New(&thisArg->base);
-  thisArg->dataRanges = NULL;
-  thisArg->dataRangeCount = 0;
-}
-void RegularINode_Delete(struct RegularINode* thisArg);
-
-struct DataRange* RegularINode_InsertRange(struct RegularINode* thisArg, off_t offset, off_t length, off_t* index);
-void RegularINode_RemoveRange(struct RegularINode* thisArg, off_t index);
-void RegularINode_RemoveRanges(struct RegularINode* thisArg, off_t index, off_t count);
-struct DataRange* RegularINode_AllocData(struct RegularINode* thisArg, off_t offset, off_t length);
-void RegularINode_TruncateData(struct RegularINode* thisArg, off_t length);
-
 struct DirectoryINode {
   struct BaseINode base;
   struct Dent* dents;
   off_t dentCount;
 };
-
-void DirectoryINode_New(struct DirectoryINode* thisArg) {
-  BaseINode_New(&thisArg->base);
-  thisArg->dents = NULL;
-  thisArg->dentCount = 0;
-}
-void DirectoryINode_Delete(struct DirectoryINode* thisArg);
-
-bool DirectoryINode_PushDent(struct DirectoryINode* thisArg, const char* name, struct BaseINode* inode);
-void DirectoryINode_RemoveDent(struct DirectoryINode* thisArg, const char* name);
-bool DirectoryINode_IsInSelf(struct DirectoryINode* thisArg, struct BaseINode* inode);
-
 struct SymLinkINode {
   struct BaseINode base;
   char* data;
   const char* target;
 };
-
-void SymLinkINode_New(struct SymLinkINode* thisArg) {
-  BaseINode_New(&thisArg->base);
-  thisArg->data = NULL;
-  thisArg->target = NULL;
-}
-void SymLinkINode_Delete(struct SymLinkINode* thisArg);
 
 struct DataRange {
   off_t offset;
@@ -196,27 +172,26 @@ struct HoleRange {
 };
 
 struct DataIterator {
-  struct RegularINode* inode;
-  off_t rangeIdx;
-  bool atData;
-  bool isBeforeFirstRange;
+  struct RegularINode* inode_;
+  off_t rangeIdx_;
+  bool atData_;
+  bool isBeforeFirstRange_;
 };
 
 void DataIterator_New(struct DataIterator* thisArg, struct RegularINode* inode, off_t offset) {
-  thisArg->inode = inode;
-  if (inode->dataRangeCount == 0 ||
-      offset < inode->dataRanges[0]->offset) {
-    thisArg->rangeIdx = 0;
-    thisArg->atData = false;
-    thisArg->isBeforeFirstRange = true;
+  thisArg->inode_ = inode;
+  if (inode->dataRangeCount == 0 || offset < inode->dataRanges[0]->offset) {
+    thisArg->rangeIdx_ = 0;
+    thisArg->atData_ = false;
+    thisArg->isBeforeFirstRange_ = true;
     return;
   }
-  thisArg->isBeforeFirstRange = false;
+  thisArg->isBeforeFirstRange_ = false;
   {
     struct DataRange* lastRange = inode->dataRanges[inode->dataRangeCount - 1];
     if (offset >= lastRange->offset + lastRange->size) {
-      thisArg->rangeIdx = inode->dataRangeCount - 1;
-      thisArg->atData = false;
+      thisArg->rangeIdx_ = inode->dataRangeCount - 1;
+      thisArg->atData_ = false;
       return;
     }
   }
@@ -228,75 +203,73 @@ void DataIterator_New(struct DataIterator* thisArg, struct RegularINode* inode, 
     if (offset >= range->offset) {
       off_t end = range->offset + range->size;
       if (offset < end) {
-        thisArg->rangeIdx = mid;
-        thisArg->atData = true;
+        thisArg->rangeIdx_ = mid;
+        thisArg->atData_ = true;
         break;
       }
       low = mid + 1;
       struct DataRange* nextRange = inode->dataRanges[low];
-      if (offset >= end &&
-          offset < nextRange->offset) {
-        thisArg->rangeIdx = mid;
-        thisArg->atData = false;
+      if (offset >= end && offset < nextRange->offset) {
+        thisArg->rangeIdx_ = mid;
+        thisArg->atData_ = false;
         break;
       }
     } else {
       high = mid - 1;
       struct DataRange* prevRange = inode->dataRanges[high];
-      if (offset >= prevRange->offset + prevRange->size &&
-          offset < range->offset) {
-        thisArg->rangeIdx = high;
-        thisArg->atData = false;
+      if (offset >= prevRange->offset + prevRange->size && offset < range->offset) {
+        thisArg->rangeIdx_ = high;
+        thisArg->atData_ = false;
         break;
       }
     }
   }
 }
 bool DataIterator_IsInData(struct DataIterator* thisArg) {
-  return thisArg->atData;
+  return thisArg->atData_;
 }
 off_t DataIterator_GetRangeIdx(struct DataIterator* thisArg) {
-  return thisArg->rangeIdx;
+  return thisArg->rangeIdx_;
 }
 bool DataIterator_BeforeFirstRange(struct DataIterator* thisArg) {
-  return thisArg->isBeforeFirstRange;
+  return thisArg->isBeforeFirstRange_;
 }
 struct DataRange* DataIterator_GetRange(struct DataIterator* thisArg) {
-  return thisArg->inode->dataRanges[thisArg->rangeIdx];
+  return thisArg->inode_->dataRanges[thisArg->rangeIdx_];
 }
 struct HoleRange DataIterator_GetHole(struct DataIterator* thisArg) {
   struct HoleRange hole;
-  if (thisArg->isBeforeFirstRange) {
+  if (thisArg->isBeforeFirstRange_) {
     hole.offset = 0;
-    if (thisArg->inode->dataRangeCount == 0)
-      hole.size = thisArg->inode->base.size;
-    else hole.size = thisArg->inode->dataRanges[0]->offset;
+    if (thisArg->inode_->dataRangeCount == 0)
+      hole.size = thisArg->inode_->base.size;
+    else hole.size = thisArg->inode_->dataRanges[0]->offset;
     return hole;
   }
-  struct DataRange* currRange = thisArg->inode->dataRanges[thisArg->rangeIdx];
+  struct DataRange* currRange = thisArg->inode_->dataRanges[thisArg->rangeIdx_];
   hole.offset = currRange->offset + currRange->size;
-  if (thisArg->rangeIdx < thisArg->inode->dataRangeCount - 1)
-    hole.size = thisArg->inode->dataRanges[thisArg->rangeIdx + 1]->offset - hole.offset;
-  else hole.size = thisArg->inode->base.size - hole.offset;
+  if (thisArg->rangeIdx_ != thisArg->inode_->dataRangeCount - 1)
+    hole.size = thisArg->inode_->dataRanges[thisArg->rangeIdx_ + 1]->offset - hole.offset;
+  else hole.size = thisArg->inode_->base.size - hole.offset;
   return hole;
 }
 bool DataIterator_Next(struct DataIterator* thisArg) {
-  if (!thisArg->atData) {
-    if (thisArg->isBeforeFirstRange) {
-      if (thisArg->inode->dataRangeCount == 0)
+  if (!thisArg->atData_) {
+    if (thisArg->isBeforeFirstRange_) {
+      if (thisArg->inode_->dataRangeCount == 0)
         return false;
-      thisArg->isBeforeFirstRange = false;
-    } else if (thisArg->rangeIdx == thisArg->inode->dataRangeCount - 1)
+      thisArg->isBeforeFirstRange_ = false;
+    } else if (thisArg->rangeIdx_ == thisArg->inode_->dataRangeCount - 1)
       return false;
-    else ++thisArg->rangeIdx;
+    else ++thisArg->rangeIdx_;
   }
-  thisArg->atData = !thisArg->atData;
+  thisArg->atData_ = !thisArg->atData_;
   return true;
 }
 void DataIterator_SeekTo(struct DataIterator* thisArg, off_t offset) {
   do {
     off_t end;
-    if (thisArg->atData) {
+    if (thisArg->atData_) {
       struct DataRange* range = DataIterator_GetRange(thisArg);
       end = range->offset + range->size;
     } else {
@@ -313,23 +286,32 @@ struct Dent {
   struct BaseINode* inode;
 };
 
-#define Dent_Create(d_name, d_inode) ({ \
+#define Dent_New(d_name, d_inode) ({ \
   struct Dent _d; \
   _d.name = d_name; \
   _d.inode = d_inode; \
   _d; \
 })
 
+void RegularINode_New(struct RegularINode* thisArg) {
+  thisArg->dataRanges = NULL;
+  thisArg->dataRangeCount = 0;
+}
 void RegularINode_Delete(struct RegularINode* thisArg) {
   if (thisArg->dataRanges) {
     off_t len = thisArg->dataRangeCount;
-    for (off_t i = 0; i != len; ++i)
+    for (off_t i = 0; i != len; ++i) {
       DataRange_Delete(thisArg->dataRanges[i]);
+    }
     free(thisArg->dataRanges);
   }
-  free(thisArg);
 }
-struct DataRange* RegularINode_InsertRange(struct RegularINode* thisArg, off_t offset, off_t length, off_t* index) {
+struct DataRange* RegularINode_InsertRange(
+  struct RegularINode* thisArg,
+  off_t offset,
+  off_t length,
+  off_t* index
+) {
   off_t rangeIdx = thisArg->dataRangeCount;
   if (thisArg->dataRangeCount != 0) {
     off_t low = 0;
@@ -346,13 +328,19 @@ struct DataRange* RegularINode_InsertRange(struct RegularINode* thisArg, off_t o
     }
   }
   struct DataRange* range;
-  if (UNLIKELY(!TryAlloc((void**)&range, sizeof(struct DataRange))))
+  if (!TryAlloc((void**)&range, sizeof(struct DataRange)))
     goto err_alloc_failed;
-  DataRange_New(range);
-  if (UNLIKELY(!TryRealloc((void**)&thisArg->dataRanges, sizeof(struct DataRange*) * (thisArg->dataRangeCount + 1))))
+  if (!TryRealloc(
+        (void**)&thisArg->dataRanges,
+        sizeof(struct DataRange*) * (thisArg->dataRangeCount + 1)
+      ))
     goto err_after_alloc;
   if (rangeIdx != thisArg->dataRangeCount)
-    memmove(&thisArg->dataRanges[rangeIdx + 1], &thisArg->dataRanges[rangeIdx], sizeof(struct DataRange*) * (thisArg->dataRangeCount - rangeIdx));
+    memmove(
+      &thisArg->dataRanges[rangeIdx + 1],
+      &thisArg->dataRanges[rangeIdx],
+      sizeof(struct DataRange*) * (thisArg->dataRangeCount - rangeIdx)
+    );
   range->offset = offset;
   range->size = length;
   thisArg->dataRanges[rangeIdx] = range;
@@ -369,17 +357,31 @@ void RegularINode_RemoveRange(struct RegularINode* thisArg, off_t index) {
   struct DataRange* range = thisArg->dataRanges[index];
   DataRange_Delete(range);
   if (index != thisArg->dataRangeCount - 1)
-    memmove(&thisArg->dataRanges[index], &thisArg->dataRanges[index + 1], sizeof(struct DataRange*) * (thisArg->dataRangeCount - index));
-  thisArg->dataRanges = (struct DataRange**)realloc(thisArg->dataRanges, sizeof(struct DataRange*) * --thisArg->dataRangeCount);
+    memmove(
+      &thisArg->dataRanges[index],
+      &thisArg->dataRanges[index + 1],
+      sizeof(struct DataRange*) * (thisArg->dataRangeCount - index)
+    );
+  thisArg->dataRanges = (struct DataRange**)realloc(
+    thisArg->dataRanges,
+    sizeof(struct DataRange*) * --thisArg->dataRangeCount
+  );
 }
 void RegularINode_RemoveRanges(struct RegularINode* thisArg, off_t index, off_t count) {
   off_t endIdx = index + count;
   for (off_t i = index; i != endIdx; ++i)
     DataRange_Delete(thisArg->dataRanges[i]);
-  if (endIdx < thisArg->dataRangeCount)
-    memmove(&thisArg->dataRanges[index], &thisArg->dataRanges[endIdx], sizeof(struct DataRange*) * (thisArg->dataRangeCount - endIdx));
+  if (endIdx != thisArg->dataRangeCount - 1)
+    memmove(
+      &thisArg->dataRanges[index],
+      &thisArg->dataRanges[endIdx],
+      sizeof(struct DataRange*) * (thisArg->dataRangeCount - endIdx)
+    );
   thisArg->dataRangeCount -= count;
-  thisArg->dataRanges = (struct DataRange**)realloc(thisArg->dataRanges, sizeof(struct DataRange*) * thisArg->dataRangeCount);
+  thisArg->dataRanges = (struct DataRange**)realloc(
+    thisArg->dataRanges,
+    sizeof(struct DataRange*) * thisArg->dataRangeCount
+  );
 }
 struct DataRange* RegularINode_AllocData(struct RegularINode* thisArg, off_t offset, off_t length) {
   off_t rangeIdx;
@@ -403,11 +405,11 @@ struct DataRange* RegularINode_AllocData(struct RegularINode* thisArg, off_t off
         if (range3) {
           off_t off = MinSigned(range3->offset, offset);
           off_t newRangeLength = range2->size + (range2->offset - off);
-          if (UNLIKELY(!TryRealloc((void**)&range3->data, newRangeLength)))
+          if (!TryRealloc((void**)&range3->data, sizeof(char) * newRangeLength))
             return NULL;
           memmove(&range3->data[newRangeLength - range2->size], range2->data, range2->size);
           range3->size = newRangeLength;
-          for (off_t j = rangeIdx + 1; j < i; ++j) {
+          for (off_t j = rangeIdx + 1; j != i; ++j) {
             struct DataRange* range4 = thisArg->dataRanges[j];
             memmove(&range3->data[range4->offset - off], range4->data, range4->size);
           }
@@ -416,7 +418,7 @@ struct DataRange* RegularINode_AllocData(struct RegularINode* thisArg, off_t off
           return range3;
         } else {
           off_t newRangeLength = range2->size + (range2->offset - offset);
-          if (UNLIKELY(!TryRealloc((void**)&range2->data, newRangeLength)))
+          if (!TryRealloc((void**)&range2->data, sizeof(char) * newRangeLength))
             return NULL;
           memmove(&range2->data[newRangeLength - range2->size], range2->data, range2->size);
           range2->size = newRangeLength;
@@ -436,14 +438,13 @@ struct DataRange* RegularINode_AllocData(struct RegularINode* thisArg, off_t off
   }
   if (!range) {
     range = RegularINode_InsertRange(thisArg, offset, length, &rangeIdx);
-    if (UNLIKELY(!range))
+    if (!range)
       return NULL;
     createdRange = true;
-  } else if (offset >= range->offset &&
-      end <= range->offset + range->size)
+  } else if (offset >= range->offset && end <= range->offset + range->size)
     return range;
   off_t newRangeLength = end - range->offset;
-  for (off_t i = rangeIdx + 1; i < thisArg->dataRangeCount; ++i) {
+  for (off_t i = rangeIdx + 1; i != thisArg->dataRangeCount; ++i) {
     struct DataRange* range2 = thisArg->dataRanges[i];
     if (range2->offset < end) {
       off_t newLength = (range2->offset - range->offset) + range2->size;
@@ -454,24 +455,24 @@ struct DataRange* RegularINode_AllocData(struct RegularINode* thisArg, off_t off
     } else break;
   }
   if (createdRange) {
-    if (UNLIKELY(!TryAlloc((void**)&range->data, newRangeLength))) {
+    if (!TryAlloc((void**)&range->data, sizeof(char) * newRangeLength)) {
       RegularINode_RemoveRange(thisArg, rangeIdx);
       return NULL;
     }
-  } else if (UNLIKELY(!TryRealloc((void**)&range->data, newRangeLength)))
+  } else if (!TryRealloc((void**)&range->data, sizeof(char) * newRangeLength))
     return NULL;
   range->size = newRangeLength;
   if (thisArg->base.size < end)
     thisArg->base.size = end;
   off_t n = 0;
-  for (off_t i = rangeIdx + 1; i < thisArg->dataRangeCount; ++i) {
+  for (off_t i = rangeIdx + 1; i != thisArg->dataRangeCount; ++i) {
     struct DataRange* range2 = thisArg->dataRanges[i];
     if (range2->offset < end) {
       memcpy(&range->data[range2->offset - range->offset], range2->data, range2->size);
       ++n;
     } else break;
   }
-  if (LIKELY(n != 0))
+  if (n != 0)
     RegularINode_RemoveRanges(thisArg, rangeIdx + 1, n);
   return range;
 }
@@ -503,6 +504,10 @@ void RegularINode_TruncateData(struct RegularINode* thisArg, off_t length) {
   }
 }
 
+void DirectoryINode_New(struct DirectoryINode* thisArg) {
+  thisArg->dents = NULL;
+  thisArg->dentCount = 0;
+}
 void DirectoryINode_Delete(struct DirectoryINode* thisArg) {
   if (thisArg->dents) {
     off_t len = thisArg->dentCount;
@@ -510,11 +515,17 @@ void DirectoryINode_Delete(struct DirectoryINode* thisArg) {
       free((void*)thisArg->dents[i].name);
     free(thisArg->dents);
   }
+  free(thisArg);
 }
-bool DirectoryINode_PushDent(struct DirectoryINode* thisArg, const char* name, struct BaseINode* inode) {
-  if (UNLIKELY(!TryRealloc((void**)&thisArg->dents, sizeof(struct Dent) * (thisArg->dentCount + 1))))
+
+bool DirectoryINode_PushDent(
+  struct DirectoryINode* thisArg,
+  const char* name,
+  struct BaseINode* inode
+) {
+  if (!TryRealloc((void**)&thisArg->dents, sizeof(struct Dent) * (thisArg->dentCount + 1)))
     return false;
-  thisArg->dents[thisArg->dentCount++] = Dent_Create(name, inode);
+  thisArg->dents[thisArg->dentCount++] = Dent_New(name, inode);
   thisArg->base.size += strlen(name);
   return true;
 }
@@ -526,7 +537,10 @@ void DirectoryINode_RemoveDent(struct DirectoryINode* thisArg, const char* name)
       free((void*)d_name);
       if (i != len - 1)
         memmove(&thisArg->dents[i], &thisArg->dents[i + 1], sizeof(struct Dent) * (len - i));
-      thisArg->dents = (struct Dent*)realloc(thisArg->dents, sizeof(struct Dent) * --thisArg->dentCount);
+      thisArg->dents = (struct Dent*)realloc(
+        thisArg->dents,
+        sizeof(struct Dent) * --thisArg->dentCount
+      );
       thisArg->base.size -= strlen(name);
       break;
     }
@@ -536,18 +550,34 @@ bool DirectoryINode_IsInSelf(struct DirectoryINode* thisArg, struct BaseINode* i
   off_t len = thisArg->dentCount;
   for (off_t i = 2; i != len; ++i) {
     struct BaseINode* dentInode = thisArg->dents[i].inode;
-    if (dentInode == inode ||
-        (S_ISDIR(dentInode->mode) && DirectoryINode_IsInSelf((struct DirectoryINode*)dentInode, inode)))
+    if (dentInode == inode || (
+          S_ISDIR(dentInode->mode) &&
+          DirectoryINode_IsInSelf((struct DirectoryINode*)dentInode, inode)
+        ))
       return true;
   }
   return false;
 }
 
+void SymLinkINode_New(struct SymLinkINode* thisArg) {
+  thisArg->data = NULL;
+  thisArg->target = NULL;
+}
 void SymLinkINode_Delete(struct SymLinkINode* thisArg) {
   if (thisArg->data)
     free(thisArg->data);
   if (thisArg->target)
     free((void*)thisArg->target);
+  free(thisArg);
+}
+
+void DeleteINode(struct BaseINode* inode) {
+  if (S_ISREG(inode->mode))
+    RegularINode_Delete((struct RegularINode*)inode);
+  else if (S_ISDIR(inode->mode))
+    DirectoryINode_Delete((struct DirectoryINode*)inode);
+  else if (S_ISLNK(inode->mode))
+    SymLinkINode_Delete((struct SymLinkINode*)inode);
 }
 
 struct Fd {
@@ -570,14 +600,9 @@ struct Cwd {
 void Cwd_New(struct Cwd* thisArg) {
   thisArg->path = NULL;
 }
-
-void DeleteINode(struct BaseINode* inode) {
-  if (S_ISREG(inode->mode))
-    RegularINode_Delete((struct RegularINode*)inode);
-  else if (S_ISDIR(inode->mode))
-    DirectoryINode_Delete((struct DirectoryINode*)inode);
-  else if (S_ISLNK(inode->mode))
-    SymLinkINode_Delete((struct SymLinkINode*)inode);
+void Cwd_Delete(struct Cwd* thisArg) {
+  if (thisArg->path)
+    free((void*)thisArg->path);
 }
 
 struct FSInternal {
@@ -611,8 +636,7 @@ void FSInternal_Delete(struct FSInternal* thisArg) {
       free(thisArg->fds[i]);
     free(thisArg->fds);
   }
-  if (thisArg->cwd.path)
-    free((void*)thisArg->cwd.path);
+  Cwd_Delete(&thisArg->cwd);
   free(thisArg);
 }
 
@@ -631,10 +655,14 @@ bool PushINode(struct FSInternal* fs, struct BaseINode* inode) {
       }
     }
   }
-  if (UNLIKELY(!TryRealloc((void**)&fs->inodes, sizeof(struct BaseINode*) * (fs->inodeCount + 1))))
+  if (!TryRealloc((void**)&fs->inodes, sizeof(struct BaseINode*) * (fs->inodeCount + 1)))
     return false;
   if (id != fs->inodeCount) {
-    memmove(&fs->inodes[id + 1], &fs->inodes[id], sizeof(struct BaseINode*) * (fs->inodeCount - id));
+    memmove(
+      &fs->inodes[id + 1],
+      &fs->inodes[id],
+      sizeof(struct BaseINode*) * (fs->inodeCount - id)
+    );
     ino_t endIdx = fs->inodeCount + 1;
     for (ino_t i = id + 1; i != endIdx; ++i)
       ++fs->inodes[i]->ndx;
@@ -655,7 +683,10 @@ void RemoveINode(struct FSInternal* fs, struct BaseINode* inode) {
       --fs->inodes[i++]->ndx;
     } while (i != endIdx);
   }
-  fs->inodes = (struct BaseINode**)realloc(fs->inodes, sizeof(struct BaseINode*) * --fs->inodeCount);
+  fs->inodes = (struct BaseINode**)realloc(
+    fs->inodes,
+    sizeof(struct BaseINode*) * --fs->inodeCount
+  );
 }
 int PushFd(struct FSInternal* fs, struct BaseINode* inode, int flags) {
   int fdNum = fs->fdCount;
@@ -673,10 +704,9 @@ int PushFd(struct FSInternal* fs, struct BaseINode* inode, int flags) {
     }
   }
   struct Fd* fd;
-  if (UNLIKELY(!TryAlloc((void**)&fd, sizeof(struct Fd))))
+  if (!TryAlloc((void**)&fd, sizeof(struct Fd)))
     return -ENOMEM;
-  Fd_New(fd);
-  if (UNLIKELY(!TryRealloc((void**)&fs->fds, sizeof(struct Fd*) * (fs->fdCount + 1)))) {
+  if (!TryRealloc((void**)&fs->fds, sizeof(struct Fd*) * (fs->fdCount + 1))) {
     free(fd);
     return -ENOMEM;
   }
@@ -704,7 +734,7 @@ void RemoveFd2(struct FSInternal* fs, struct Fd* fd, int i) {
   fs->fds = (struct Fd**)realloc(fs->fds, sizeof(struct Fd*) * fs->fdCount);
 }
 int RemoveFd(struct FSInternal* fs, unsigned int fd) {
-  if (UNLIKELY(fs->fdCount == 0))
+  if (fs->fdCount == 0)
     return -EBADF;
   int low = 0;
   int high = fs->fdCount - 1;
@@ -722,7 +752,7 @@ int RemoveFd(struct FSInternal* fs, unsigned int fd) {
   return -EBADF;
 }
 struct Fd* GetFd(struct FSInternal* fs, unsigned int fdNum) {
-  if (UNLIKELY(fs->fdCount == 0))
+  if (fs->fdCount == 0)
     return NULL;
   int low = 0;
   int high = fs->fdCount - 1;
@@ -746,9 +776,9 @@ int GetINode(
   int follow
 ) {
   size_t pathLen = strlen(path);
-  if (UNLIKELY(pathLen == 0))
+  if (pathLen == 0)
     return -ENOENT;
-  if (UNLIKELY(pathLen >= PATH_MAX))
+  if (pathLen >= PATH_MAX)
     return -ENAMETOOLONG;
   bool isAbsolute = path[0] == '/';
   struct BaseINode* current = isAbsolute
@@ -764,10 +794,10 @@ int GetINode(
     if (path[i] == '/') {
       if (nameLen == 0)
         continue;
-      if (UNLIKELY(err))
+      if (err)
         return err;
       currParent = (struct DirectoryINode*)current;
-      if (UNLIKELY(!BaseINode_CanUse(current, X_OK))) {
+      if (!BaseINode_CanUse(current, X_OK)) {
         err = -EACCES;
         goto resetName;
       }
@@ -777,31 +807,38 @@ int GetINode(
         for (; j != dentCount; ++j)
           if (strcmp(((struct DirectoryINode*)current)->dents[j].name, name) == 0)
             break;
-        if (UNLIKELY(j == dentCount)) {
+        if (j == dentCount) {
           err = -ENOENT;
           goto resetName;
         }
         current = ((struct DirectoryINode*)current)->dents[j].inode;
       }
       if (S_ISLNK(current->mode)) {
-        if (UNLIKELY(follow++ == 40)) {
+        if (follow++ == FOLLOW_MAX) {
           err = -ELOOP;
           goto resetName;
         }
         struct DirectoryINode* targetParent;
-        int res = GetINode(fs, ((struct SymLinkINode*)current)->target, &current, &targetParent, true, follow);
-        if (UNLIKELY(res != 0)) {
+        int res = GetINode(
+          fs,
+          ((struct SymLinkINode*)current)->target,
+          &current,
+          &targetParent,
+          true,
+          follow
+        );
+        if (res != 0) {
           err = res;
           goto resetName;
         }
       }
-      if (UNLIKELY(!S_ISDIR(current->mode)))
+      if (!S_ISDIR(current->mode))
         err = -ENOTDIR;
      resetName:
       name[0] = '\0';
       nameLen = 0;
     } else {
-      if (UNLIKELY(nameLen == NAME_MAX))
+      if (nameLen == NAME_MAX)
         return -ENAMETOOLONG;
       name[nameLen++] = path[i];
       name[nameLen] = '\0';
@@ -809,12 +846,12 @@ int GetINode(
   }
   if (parent)
     *parent = currParent;
-  if (UNLIKELY(err))
+  if (err)
     return err;
   if (nameLen != 0) {
     if (parent)
       *parent = (struct DirectoryINode*)current;
-    if (UNLIKELY(!BaseINode_CanUse(current, X_OK)))
+    if (!BaseINode_CanUse(current, X_OK))
       return -EACCES;
     off_t dentCount = ((struct DirectoryINode*)current)->dentCount;
     for (off_t i = 0; i != dentCount; ++i)
@@ -827,11 +864,18 @@ int GetINode(
  out:
   if (followResolved) {
     if (S_ISLNK(current->mode)) {
-      if (UNLIKELY(follow++ == 40))
+      if (follow++ == FOLLOW_MAX)
         return -ELOOP;
       struct DirectoryINode* targetParent;
-      int res = GetINode(fs, ((struct SymLinkINode*)current)->target, &current, &targetParent, true, follow);
-      if (UNLIKELY(res != 0))
+      int res = GetINode(
+        fs,
+        ((struct SymLinkINode*)current)->target,
+        &current,
+        &targetParent,
+        true,
+        follow
+      );
+      if (res != 0)
         return res;
     }
   }
@@ -886,8 +930,8 @@ const char* AbsolutePath(struct FSInternal* fs, const char* path) {
           --absPathLen;
           while (absPathLen > 0 && absPath[--absPathLen - 1] != '/');
           if (i + 2 != pathLen)
-            ++i;
-          ++i;
+            i += 2;
+          else ++i;
         }
       } else if (path[i + 1] == '/')
         ++i;
@@ -902,7 +946,7 @@ const char* AbsolutePath(struct FSInternal* fs, const char* path) {
 }
 const char* GetAbsoluteLast(struct FSInternal* fs, const char* path) {
   const char* absPath = AbsolutePath(fs, path);
-  if (UNLIKELY(!absPath))
+  if (!absPath)
     return NULL;
   const char* last = GetLast(absPath);
   free((void*)absPath);
@@ -932,66 +976,75 @@ struct DumpedINode {
   struct timespec atime;
 };
 
+bool TryAllocFromMode(struct BaseINode** inode, mode_t mode) {
+  if (S_ISREG(mode))
+    return TryAlloc((void**)inode, sizeof(struct RegularINode));
+  if (S_ISDIR(mode))
+    return TryAlloc((void**)inode, sizeof(struct DirectoryINode));
+  if (S_ISLNK(mode))
+    return TryAlloc((void**)inode, sizeof(struct SymLinkINode));
+  __builtin_unreachable();
+}
+
 struct FileSystem* FileSystem_New() {
   struct FSInternal* data;
-  if (UNLIKELY(!TryAlloc((void**)&data, sizeof(struct FSInternal))))
-    return NULL;
-  FSInternal_New(data);
+  if (!TryAlloc((void**)&data, sizeof(struct FSInternal)))
+    goto err1;
   struct DirectoryINode* root;
-  if (UNLIKELY(!TryAlloc((void**)&data->inodes, sizeof(struct BaseINode*))) ||
-      UNLIKELY(!TryAlloc((void**)&root, sizeof(struct DirectoryINode)))) {
-    FSInternal_Delete(data);
-    return NULL;
-  }
+  if (!TryAlloc((void**)&data->inodes, sizeof(struct BaseINode*) * 1) ||
+      !TryAlloc((void**)&root, sizeof(struct DirectoryINode)))
+    goto err2;
   DirectoryINode_New(root);
-  if (UNLIKELY(!TryAlloc((void**)&root->dents, sizeof(struct Dent) * 2))) {
-    DirectoryINode_Delete(root);
-    FSInternal_Delete(data);
-    return NULL;
-  }
+  if (!TryAlloc((void**)&root->dents, sizeof(struct Dent) * 2))
+    goto err3;
   root->base.mode = 0755 | S_IFDIR;
-  root->dents[0] = Dent_Create(".", (struct BaseINode*)root);
-  root->dents[1] = Dent_Create("..", (struct BaseINode*)root);
+  root->dents[0] = Dent_New(".", (struct BaseINode*)root);
+  root->dents[1] = Dent_New("..", (struct BaseINode*)root);
   root->dentCount = root->base.nlink = 2;
-  if (UNLIKELY(!PushINode(data, (struct BaseINode*)root))) {
-    DirectoryINode_Delete(root);
-    FSInternal_Delete(data);
-    return NULL;
-  }
-  if (UNLIKELY(!(data->cwd.path = strdup("/")))) {
-    FSInternal_Delete(data);
-    return NULL;
-  }
+  if (!PushINode(data, (struct BaseINode*)root))
+    goto err3;
+  if (!(data->cwd.path = strdup("/")))
+    goto err2;
   data->cwd.inode = root;
   data->cwd.parent = root;
   struct FileSystem* fs;
-  if (UNLIKELY(!TryAlloc((void**)&fs, sizeof(struct FileSystem)))) {
-    FSInternal_Delete(data);
-    return NULL;
-  }
+  if (!TryAlloc((void**)&fs, sizeof(struct FileSystem)))
+    goto err2;
   fs->data = data;
   return fs;
+
+ err3:
+  DirectoryINode_Delete(root);
+ err2:
+  FSInternal_Delete(data);
+ err1:
+  return NULL;
 }
 void FileSystem_Delete(struct FileSystem* thisArg) {
   FSInternal_Delete(thisArg->data);
   free(thisArg);
 }
-
-int FileSystem_FAccessAt2(struct FileSystem* thisArg, int dirFd, const char* path, int mode, int flags) {
-  if (UNLIKELY(mode & ~(F_OK | R_OK | W_OK | X_OK)) ||
-      UNLIKELY(flags & ~(AT_SYMLINK_NOFOLLOW | AT_EMPTY_PATH)) ||
-      UNLIKELY(flags & AT_EMPTY_PATH && path[0] != '\0'))
+int FileSystem_FAccessAt2(
+  struct FileSystem* thisArg,
+  int dirFd,
+  const char* path,
+  int mode,
+  int flags
+) {
+  if (mode   & ~(F_OK | R_OK | W_OK | X_OK) ||
+      flags  & ~(AT_SYMLINK_NOFOLLOW | AT_EMPTY_PATH) ||
+      (flags & AT_EMPTY_PATH && path[0] != '\0'))
     return -EINVAL;
   struct FSInternal* fs = (struct FSInternal*)thisArg->data;
   pthread_mutex_lock(&fs->mtx);
   struct DirectoryINode* origCwd = fs->cwd.inode;
   if (dirFd != AT_FDCWD) {
     struct Fd* fd;
-    if (UNLIKELY(!(fd = GetFd(fs, dirFd)))) {
+    if (!(fd = GetFd(fs, dirFd))) {
       pthread_mutex_unlock(&fs->mtx);
       return -EBADF;
     }
-    if (UNLIKELY(!S_ISDIR(fd->inode->mode) && !(flags & AT_EMPTY_PATH))) {
+    if (!S_ISDIR(fd->inode->mode) && !(flags & AT_EMPTY_PATH)) {
       pthread_mutex_unlock(&fs->mtx);
       return -ENOTDIR;
     }
@@ -1003,7 +1056,7 @@ int FileSystem_FAccessAt2(struct FileSystem* thisArg, int dirFd, const char* pat
     inode = (struct BaseINode*)fs->cwd.inode;
   else res = GetINodeNoParentFollow(fs, path, &inode, !(flags & AT_SYMLINK_NOFOLLOW));
   fs->cwd.inode = origCwd;
-  if (UNLIKELY(res != 0)) {
+  if (res != 0) {
     pthread_mutex_unlock(&fs->mtx);
     return res;
   }
@@ -1014,39 +1067,43 @@ int FileSystem_FAccessAt2(struct FileSystem* thisArg, int dirFd, const char* pat
   pthread_mutex_unlock(&fs->mtx);
   return 0;
 }
-int FileSystem_FAccessAt(struct FileSystem* thisArg, int dirFd, const char* path, int mode) {
-  return FileSystem_FAccessAt2(thisArg, dirFd, path, mode, F_OK);
-}
-int FileSystem_Access(struct FileSystem* thisArg, const char* path, int mode) {
-  return FileSystem_FAccessAt2(thisArg, AT_FDCWD, path, mode, F_OK);
-}
-int FileSystem_OpenAt(struct FileSystem* thisArg, int dirFd, const char* path, int flags, mode_t mode) {
-  if (UNLIKELY(flags & ~(O_RDONLY | O_WRONLY | O_RDWR | O_CREAT | O_EXCL | O_APPEND | O_TRUNC | 020000000 | O_DIRECTORY | O_NOFOLLOW | O_NOATIME)))
+int FileSystem_OpenAt(
+  struct FileSystem* thisArg,
+  int dirFd,
+  const char* path,
+  int flags,
+  mode_t mode
+) {
+  if (flags & ~(
+        O_RDONLY    | O_WRONLY   | O_RDWR    | O_CREAT   |
+        O_EXCL      | O_APPEND   | O_TRUNC   | O_TMPFILE |
+        O_DIRECTORY | O_NOFOLLOW | O_NOATIME
+      ))
     return -EINVAL;
   if (flags & 020000000) {
-    if (UNLIKELY(!(flags & O_DIRECTORY)) ||
-        UNLIKELY(flags & O_CREAT) ||
-        UNLIKELY(!(flags & (O_WRONLY | O_RDWR))) ||
-        UNLIKELY(mode & ~07777 || mode == 0))
+    if (!(flags & O_DIRECTORY) ||
+        flags & O_CREAT ||
+        !(flags & (O_WRONLY | O_RDWR)) ||
+        mode & ~07777 || mode == 0)
       return -EINVAL;
     mode |= S_IFREG;
   } else if (flags & O_CREAT) {
-    if (UNLIKELY(flags & O_DIRECTORY) ||
-        UNLIKELY(mode & ~07777))
+    if (flags & O_DIRECTORY ||
+        mode & ~07777)
       return -EINVAL;
     mode |= S_IFREG;
-  } else if (UNLIKELY(mode != 0))
+  } else if (mode != 0)
     return -EINVAL;
   struct FSInternal* fs = (struct FSInternal*)thisArg->data;
   pthread_mutex_lock(&fs->mtx);
   struct DirectoryINode* origCwd = fs->cwd.inode;
   if (dirFd != AT_FDCWD) {
     struct Fd* fd;
-    if (UNLIKELY(!(fd = GetFd(fs, dirFd)))) {
+    if (!(fd = GetFd(fs, dirFd))) {
       pthread_mutex_unlock(&fs->mtx);
       return -EBADF;
     }
-    if (UNLIKELY(!S_ISDIR(fd->inode->mode))) {
+    if (!S_ISDIR(fd->inode->mode)) {
       pthread_mutex_unlock(&fs->mtx);
       return -ENOTDIR;
     }
@@ -1060,22 +1117,22 @@ int FileSystem_OpenAt(struct FileSystem* thisArg, int dirFd, const char* path, i
   struct DirectoryINode* parent = NULL;
   int res = GetINodeParentFollow(fs, path, &inode, &parent, !(flags & O_NOFOLLOW));
   fs->cwd.inode = origCwd;
-  if (UNLIKELY(!parent)) {
+  if (!parent) {
     pthread_mutex_unlock(&fs->mtx);
     return res;
   }
   if (res == 0) {
     if (flags & O_CREAT) {
-      if (UNLIKELY(flags & O_EXCL)) {
+      if (flags & O_EXCL) {
         pthread_mutex_unlock(&fs->mtx);
         return -EEXIST;
       }
-      if (UNLIKELY(S_ISDIR(inode->mode))) {
+      if (S_ISDIR(inode->mode)) {
         pthread_mutex_unlock(&fs->mtx);
         return -EISDIR;
       }
     }
-    if (flags & O_NOFOLLOW && UNLIKELY(S_ISLNK(inode->mode))) {
+    if (flags & O_NOFOLLOW && S_ISLNK(inode->mode)) {
       pthread_mutex_unlock(&fs->mtx);
       return -ELOOP;
     }
@@ -1087,34 +1144,34 @@ int FileSystem_OpenAt(struct FileSystem* thisArg, int dirFd, const char* path, i
     if (flags & O_CREAT && res == -ENOENT) {
       flags &= ~O_TRUNC;
       const char* name = GetAbsoluteLast(fs, path);
-      if (UNLIKELY(!name)) {
+      if (!name) {
         pthread_mutex_unlock(&fs->mtx);
         return -ENOMEM;
       }
       struct RegularINode* x;
-      if (UNLIKELY(!TryAlloc((void**)&x, sizeof(struct RegularINode)))) {
-        pthread_mutex_unlock(&fs->mtx);
+      if (!TryAlloc((void**)&x, sizeof(struct RegularINode*))) {
         free((void*)name);
+        pthread_mutex_unlock(&fs->mtx);
         return -EIO;
       }
       RegularINode_New(x);
-      if (UNLIKELY(!PushINode(fs, (struct BaseINode*)x))) {
-        pthread_mutex_unlock(&fs->mtx);
+      if (!PushINode(fs, (struct BaseINode*)x)) {
         RegularINode_Delete(x);
         free((void*)name);
+        pthread_mutex_unlock(&fs->mtx);
         return -EIO;
       }
-      if (UNLIKELY(!DirectoryINode_PushDent(parent, name, (struct BaseINode*)x))) {
+      if (!DirectoryINode_PushDent(parent, name, (struct BaseINode*)x)) {
         RemoveINode(fs, (struct BaseINode*)x);
-        pthread_mutex_unlock(&fs->mtx);
         free((void*)name);
+        pthread_mutex_unlock(&fs->mtx);
         return -EIO;
       }
       x->base.mode = mode;
       x->base.nlink = 1;
       parent->base.ctime = parent->base.mtime = x->base.btime;
       res = PushFd(fs, (struct BaseINode*)x, flags);
-      if (UNLIKELY(res < 0)) {
+      if (res < 0) {
         DirectoryINode_RemoveDent(parent, name);
         RemoveINode(fs, (struct BaseINode*)x);
         free((void*)name);
@@ -1124,46 +1181,39 @@ int FileSystem_OpenAt(struct FileSystem* thisArg, int dirFd, const char* path, i
     return res;
   }
   if (S_ISDIR(inode->mode)) {
-    if (flags & 020000000) {
+    if (flags & O_TMPFILE) {
       struct RegularINode* x;
-      if (UNLIKELY(!TryAlloc((void**)&x, sizeof(struct RegularINode)))) {
+      if (!TryAlloc((void**)&x, sizeof(struct RegularINode))) {
         pthread_mutex_unlock(&fs->mtx);
         return -EIO;
       }
       RegularINode_New(x);
-      if (UNLIKELY(!PushINode(fs, (struct BaseINode*)x))) {
-        pthread_mutex_unlock(&fs->mtx);
+      if (!PushINode(fs, (struct BaseINode*)x)) {
         RegularINode_Delete(x);
+        pthread_mutex_unlock(&fs->mtx);
         return -EIO;
       }
       x->base.mode = (mode & ~S_IFMT) | S_IFREG;
       res = PushFd(fs, (struct BaseINode*)x, flags);
-      if (UNLIKELY(res < 0))
+      if (res < 0)
         RemoveINode(fs, (struct BaseINode*)x);
       pthread_mutex_unlock(&fs->mtx);
       return res;
     }
-    if (UNLIKELY(flags & (O_WRONLY | O_RDWR))) {
+    if (flags & (O_WRONLY | O_RDWR)) {
       pthread_mutex_unlock(&fs->mtx);
       return -EISDIR;
     }
   } else {
-    if (UNLIKELY(flags & O_DIRECTORY)) {
+    if (flags & O_DIRECTORY) {
       pthread_mutex_unlock(&fs->mtx);
       return -ENOTDIR;
     }
     if (flags & O_TRUNC && inode->size != 0)
       RegularINode_TruncateData((struct RegularINode*)inode, 0);
   }
-  res = PushFd(fs, inode, flags);
   pthread_mutex_unlock(&fs->mtx);
-  return res;
-}
-int FileSystem_Open(struct FileSystem* thisArg, const char* path, int flags, mode_t mode) {
-  return FileSystem_OpenAt(thisArg, AT_FDCWD, path, flags, mode);
-}
-int FileSystem_Creat(struct FileSystem* thisArg, const char* path, mode_t mode) {
-  return FileSystem_OpenAt(thisArg, AT_FDCWD, path, O_CREAT | O_WRONLY | O_TRUNC, mode);
+  return PushFd(fs, inode, flags);
 }
 int FileSystem_Close(struct FileSystem* thisArg, unsigned int fd) {
   struct FSInternal* fs = (struct FSInternal*)thisArg->data;
@@ -1172,9 +1222,13 @@ int FileSystem_Close(struct FileSystem* thisArg, unsigned int fd) {
   pthread_mutex_unlock(&fs->mtx);
   return res;
 }
-int FileSystem_CloseRange(struct FileSystem* thisArg, unsigned int fd, unsigned int maxFd, unsigned int flags) {
-  if (UNLIKELY(flags != 0) ||
-      UNLIKELY(fd > maxFd))
+int FileSystem_CloseRange(
+  struct FileSystem* thisArg,
+  unsigned int fd,
+  unsigned int maxFd,
+  unsigned int flags
+) {
+  if (flags != 0 || fd > maxFd)
     return -EINVAL;
   struct FSInternal* fs = (struct FSInternal*)thisArg->data;
   pthread_mutex_lock(&fs->mtx);
@@ -1197,25 +1251,31 @@ int FileSystem_CloseRange(struct FileSystem* thisArg, unsigned int fd, unsigned 
   pthread_mutex_unlock(&fs->mtx);
   return 0;
 }
-int FileSystem_MkNodAt(struct FileSystem* thisArg, int dirFd, const char* path, mode_t mode, dev_t dev) {
+int FileSystem_MkNodAt(
+  struct FileSystem* thisArg,
+  int dirFd,
+  const char* path,
+  mode_t mode,
+  dev_t dev
+) {
   if (mode & S_IFMT) {
-    if (UNLIKELY(S_ISDIR(mode)))
+    if (S_ISDIR(mode))
       return -EPERM;
-    if (UNLIKELY(!S_ISREG(mode)))
+    if (!S_ISREG(mode))
       return -EINVAL;
   }
-  if (UNLIKELY(dev != 0))
+  if (dev != 0)
     return -EINVAL;
   struct FSInternal* fs = (struct FSInternal*)thisArg->data;
   pthread_mutex_lock(&fs->mtx);
   struct DirectoryINode* origCwd = fs->cwd.inode;
   if (dirFd != AT_FDCWD) {
     struct Fd* fd;
-    if (UNLIKELY(!(fd = GetFd(fs, dirFd)))) {
+    if (!(fd = GetFd(fs, dirFd))) {
       pthread_mutex_unlock(&fs->mtx);
       return -EBADF;
     }
-    if (UNLIKELY(!S_ISDIR(fd->inode->mode))) {
+    if (!S_ISDIR(fd->inode->mode)) {
       pthread_mutex_unlock(&fs->mtx);
       return -ENOTDIR;
     }
@@ -1225,50 +1285,44 @@ int FileSystem_MkNodAt(struct FileSystem* thisArg, int dirFd, const char* path, 
   struct DirectoryINode* parent = NULL;
   int res = GetINodeParent(fs, path, &inode, &parent);
   fs->cwd.inode = origCwd;
-  if (UNLIKELY(!parent)) {
+  if (!parent) {
     pthread_mutex_unlock(&fs->mtx);
     return res;
   }
-  if (UNLIKELY(res == 0)) {
+  if (res == 0) {
     pthread_mutex_unlock(&fs->mtx);
     return -EEXIST;
   }
-  if (UNLIKELY(res != -ENOENT)) {
+  if (res != -ENOENT) {
     pthread_mutex_unlock(&fs->mtx);
     return res;
   }
   const char* name = GetAbsoluteLast(fs, path);
-  if (UNLIKELY(!name)) {
+  if (!name) {
     pthread_mutex_unlock(&fs->mtx);
     return -ENOMEM;
   }
   struct RegularINode* x;
-  if (UNLIKELY(!TryAlloc((void**)&x, sizeof(struct RegularINode)))) {
-    pthread_mutex_unlock(&fs->mtx);
+  if (!TryAlloc((void**)&x, sizeof(struct RegularINode))) {
     free((void*)name);
+    pthread_mutex_unlock(&fs->mtx);
     return -EIO;
   }
-  RegularINode_New(x);
-  if (UNLIKELY(!PushINode(fs, (struct BaseINode*)x))) {
-    pthread_mutex_unlock(&fs->mtx);
+  if (!PushINode(fs, (struct BaseINode*)x)) {
     RegularINode_Delete(x);
     free((void*)name);
+    pthread_mutex_unlock(&fs->mtx);
     return -EIO;
   }
-  if (UNLIKELY(!DirectoryINode_PushDent(parent, name, (struct BaseINode*)x))) {
+  if (!DirectoryINode_PushDent(parent, name, (struct BaseINode*)x)) {
     RemoveINode(fs, (struct BaseINode*)x);
-    pthread_mutex_unlock(&fs->mtx);
     free((void*)name);
     return -EIO;
   }
   x->base.mode = (mode & 07777) | S_IFREG;
   x->base.nlink = 1;
   parent->base.ctime = parent->base.mtime = x->base.btime;
-  pthread_mutex_unlock(&fs->mtx);
   return 0;
-}
-int FileSystem_MkNod(struct FileSystem* thisArg, const char* path, mode_t mode, dev_t dev) {
-  return FileSystem_MkNodAt(thisArg, AT_FDCWD, path, mode, dev);
 }
 int FileSystem_MkDirAt(struct FileSystem* thisArg, int dirFd, const char* path, mode_t mode) {
   struct FSInternal* fs = (struct FSInternal*)thisArg->data;
@@ -1276,11 +1330,11 @@ int FileSystem_MkDirAt(struct FileSystem* thisArg, int dirFd, const char* path, 
   struct DirectoryINode* origCwd = fs->cwd.inode;
   if (dirFd != AT_FDCWD) {
     struct Fd* fd;
-    if (UNLIKELY(!(fd = GetFd(fs, dirFd)))) {
+    if (!(fd = GetFd(fs, dirFd))) {
       pthread_mutex_unlock(&fs->mtx);
       return -EBADF;
     }
-    if (UNLIKELY(!S_ISDIR(fd->inode->mode))) {
+    if (!S_ISDIR(fd->inode->mode)) {
       pthread_mutex_unlock(&fs->mtx);
       return -ENOTDIR;
     }
@@ -1290,78 +1344,79 @@ int FileSystem_MkDirAt(struct FileSystem* thisArg, int dirFd, const char* path, 
   struct DirectoryINode* parent = NULL;
   int res = GetINodeParent(fs, path, &inode, &parent);
   fs->cwd.inode = origCwd;
-  if (UNLIKELY(!parent)) {
+  if (!parent) {
     pthread_mutex_unlock(&fs->mtx);
     return res;
   }
-  if (UNLIKELY(res == 0)) {
+  if (res == 0) {
     pthread_mutex_unlock(&fs->mtx);
     return -EEXIST;
   }
-  if (UNLIKELY(res != -ENOENT)) {
+  if (res != -ENOENT) {
     pthread_mutex_unlock(&fs->mtx);
     return res;
   }
   const char* name = GetAbsoluteLast(fs, path);
-  if (UNLIKELY(!name)) {
+  if (!name) {
     pthread_mutex_unlock(&fs->mtx);
     return -ENOMEM;
   }
   struct DirectoryINode* x;
-  if (UNLIKELY(!TryAlloc((void**)&x, sizeof(struct DirectoryINode)))) {
-    pthread_mutex_unlock(&fs->mtx);
+  if (!TryAlloc((void**)&x, sizeof(struct DirectoryINode))) {
     free((void*)name);
+    pthread_mutex_unlock(&fs->mtx);
     return -EIO;
   }
   DirectoryINode_New(x);
-  if (UNLIKELY(!TryAlloc((void**)&x->dents, sizeof(struct Dent) * 2))) {
-    pthread_mutex_unlock(&fs->mtx);
+  if (!TryAlloc((void**)&x->dents, sizeof(struct Dent) * 2)) {
     DirectoryINode_Delete(x);
     free((void*)name);
+    pthread_mutex_unlock(&fs->mtx);
     return -EIO;
   }
   x->dentCount = 2;
-  if (UNLIKELY(!PushINode(fs, (struct BaseINode*)x))) {
-    pthread_mutex_unlock(&fs->mtx);
+  if (!PushINode(fs, (struct BaseINode*)x)) {
     DirectoryINode_Delete(x);
     free((void*)name);
+    pthread_mutex_unlock(&fs->mtx);
     return -EIO;
   }
-  if (UNLIKELY(!DirectoryINode_PushDent(parent, name, (struct BaseINode*)x))) {
+  if (!DirectoryINode_PushDent(parent, name, (struct BaseINode*)x)) {
     RemoveINode(fs, (struct BaseINode*)x);
-    pthread_mutex_unlock(&fs->mtx);
     free((void*)name);
+    pthread_mutex_unlock(&fs->mtx);
     return -EIO;
   }
   x->base.mode = (mode & 07777) | S_IFDIR;
   x->base.nlink = 2;
-  x->dents[0] = Dent_Create(".", (struct BaseINode*)x);
-  x->dents[1] = Dent_Create("..", (struct BaseINode*)parent);
+  x->dents[0] = Dent_New(".", (struct BaseINode*)x);
+  x->dents[1] = Dent_New("..", (struct BaseINode*)parent);
   ++parent->base.nlink;
   parent->base.ctime = parent->base.mtime = x->base.btime;
-  pthread_mutex_unlock(&fs->mtx);
   return 0;
 }
-int FileSystem_MkDir(struct FileSystem* thisArg, const char* path, mode_t mode) {
-  return FileSystem_MkDirAt(thisArg, AT_FDCWD, path, mode);
-}
-int FileSystem_SymLinkAt(struct FileSystem* thisArg, const char* oldPath, int newDirFd, const char* newPath) {
+int FileSystem_SymLinkAt(
+  struct FileSystem* thisArg,
+  const char* oldPath,
+  int newDirFd,
+  const char* newPath
+) {
   struct FSInternal* fs = (struct FSInternal*)thisArg->data;
   pthread_mutex_lock(&fs->mtx);
   struct Fd* fd;
   if (newDirFd != AT_FDCWD) {
-    if (UNLIKELY(!(fd = GetFd(fs, newDirFd)))) {
+    if (!(fd = GetFd(fs, newDirFd))) {
       pthread_mutex_unlock(&fs->mtx);
       return -EBADF;
     }
-    if (UNLIKELY(!S_ISDIR(fd->inode->mode))) {
+    if (!S_ISDIR(fd->inode->mode)) {
       pthread_mutex_unlock(&fs->mtx);
       return -ENOTDIR;
     }
   }
   struct BaseINode* oldInode;
   int res = GetINodeNoParent(fs, oldPath, &oldInode);
-  if (UNLIKELY(res != 0)) {
+  if (res != 0) {
     pthread_mutex_unlock(&fs->mtx);
     return res;
   }
@@ -1372,69 +1427,70 @@ int FileSystem_SymLinkAt(struct FileSystem* thisArg, const char* oldPath, int ne
   struct DirectoryINode* newParent = NULL;
   res = GetINodeParent(fs, newPath, &newInode, &newParent);
   fs->cwd.inode = origCwd;
-  if (UNLIKELY(!newParent)) {
+  if (!newParent) {
     pthread_mutex_unlock(&fs->mtx);
     return res;
   }
-  if (UNLIKELY(res == 0)) {
+  if (res == 0) {
     pthread_mutex_unlock(&fs->mtx);
     return -EEXIST;
   }
-  if (UNLIKELY(res != -ENOENT)) {
+  if (res != -ENOENT) {
     pthread_mutex_unlock(&fs->mtx);
     return res;
   }
   const char* name = GetAbsoluteLast(fs, newPath);
-  if (UNLIKELY(!name)) {
+  if (!name) {
     pthread_mutex_unlock(&fs->mtx);
     return -ENOMEM;
   }
   struct SymLinkINode* x;
-  if (UNLIKELY(!TryAlloc((void**)&x, sizeof(struct SymLinkINode)))) {
-    pthread_mutex_unlock(&fs->mtx);
+  if (!TryAlloc((void**)&x, sizeof(struct SymLinkINode))) {
     free((void*)name);
+    pthread_mutex_unlock(&fs->mtx);
     return -EIO;
   }
-  SymLinkINode_New(x);
   size_t oldPathLen = strlen(oldPath);
-  if (UNLIKELY(!TryAlloc((void**)&x->data, oldPathLen)) ||
-      UNLIKELY(!PushINode(fs, (struct BaseINode*)x))) {
-    pthread_mutex_unlock(&fs->mtx);
+  if (!TryAlloc((void**)&x->data, sizeof(char) * oldPathLen) ||
+      !PushINode(fs, (struct BaseINode*)x)) {
     SymLinkINode_Delete(x);
     free((void*)name);
+    pthread_mutex_unlock(&fs->mtx);
     return -EIO;
   }
   memcpy(x->data, oldPath, oldPathLen);
-  if (UNLIKELY(!(x->target = AbsolutePath(fs, oldPath))) ||
-      UNLIKELY(!DirectoryINode_PushDent(newParent, name, (struct BaseINode*)x))) {
+  if (!(x->target = AbsolutePath(fs, oldPath)) ||
+      !DirectoryINode_PushDent(newParent, name, (struct BaseINode*)x)) {
     RemoveINode(fs, (struct BaseINode*)x);
-    pthread_mutex_unlock(&fs->mtx);
     free((void*)name);
+    pthread_mutex_unlock(&fs->mtx);
     return -EIO;
   }
   x->base.mode = 0777 | S_IFLNK;
   x->base.nlink = 1;
   x->base.size = oldPathLen;
   newParent->base.ctime = newParent->base.mtime = x->base.btime;
-  pthread_mutex_unlock(&fs->mtx);
   return 0;
 }
-int FileSystem_SymLink(struct FileSystem* thisArg, const char* oldPath, const char* newPath) {
-  return FileSystem_SymLinkAt(thisArg, oldPath, AT_FDCWD, newPath);
-}
-int FileSystem_ReadLinkAt(struct FileSystem* thisArg, int dirFd, const char* path, char* buf, int bufLen) {
-  if (UNLIKELY(bufLen <= 0))
+int FileSystem_ReadLinkAt(
+  struct FileSystem* thisArg,
+  int dirFd,
+  const char* path,
+  char* buf,
+  int bufLen
+) {
+  if (bufLen <= 0)
     return -EINVAL;
   struct FSInternal* fs = (struct FSInternal*)thisArg->data;
   pthread_mutex_lock(&fs->mtx);
   struct DirectoryINode* origCwd = fs->cwd.inode;
   if (dirFd != AT_FDCWD) {
     struct Fd* fd;
-    if (UNLIKELY(!(fd = GetFd(fs, dirFd)))) {
+    if (!(fd = GetFd(fs, dirFd))) {
       pthread_mutex_unlock(&fs->mtx);
       return -EBADF;
     }
-    if (UNLIKELY(!S_ISDIR(fd->inode->mode))) {
+    if (!S_ISDIR(fd->inode->mode)) {
       pthread_mutex_unlock(&fs->mtx);
       return -ENOTDIR;
     }
@@ -1443,34 +1499,36 @@ int FileSystem_ReadLinkAt(struct FileSystem* thisArg, int dirFd, const char* pat
   struct BaseINode* inode;
   int res = GetINodeNoParent(fs, path, &inode);
   fs->cwd.inode = origCwd;
-  if (UNLIKELY(res != 0)) {
+  if (res != 0) {
     pthread_mutex_unlock(&fs->mtx);
     return res;
   }
-  if (UNLIKELY(!S_ISLNK(inode->mode))) {
+  if (!S_ISLNK(inode->mode)) {
     pthread_mutex_unlock(&fs->mtx);
     return -EINVAL;
   }
-  if (UNLIKELY(inode->size < bufLen))
+  if (inode->size < bufLen)
     bufLen = inode->size;
   memcpy(buf, ((struct SymLinkINode*)inode)->data, bufLen);
   clock_gettime(CLOCK_REALTIME, &inode->atime);
   pthread_mutex_unlock(&fs->mtx);
   return bufLen;
 }
-int FileSystem_ReadLink(struct FileSystem* thisArg, const char* path, char* buf, int bufLen) {
-  return FileSystem_ReadLinkAt(thisArg, AT_FDCWD, path, buf, bufLen);
-}
-int FileSystem_GetDents(struct FileSystem* thisArg, unsigned int fdNum, struct linux_dirent* dirp, unsigned int count) {
+int FileSystem_GetDents(
+  struct FileSystem* thisArg,
+  unsigned int fdNum,
+  struct linux_dirent* dirp,
+  unsigned int count
+) {
   struct FSInternal* fs = (struct FSInternal*)thisArg->data;
   pthread_mutex_lock(&fs->mtx);
   struct Fd* fd;
-  if (UNLIKELY(!(fd = GetFd(fs, fdNum)))) {
+  if (!(fd = GetFd(fs, fdNum))) {
     pthread_mutex_unlock(&fs->mtx);
     return -EBADF;
   }
   struct BaseINode* inode = fd->inode;
-  if (UNLIKELY(!S_ISDIR(inode->mode))) {
+  if (!S_ISDIR(inode->mode)) {
     pthread_mutex_unlock(&fs->mtx);
     return -ENOTDIR;
   }
@@ -1484,9 +1542,10 @@ int FileSystem_GetDents(struct FileSystem* thisArg, unsigned int fdNum, struct l
   do {
     struct Dent d = ((struct DirectoryINode*)inode)->dents[fd->seekOff];
     size_t nameLen = strlen(d.name);
-#define ALIGN(x, a) (((x) + ((a) - 1)) & ~((a) - 1))
-    unsigned short reclen = ALIGN(__builtin_offsetof(struct linux_dirent, d_name) + nameLen + 2, sizeof(long));
-#undef ALIGN
+    unsigned short reclen = ALIGN(
+      __builtin_offsetof(struct linux_dirent, d_name) + nameLen + 2,
+      sizeof(long)
+    );
     if (nread + reclen > count)
       break;
     struct linux_dirent* dent = (struct linux_dirent*)dirpData;
@@ -1499,7 +1558,7 @@ int FileSystem_GetDents(struct FileSystem* thisArg, unsigned int fdNum, struct l
     dirpData += reclen;
     nread += reclen;
   } while (++fd->seekOff != endIdx);
-  if (UNLIKELY(nread == 0)) {
+  if (nread == 0) {
     pthread_mutex_unlock(&fs->mtx);
     return -EINVAL;
   }
@@ -1508,35 +1567,41 @@ int FileSystem_GetDents(struct FileSystem* thisArg, unsigned int fdNum, struct l
   pthread_mutex_unlock(&fs->mtx);
   return nread;
 }
-int FileSystem_LinkAt(struct FileSystem* thisArg, int oldDirFd, const char* oldPath, int newDirFd, const char* newPath, int flags) {
-  if (UNLIKELY(flags & ~(AT_SYMLINK_FOLLOW | AT_EMPTY_PATH)) ||
-      UNLIKELY(flags & AT_EMPTY_PATH && oldPath[0] != '\0'))
+int FileSystem_LinkAt(
+  struct FileSystem* thisArg,
+  int oldDirFd,
+  const char* oldPath,
+  int newDirFd,
+  const char* newPath,
+  int flags
+) {
+  if (flags & ~(AT_SYMLINK_FOLLOW | AT_EMPTY_PATH) || (flags & AT_EMPTY_PATH && oldPath[0] != '\0'))
     return -EINVAL;
   struct FSInternal* fs = (struct FSInternal*)thisArg->data;
   pthread_mutex_lock(&fs->mtx);
   struct Fd* oldFd;
   struct Fd* newFd;
   if (oldDirFd != AT_FDCWD || flags & AT_EMPTY_PATH) {
-    if (UNLIKELY(!(oldFd = GetFd(fs, oldDirFd)))) {
+    if (!(oldFd = GetFd(fs, oldDirFd))) {
       pthread_mutex_unlock(&fs->mtx);
       return -EBADF;
     }
     if (!S_ISDIR(oldFd->inode->mode)) {
-      if (UNLIKELY(!(flags & AT_EMPTY_PATH))) {
+      if (!(flags & AT_EMPTY_PATH)) {
         pthread_mutex_unlock(&fs->mtx);
         return -ENOTDIR;
       }
-    } else if (UNLIKELY(flags & AT_EMPTY_PATH)) {
+    } else if (flags & AT_EMPTY_PATH) {
       pthread_mutex_unlock(&fs->mtx);
       return -EPERM;
     }
   }
   if (newDirFd != AT_FDCWD) {
-    if (UNLIKELY(!(newFd = GetFd(fs, newDirFd)))) {
+    if (!(newFd = GetFd(fs, newDirFd))) {
       pthread_mutex_unlock(&fs->mtx);
       return -EBADF;
     }
-    if (UNLIKELY(!S_ISDIR(newFd->inode->mode))) {
+    if (!S_ISDIR(newFd->inode->mode)) {
       pthread_mutex_unlock(&fs->mtx);
       return -ENOTDIR;
     }
@@ -1550,7 +1615,7 @@ int FileSystem_LinkAt(struct FileSystem* thisArg, int oldDirFd, const char* oldP
     oldInode = (struct BaseINode*)fs->cwd.inode;
   else res = GetINodeNoParentFollow(fs, oldPath, &oldInode, flags & AT_SYMLINK_FOLLOW);
   fs->cwd.inode = origCwd;
-  if (UNLIKELY(res != 0)) {
+  if (res != 0) {
     pthread_mutex_unlock(&fs->mtx);
     return res;
   }
@@ -1560,30 +1625,30 @@ int FileSystem_LinkAt(struct FileSystem* thisArg, int oldDirFd, const char* oldP
   struct DirectoryINode* newParent = NULL;
   res = GetINodeParent(fs, newPath, &newInode, &newParent);
   fs->cwd.inode = origCwd;
-  if (UNLIKELY(!newParent)) {
+  if (!newParent) {
     pthread_mutex_unlock(&fs->mtx);
     return res;
   }
-  if (UNLIKELY(res == 0)) {
+  if (res == 0) {
     pthread_mutex_unlock(&fs->mtx);
     return -EEXIST;
   }
-  if (UNLIKELY(res != -ENOENT)) {
+  if (res != -ENOENT) {
     pthread_mutex_unlock(&fs->mtx);
     return res;
   }
-  if (UNLIKELY(S_ISDIR(oldInode->mode))) {
+  if (S_ISDIR(oldInode->mode)) {
     pthread_mutex_unlock(&fs->mtx);
     return -EPERM;
   }
   const char* name = GetAbsoluteLast(fs, newPath);
-  if (UNLIKELY(!name)) {
+  if (!name) {
     pthread_mutex_unlock(&fs->mtx);
     return -ENOMEM;
   }
-  if (UNLIKELY(!DirectoryINode_PushDent(newParent, name, oldInode))) {
-    pthread_mutex_unlock(&fs->mtx);
+  if (!DirectoryINode_PushDent(newParent, name, oldInode)) {
     free((void*)name);
+    pthread_mutex_unlock(&fs->mtx);
     return -EIO;
   }
   ++oldInode->nlink;
@@ -1593,22 +1658,19 @@ int FileSystem_LinkAt(struct FileSystem* thisArg, int oldDirFd, const char* oldP
   pthread_mutex_unlock(&fs->mtx);
   return 0;
 }
-int FileSystem_Link(struct FileSystem* thisArg, const char* oldPath, const char* newPath) {
-  return FileSystem_LinkAt(thisArg, AT_FDCWD, oldPath, AT_FDCWD, newPath, 0);
-}
 int FileSystem_UnlinkAt(struct FileSystem* thisArg, int dirFd, const char* path, int flags) {
-  if (UNLIKELY(flags & ~AT_REMOVEDIR))
+  if (flags & ~AT_REMOVEDIR)
     return -EINVAL;
   struct FSInternal* fs = (struct FSInternal*)thisArg->data;
   pthread_mutex_lock(&fs->mtx);
   struct DirectoryINode* origCwd = fs->cwd.inode;
   if (dirFd != AT_FDCWD) {
     struct Fd* fd;
-    if (UNLIKELY(!(fd = GetFd(fs, dirFd)))) {
+    if (!(fd = GetFd(fs, dirFd))) {
       pthread_mutex_unlock(&fs->mtx);
       return -EBADF;
     }
-    if (UNLIKELY(!S_ISDIR(fd->inode->mode))) {
+    if (!S_ISDIR(fd->inode->mode)) {
       pthread_mutex_unlock(&fs->mtx);
       return -ENOTDIR;
     }
@@ -1618,50 +1680,50 @@ int FileSystem_UnlinkAt(struct FileSystem* thisArg, int dirFd, const char* path,
   struct DirectoryINode* parent;
   int res = GetINodeParent(fs, path, &inode, &parent);
   fs->cwd.inode = origCwd;
-  if (UNLIKELY(res != 0)) {
+  if (res != 0) {
     pthread_mutex_unlock(&fs->mtx);
     return res;
   }
   if (flags & AT_REMOVEDIR) {
-    if (UNLIKELY(!S_ISDIR(inode->mode))) {
+    if (!S_ISDIR(inode->mode)) {
       pthread_mutex_unlock(&fs->mtx);
       return -ENOTDIR;
     }
-    if (UNLIKELY(inode == fs->inodes[0])) {
+    if (inode == fs->inodes[0]) {
       pthread_mutex_unlock(&fs->mtx);
       return -EBUSY;
     }
-  } else if (UNLIKELY(S_ISDIR(inode->mode))) {
+  } else if (S_ISDIR(inode->mode)) {
     pthread_mutex_unlock(&fs->mtx);
     return -EISDIR;
   }
   {
     int fdCount = fs->fdCount;
     for (int i = 0; i != fdCount; ++i)
-      if (UNLIKELY(fs->fds[i]->inode == inode)) {
+      if (fs->fds[i]->inode == inode) {
         pthread_mutex_unlock(&fs->mtx);
         return -EBUSY;
       }
   }
   if (flags & AT_REMOVEDIR) {
     const char* last = GetLast(path);
-    if (UNLIKELY(!last)) {
+    if (!last) {
       pthread_mutex_unlock(&fs->mtx);
       return -ENOMEM;
     }
     bool isDot = strcmp(last, ".") == 0;
     free((void*)last);
-    if (UNLIKELY(isDot)) {
+    if (isDot) {
       pthread_mutex_unlock(&fs->mtx);
       return -EINVAL;
     }
-    if (UNLIKELY(((struct DirectoryINode*)inode)->dentCount != 2)) {
+    if (((struct DirectoryINode*)inode)->dentCount != 2) {
       pthread_mutex_unlock(&fs->mtx);
       return -ENOTEMPTY;
     }
   }
   const char* name = GetAbsoluteLast(fs, path);
-  if (UNLIKELY(!name)) {
+  if (!name) {
     pthread_mutex_unlock(&fs->mtx);
     return -ENOMEM;
   }
@@ -1672,50 +1734,52 @@ int FileSystem_UnlinkAt(struct FileSystem* thisArg, int dirFd, const char* path,
   struct timespec ts;
   clock_gettime(CLOCK_REALTIME, &ts);
   --inode->nlink;
-  if (UNLIKELY(BaseINode_IsUnused(inode)))
+  if (BaseINode_IsUnused(inode))
     RemoveINode(fs, inode);
   else inode->ctime = ts;
   parent->base.ctime = parent->base.mtime = ts;
-  pthread_mutex_unlock(&fs->mtx);
   return 0;
 }
-int FileSystem_Unlink(struct FileSystem* thisArg, const char* path) {
-  return FileSystem_UnlinkAt(thisArg, AT_FDCWD, path, 0);
-}
-int FileSystem_RmDir(struct FileSystem* thisArg, const char* path) {
-  return FileSystem_UnlinkAt(thisArg, AT_FDCWD, path, AT_REMOVEDIR);
-}
-int FileSystem_RenameAt2(struct FileSystem* thisArg, int oldDirFd, const char* oldPath, int newDirFd, const char* newPath, unsigned int flags) {
-  if (UNLIKELY(flags & ~(RENAME_NOREPLACE | RENAME_EXCHANGE)) ||
-      UNLIKELY(flags & RENAME_NOREPLACE && flags & RENAME_EXCHANGE))
+int FileSystem_RenameAt2(
+  struct FileSystem* thisArg,
+  int oldDirFd,
+  const char* oldPath,
+  int newDirFd,
+  const char* newPath,
+  unsigned int flags
+) {
+  if (flags & ~(RENAME_NOREPLACE | RENAME_EXCHANGE) ||
+      (flags & RENAME_NOREPLACE && flags & RENAME_EXCHANGE))
     return -EINVAL;
   const char* last = GetLast(oldPath);
-  if (UNLIKELY(!last))
+  if (!last)
     return -ENOMEM;
-  bool isDot = strcmp(last, ".") == 0 || strcmp(last, "..") == 0;
-  free((void*)last);
-  if (UNLIKELY(isDot))
-    return -EBUSY;
+  {
+    bool isDot = strcmp(last, ".") == 0 || strcmp(last, "..") == 0;
+    free((void*)last);
+    if (isDot)
+      return -EBUSY;
+  }
   struct FSInternal* fs = (struct FSInternal*)thisArg->data;
   pthread_mutex_lock(&fs->mtx);
   struct Fd* oldFd;
   struct Fd* newFd;
   if (oldDirFd != AT_FDCWD) {
-    if (UNLIKELY(!(oldFd = GetFd(fs, oldDirFd)))) {
+    if (!(oldFd = GetFd(fs, oldDirFd))) {
       pthread_mutex_unlock(&fs->mtx);
       return -EBADF;
     }
-    if (UNLIKELY(!S_ISDIR(oldFd->inode->mode))) {
+    if (!S_ISDIR(oldFd->inode->mode)) {
       pthread_mutex_unlock(&fs->mtx);
       return -ENOTDIR;
     }
   }
   if (newDirFd != AT_FDCWD) {
-    if (UNLIKELY(!(newFd = GetFd(fs, newDirFd)))) {
+    if (!(newFd = GetFd(fs, newDirFd))) {
       pthread_mutex_unlock(&fs->mtx);
       return -EBADF;
     }
-    if (UNLIKELY(!S_ISDIR(newFd->inode->mode))) {
+    if (!S_ISDIR(newFd->inode->mode)) {
       pthread_mutex_unlock(&fs->mtx);
       return -ENOTDIR;
     }
@@ -1727,7 +1791,7 @@ int FileSystem_RenameAt2(struct FileSystem* thisArg, int oldDirFd, const char* o
   struct DirectoryINode* oldParent;
   int res = GetINodeParent(fs, oldPath, &oldInode, &oldParent);
   fs->cwd.inode = origCwd;
-  if (UNLIKELY(res != 0)) {
+  if (res != 0) {
     pthread_mutex_unlock(&fs->mtx);
     return res;
   }
@@ -1737,56 +1801,54 @@ int FileSystem_RenameAt2(struct FileSystem* thisArg, int oldDirFd, const char* o
   struct DirectoryINode* newParent = NULL;
   res = GetINodeParent(fs, newPath, &newInode, &newParent);
   fs->cwd.inode = origCwd;
-  if (UNLIKELY(!newParent) ||
-      (!newInode && UNLIKELY(res != -ENOENT))) {
+  if (!newParent || (!newInode && res != -ENOENT)) {
     pthread_mutex_unlock(&fs->mtx);
     return res;
   }
-  if (UNLIKELY(oldInode == newInode)) {
+  if (oldInode == newInode) {
     pthread_mutex_unlock(&fs->mtx);
     return 0;
   }
-  if (flags & RENAME_NOREPLACE && UNLIKELY(newInode)) {
+  if (flags & RENAME_NOREPLACE && newInode) {
     pthread_mutex_unlock(&fs->mtx);
     return -EEXIST;
   }
-  if (flags & RENAME_EXCHANGE && UNLIKELY(!newInode)) {
+  if (flags & RENAME_EXCHANGE && !newInode) {
     pthread_mutex_unlock(&fs->mtx);
     return -ENOENT;
   }
   if (S_ISDIR(oldInode->mode)) {
     if (newInode) {
-      if (UNLIKELY(!S_ISDIR(newInode->mode))) {
+      if (!S_ISDIR(newInode->mode)) {
         pthread_mutex_unlock(&fs->mtx);
         return -ENOTDIR;
       }
-      if (UNLIKELY(((struct DirectoryINode*)newInode)->dentCount > 2)) {
+      if (((struct DirectoryINode*)newInode)->dentCount > 2) {
         pthread_mutex_unlock(&fs->mtx);
         return -ENOTEMPTY;
       }
     }
-    if (UNLIKELY(oldInode == fs->inodes[0]) ||
-        UNLIKELY(oldInode == (struct BaseINode*)fs->cwd.inode)) {
+    if (oldInode == fs->inodes[0] || oldInode == (struct BaseINode*)fs->cwd.inode) {
       pthread_mutex_unlock(&fs->mtx);
       return -EBUSY;
     }
-  } else if (newInode && UNLIKELY(S_ISDIR(newInode->mode))) {
+  } else if (newInode && S_ISDIR(newInode->mode)) {
     pthread_mutex_unlock(&fs->mtx);
     return -EISDIR;
   }
-  if (UNLIKELY(DirectoryINode_IsInSelf(oldParent, (struct BaseINode*)newParent))) {
+  if (DirectoryINode_IsInSelf(oldParent, (struct BaseINode*)newParent)) {
     pthread_mutex_unlock(&fs->mtx);
     return -EINVAL;
   }
   const char* oldName = GetAbsoluteLast(fs, oldPath);
-  if (UNLIKELY(!oldName)) {
+  if (!oldName) {
     pthread_mutex_unlock(&fs->mtx);
     return -ENOMEM;
   }
   const char* newName = GetAbsoluteLast(fs, newPath);
-  if (UNLIKELY(!newName)) {
-    pthread_mutex_unlock(&fs->mtx);
+  if (!newName) {
     free((void*)oldName);
+    pthread_mutex_unlock(&fs->mtx);
     return -ENOMEM;
   }
   if (flags & RENAME_EXCHANGE) {
@@ -1805,10 +1867,10 @@ int FileSystem_RenameAt2(struct FileSystem* thisArg, int oldDirFd, const char* o
     free((void*)oldName);
     free((void*)newName);
   } else {
-    if (UNLIKELY(!DirectoryINode_PushDent(newParent, newName, oldInode))) {
-      pthread_mutex_unlock(&fs->mtx);
+    if (!DirectoryINode_PushDent(newParent, newName, oldInode)) {
       free((void*)oldName);
       free((void*)newName);
+      pthread_mutex_unlock(&fs->mtx);
       return -EIO;
     }
     DirectoryINode_RemoveDent(oldParent, oldName);
@@ -1825,7 +1887,7 @@ int FileSystem_RenameAt2(struct FileSystem* thisArg, int oldDirFd, const char* o
   if (!(flags & RENAME_EXCHANGE)) {
     if (newInode) {
       --newInode->nlink;
-      if (UNLIKELY(BaseINode_IsUnused(newInode)))
+      if (BaseINode_IsUnused(newInode))
         RemoveINode(fs, newInode);
       else newInode->ctime = ts;
     }
@@ -1836,23 +1898,11 @@ int FileSystem_RenameAt2(struct FileSystem* thisArg, int oldDirFd, const char* o
   pthread_mutex_unlock(&fs->mtx);
   return 0;
 }
-int FileSystem_RenameAt(struct FileSystem* thisArg, int oldDirFd, const char* oldPath, int newDirFd, const char* newPath) {
-  return FileSystem_RenameAt2(thisArg, oldDirFd, oldPath, newDirFd, newPath, 0);
-}
-int FileSystem_Rename(struct FileSystem* thisArg, const char* oldPath, const char* newPath) {
-  return FileSystem_RenameAt2(thisArg, AT_FDCWD, oldPath, AT_FDCWD, newPath, 0);
-}
-#define FALLOC_FL_ALLOCATE_RANGE 0x00
-#define FALLOC_FL_MODE_MASK	(FALLOC_FL_ALLOCATE_RANGE |	\
-  FALLOC_FL_ZERO_RANGE | \
-  FALLOC_FL_PUNCH_HOLE | \
-  FALLOC_FL_COLLAPSE_RANGE | \
-  FALLOC_FL_INSERT_RANGE)
 int FileSystem_FAllocate(struct FileSystem* thisArg, int fdNum, int mode, off_t offset, off_t len) {
   struct FSInternal* fs = (struct FSInternal*)thisArg->data;
   pthread_mutex_lock(&fs->mtx);
   struct Fd* fd;
-  if (UNLIKELY(!(fd = GetFd(fs, fdNum)))) {
+  if (!(fd = GetFd(fs, fdNum))) {
     pthread_mutex_unlock(&fs->mtx);
     return -EBADF;
   }
@@ -1882,6 +1932,7 @@ int FileSystem_FAllocate(struct FileSystem* thisArg, int fdNum, int mode, off_t 
       }
       break;
     default:
+      pthread_mutex_unlock(&fs->mtx);
       return -EOPNOTSUPP;
   }
   if (!(fd->flags & (O_WRONLY | O_RDWR))) {
@@ -2000,7 +2051,10 @@ int FileSystem_FAllocate(struct FileSystem* thisArg, int fdNum, int mode, off_t 
             range->offset -= len;
             if (i != 0) {
               struct DataRange* prevRange = inode->dataRanges[i - 1];
-              if (!TryRealloc(&prevRange->data, prevRange->size + range->size)) {
+              if (!TryRealloc(
+                    (void**)&prevRange->data,
+                    sizeof(char) * (prevRange->size + range->size)
+                  )) {
                 pthread_mutex_unlock(&fs->mtx);
                 return -ENOMEM;
               }
@@ -2028,7 +2082,11 @@ int FileSystem_FAllocate(struct FileSystem* thisArg, int fdNum, int mode, off_t 
             off_t rangeSize = range->size;
             range->size -= len;
             off_t offsetAfterHole = (offset - range->offset) + len;
-            memcpy(range->data + (offset - range->offset), range->data + offsetAfterHole, rangeSize - offsetAfterHole);
+            memcpy(
+              range->data + (offset - range->offset),
+              range->data + offsetAfterHole,
+              rangeSize - offsetAfterHole
+            );
             range->data = (char*)realloc(range->data, range->size);
           } else {
             range->size = (range->offset + range->size) - offset;
@@ -2070,13 +2128,18 @@ int FileSystem_FAllocate(struct FileSystem* thisArg, int fdNum, int mode, off_t 
   pthread_mutex_unlock(&fs->mtx);
   return 0;
 }
-off_t FileSystem_LSeek(struct FileSystem* thisArg, unsigned int fdNum, off_t offset, unsigned int whence) {
-  if (UNLIKELY(offset < 0))
+off_t FileSystem_LSeek(
+  struct FileSystem* thisArg,
+  unsigned int fdNum,
+  off_t offset,
+  unsigned int whence
+) {
+  if (offset < 0)
     return -EINVAL;
   struct FSInternal* fs = (struct FSInternal*)thisArg->data;
   pthread_mutex_lock(&fs->mtx);
   struct Fd* fd;
-  if (UNLIKELY(!(fd = GetFd(fs, fdNum)))) {
+  if (!(fd = GetFd(fs, fdNum))) {
     pthread_mutex_unlock(&fs->mtx);
     return -EBADF;
   }
@@ -2087,7 +2150,7 @@ off_t FileSystem_LSeek(struct FileSystem* thisArg, unsigned int fdNum, off_t off
       return fd->seekOff = offset;
     case SEEK_CUR: {
       off_t res;
-      if (UNLIKELY(__builtin_add_overflow(fd->seekOff, offset, &res))) {
+      if (__builtin_add_overflow(fd->seekOff, offset, &res)) {
         pthread_mutex_unlock(&fs->mtx);
         return -EOVERFLOW;
       }
@@ -2095,12 +2158,12 @@ off_t FileSystem_LSeek(struct FileSystem* thisArg, unsigned int fdNum, off_t off
       return fd->seekOff = res;
     }
     case SEEK_END: {
-      if (UNLIKELY(S_ISDIR(inode->mode))) {
+      if (S_ISDIR(inode->mode)) {
         pthread_mutex_unlock(&fs->mtx);
         return -EINVAL;
       }
       off_t res;
-      if (UNLIKELY(__builtin_add_overflow(inode->size, offset, &res))) {
+      if (__builtin_add_overflow(inode->size, offset, &res)) {
         pthread_mutex_unlock(&fs->mtx);
         return -EOVERFLOW;
       }
@@ -2117,7 +2180,7 @@ off_t FileSystem_LSeek(struct FileSystem* thisArg, unsigned int fdNum, off_t off
       off_t res;
       if (!DataIterator_IsInData(&it)) {
         if (!DataIterator_Next(&it)) {
-          if (UNLIKELY(__builtin_add_overflow(inode->size, offset, &res))) {
+          if (__builtin_add_overflow(inode->size, offset, &res)) {
             pthread_mutex_unlock(&fs->mtx);
             return -EOVERFLOW;
           }
@@ -2125,7 +2188,7 @@ off_t FileSystem_LSeek(struct FileSystem* thisArg, unsigned int fdNum, off_t off
           return fd->seekOff = res;
         }
         struct DataRange* range = DataIterator_GetRange(&it);
-        if (UNLIKELY(__builtin_add_overflow(range->offset, offset, &res))) {
+        if (__builtin_add_overflow(range->offset, offset, &res)) {
           pthread_mutex_unlock(&fs->mtx);
           return -EOVERFLOW;
         }
@@ -2135,14 +2198,14 @@ off_t FileSystem_LSeek(struct FileSystem* thisArg, unsigned int fdNum, off_t off
       DataIterator_Next(&it);
       if (DataIterator_Next(&it)) {
         struct DataRange* range = DataIterator_GetRange(&it);
-        if (UNLIKELY(__builtin_add_overflow(range->offset, offset, &res))) {
+        if (__builtin_add_overflow(range->offset, offset, &res)) {
           pthread_mutex_unlock(&fs->mtx);
           return -EOVERFLOW;
         }
         pthread_mutex_unlock(&fs->mtx);
         return fd->seekOff = res;
       }
-      if (UNLIKELY(__builtin_add_overflow(inode->size, offset, &res))) {
+      if (__builtin_add_overflow(inode->size, offset, &res)) {
         pthread_mutex_unlock(&fs->mtx);
         return -EOVERFLOW;
       }
@@ -2160,7 +2223,7 @@ off_t FileSystem_LSeek(struct FileSystem* thisArg, unsigned int fdNum, off_t off
       if (DataIterator_IsInData(&it)) {
         DataIterator_Next(&it);
         struct HoleRange hole = DataIterator_GetHole(&it);
-        if (UNLIKELY(__builtin_add_overflow(hole.offset, offset, &res))) {
+        if (__builtin_add_overflow(hole.offset, offset, &res)) {
           pthread_mutex_unlock(&fs->mtx);
           return -EOVERFLOW;
         }
@@ -2170,14 +2233,14 @@ off_t FileSystem_LSeek(struct FileSystem* thisArg, unsigned int fdNum, off_t off
       if (DataIterator_Next(&it)) {
         DataIterator_Next(&it);
         struct HoleRange hole = DataIterator_GetHole(&it);
-        if (UNLIKELY(__builtin_add_overflow(hole.offset, offset, &res))) {
+        if (__builtin_add_overflow(hole.offset, offset, &res)) {
           pthread_mutex_unlock(&fs->mtx);
           return -EOVERFLOW;
         }
         pthread_mutex_unlock(&fs->mtx);
         return fd->seekOff = res;
       }
-      if (UNLIKELY(__builtin_add_overflow(inode->size, offset, &res))) {
+      if (__builtin_add_overflow(inode->size, offset, &res)) {
         pthread_mutex_unlock(&fs->mtx);
         return -EOVERFLOW;
       }
@@ -2192,13 +2255,12 @@ ssize_t FileSystem_Read(struct FileSystem* thisArg, unsigned int fdNum, char* bu
   struct FSInternal* fs = (struct FSInternal*)thisArg->data;
   pthread_mutex_lock(&fs->mtx);
   struct Fd* fd;
-  if (UNLIKELY(!(fd = GetFd(fs, fdNum))) ||
-      UNLIKELY(fd->flags & O_WRONLY)) {
+  if (!(fd = GetFd(fs, fdNum)) || fd->flags & O_WRONLY) {
     pthread_mutex_unlock(&fs->mtx);
     return -EBADF;
   }
   struct BaseINode* inode = fd->inode;
-  if (UNLIKELY(S_ISDIR(inode->mode))) {
+  if (S_ISDIR(inode->mode)) {
     pthread_mutex_unlock(&fs->mtx);
     return -EISDIR;
   }
@@ -2206,8 +2268,8 @@ ssize_t FileSystem_Read(struct FileSystem* thisArg, unsigned int fdNum, char* bu
     pthread_mutex_unlock(&fs->mtx);
     return 0;
   }
-  if (count > 0x7ffff000)
-    count = 0x7ffff000;
+  if (count > RW_MAX)
+    count = RW_MAX;
   if (fd->seekOff >= inode->size) {
     pthread_mutex_unlock(&fs->mtx);
     return 0;
@@ -2238,17 +2300,21 @@ ssize_t FileSystem_Read(struct FileSystem* thisArg, unsigned int fdNum, char* bu
   pthread_mutex_unlock(&fs->mtx);
   return count;
 }
-ssize_t FileSystem_Readv(struct FileSystem* thisArg, unsigned int fdNum, struct iovec* iov, int iovcnt) {
+ssize_t FileSystem_Readv(
+  struct FileSystem* thisArg,
+  unsigned int fdNum,
+  struct iovec* iov,
+  int iovcnt
+) {
   struct FSInternal* fs = (struct FSInternal*)thisArg->data;
   pthread_mutex_lock(&fs->mtx);
   struct Fd* fd;
-  if (UNLIKELY(!(fd = GetFd(fs, fdNum))) ||
-      UNLIKELY(fd->flags & O_WRONLY)) {
+  if (!(fd = GetFd(fs, fdNum)) || fd->flags & O_WRONLY) {
     pthread_mutex_unlock(&fs->mtx);
     return -EBADF;
   }
   struct BaseINode* inode = fd->inode;
-  if (UNLIKELY(S_ISDIR(inode->mode))) {
+  if (S_ISDIR(inode->mode)) {
     pthread_mutex_unlock(&fs->mtx);
     return -EISDIR;
   }
@@ -2256,8 +2322,7 @@ ssize_t FileSystem_Readv(struct FileSystem* thisArg, unsigned int fdNum, struct 
     pthread_mutex_unlock(&fs->mtx);
     return 0;
   }
-  if (UNLIKELY(iovcnt < 0) ||
-      UNLIKELY(iovcnt > 1024)) {
+  if (iovcnt < 0 || iovcnt > IOV_MAX) {
     pthread_mutex_unlock(&fs->mtx);
     return -EINVAL;
   }
@@ -2266,11 +2331,11 @@ ssize_t FileSystem_Readv(struct FileSystem* thisArg, unsigned int fdNum, struct 
     size_t len = iov[i].iov_len;
     if (len == 0)
       continue;
-    if (UNLIKELY(len < 0)) {
+    if (len < 0) {
       pthread_mutex_unlock(&fs->mtx);
       return -EINVAL;
     }
-    size_t limit = 0x7ffff000 - totalLen;
+    size_t limit = RW_MAX - totalLen;
     if (len > limit) {
       len = limit;
       iov[i].iov_len = len;
@@ -2326,19 +2391,24 @@ ssize_t FileSystem_Readv(struct FileSystem* thisArg, unsigned int fdNum, struct 
   pthread_mutex_unlock(&fs->mtx);
   return totalLen;
 }
-ssize_t FileSystem_PRead(struct FileSystem* thisArg, unsigned int fdNum, char* buf, size_t count, off_t offset) {
-  if (UNLIKELY(offset < 0))
+ssize_t FileSystem_PRead(
+  struct FileSystem* thisArg,
+  unsigned int fdNum,
+  char* buf,
+  size_t count,
+  off_t offset
+) {
+  if (offset < 0)
     return -EINVAL;
   struct FSInternal* fs = (struct FSInternal*)thisArg->data;
   pthread_mutex_lock(&fs->mtx);
   struct Fd* fd;
-  if (UNLIKELY(!(fd = GetFd(fs, fdNum))) ||
-      UNLIKELY(fd->flags & O_WRONLY)) {
+  if (!(fd = GetFd(fs, fdNum)) || fd->flags & O_WRONLY) {
     pthread_mutex_unlock(&fs->mtx);
     return -EBADF;
   }
   struct BaseINode* inode = fd->inode;
-  if (UNLIKELY(S_ISDIR(inode->mode))) {
+  if (S_ISDIR(inode->mode)) {
     pthread_mutex_unlock(&fs->mtx);
     return -EISDIR;
   }
@@ -2346,8 +2416,8 @@ ssize_t FileSystem_PRead(struct FileSystem* thisArg, unsigned int fdNum, char* b
     pthread_mutex_unlock(&fs->mtx);
     return 0;
   }
-  if (count > 0x7ffff000)
-    count = 0x7ffff000;
+  if (count > RW_MAX)
+    count = RW_MAX;
   if (offset >= inode->size) {
     pthread_mutex_unlock(&fs->mtx);
     return 0;
@@ -2376,19 +2446,24 @@ ssize_t FileSystem_PRead(struct FileSystem* thisArg, unsigned int fdNum, char* b
   pthread_mutex_unlock(&fs->mtx);
   return count;
 }
-ssize_t FileSystem_PReadv(struct FileSystem* thisArg, unsigned int fdNum, struct iovec* iov, int iovcnt, off_t offset) {
-  if (UNLIKELY(offset < 0))
+ssize_t FileSystem_PReadv(
+  struct FileSystem* thisArg,
+  unsigned int fdNum,
+  struct iovec* iov,
+  int iovcnt,
+  off_t offset
+) {
+  if (offset < 0)
     return -EINVAL;
   struct FSInternal* fs = (struct FSInternal*)thisArg->data;
   pthread_mutex_lock(&fs->mtx);
   struct Fd* fd;
-  if (UNLIKELY(!(fd = GetFd(fs, fdNum))) ||
-      UNLIKELY(fd->flags & O_WRONLY)) {
+  if (!(fd = GetFd(fs, fdNum)) || fd->flags & O_WRONLY) {
     pthread_mutex_unlock(&fs->mtx);
     return -EBADF;
   }
   struct BaseINode* inode = fd->inode;
-  if (UNLIKELY(S_ISDIR(inode->mode))) {
+  if (S_ISDIR(inode->mode)) {
     pthread_mutex_unlock(&fs->mtx);
     return -EISDIR;
   }
@@ -2396,8 +2471,7 @@ ssize_t FileSystem_PReadv(struct FileSystem* thisArg, unsigned int fdNum, struct
     pthread_mutex_unlock(&fs->mtx);
     return 0;
   }
-  if (UNLIKELY(iovcnt < 0) ||
-      UNLIKELY(iovcnt > 1024)) {
+  if (iovcnt < 0 || iovcnt > IOV_MAX) {
     pthread_mutex_unlock(&fs->mtx);
     return -EINVAL;
   }
@@ -2406,11 +2480,11 @@ ssize_t FileSystem_PReadv(struct FileSystem* thisArg, unsigned int fdNum, struct
     size_t len = iov[i].iov_len;
     if (len == 0)
       continue;
-    if (UNLIKELY(len < 0)) {
+    if (len < 0) {
       pthread_mutex_unlock(&fs->mtx);
       return -EINVAL;
     }
-    size_t limit = 0x7ffff000 - totalLen;
+    size_t limit = RW_MAX - totalLen;
     if (len > limit) {
       len = limit;
       iov[i].iov_len = len;
@@ -2465,12 +2539,16 @@ ssize_t FileSystem_PReadv(struct FileSystem* thisArg, unsigned int fdNum, struct
   pthread_mutex_unlock(&fs->mtx);
   return totalLen;
 }
-ssize_t FileSystem_Write(struct FileSystem* thisArg, unsigned int fdNum, const char* buf, size_t count) {
+ssize_t FileSystem_Write(
+  struct FileSystem* thisArg,
+  unsigned int fdNum,
+  const char* buf,
+  size_t count
+) {
   struct FSInternal* fs = (struct FSInternal*)thisArg->data;
-  pthread_mutex_unlock(&fs->mtx);
+  pthread_mutex_lock(&fs->mtx);
   struct Fd* fd;
-  if (UNLIKELY(!(fd = GetFd(fs, fdNum))) ||
-      UNLIKELY(!(fd->flags & (O_WRONLY | O_RDWR)))) {
+  if (!(fd = GetFd(fs, fdNum)) || !(fd->flags & (O_WRONLY | O_RDWR))) {
     pthread_mutex_unlock(&fs->mtx);
     return -EBADF;
   }
@@ -2478,19 +2556,19 @@ ssize_t FileSystem_Write(struct FileSystem* thisArg, unsigned int fdNum, const c
     pthread_mutex_unlock(&fs->mtx);
     return 0;
   }
-  if (count > 0x7ffff000)
-    count = 0x7ffff000;
+  if (count > RW_MAX)
+    count = RW_MAX;
   struct BaseINode* inode = fd->inode;
   off_t seekOff = fd->flags & O_APPEND
     ? inode->size
     : fd->seekOff;
   off_t seekEnd;
-  if (UNLIKELY(__builtin_add_overflow(seekOff, count, &seekEnd))) {
+  if (__builtin_add_overflow(seekOff, count, &seekEnd)) {
     pthread_mutex_unlock(&fs->mtx);
     return -EFBIG;
   }
   struct DataRange* range = RegularINode_AllocData((struct RegularINode*)inode, seekOff, count);
-  if (UNLIKELY(!range)) {
+  if (!range) {
     pthread_mutex_unlock(&fs->mtx);
     return -EIO;
   }
@@ -2502,12 +2580,16 @@ ssize_t FileSystem_Write(struct FileSystem* thisArg, unsigned int fdNum, const c
   pthread_mutex_unlock(&fs->mtx);
   return count;
 }
-ssize_t FileSystem_Writev(struct FileSystem* thisArg, unsigned int fdNum, struct iovec* iov, int iovcnt) {
+ssize_t FileSystem_Writev(
+  struct FileSystem* thisArg,
+  unsigned int fdNum,
+  struct iovec* iov,
+  int iovcnt
+) {
   struct FSInternal* fs = (struct FSInternal*)thisArg->data;
   pthread_mutex_lock(&fs->mtx);
   struct Fd* fd;
-  if (UNLIKELY(!(fd = GetFd(fs, fdNum))) ||
-      UNLIKELY(!(fd->flags & (O_WRONLY | O_RDWR)))) {
+  if (!(fd = GetFd(fs, fdNum)) || !(fd->flags & (O_WRONLY | O_RDWR))) {
     pthread_mutex_unlock(&fs->mtx);
     return -EBADF;
   }
@@ -2515,8 +2597,7 @@ ssize_t FileSystem_Writev(struct FileSystem* thisArg, unsigned int fdNum, struct
     pthread_mutex_unlock(&fs->mtx);
     return 0;
   }
-  if (UNLIKELY(iovcnt < 0) ||
-      UNLIKELY(iovcnt > 1024)) {
+  if (iovcnt < 0 || iovcnt > IOV_MAX) {
     pthread_mutex_unlock(&fs->mtx);
     return -EINVAL;
   }
@@ -2525,11 +2606,11 @@ ssize_t FileSystem_Writev(struct FileSystem* thisArg, unsigned int fdNum, struct
     ssize_t len = iov[i].iov_len;
     if (len == 0)
       continue;
-    if (UNLIKELY(len < 0)) {
+    if (len < 0) {
       pthread_mutex_unlock(&fs->mtx);
       return -EINVAL;
     }
-    size_t limit = 0x7ffff000 - totalLen;
+    size_t limit = RW_MAX - totalLen;
     if (len > limit) {
       len = limit;
       iov[i].iov_len = len;
@@ -2545,12 +2626,12 @@ ssize_t FileSystem_Writev(struct FileSystem* thisArg, unsigned int fdNum, struct
     ? inode->size
     : fd->seekOff;
   off_t seekEnd;
-  if (UNLIKELY(__builtin_add_overflow(seekOff, totalLen, &seekEnd))) {
+  if (__builtin_add_overflow(seekOff, totalLen, &seekEnd)) {
     pthread_mutex_unlock(&fs->mtx);
     return -EFBIG;
   }
   struct DataRange* range = RegularINode_AllocData((struct RegularINode*)inode, seekOff, totalLen);
-  if (UNLIKELY(!range)) {
+  if (!range) {
     pthread_mutex_unlock(&fs->mtx);
     return -EIO;
   }
@@ -2571,14 +2652,19 @@ ssize_t FileSystem_Writev(struct FileSystem* thisArg, unsigned int fdNum, struct
   pthread_mutex_unlock(&fs->mtx);
   return count;
 }
-ssize_t FileSystem_PWrite(struct FileSystem* thisArg, unsigned int fdNum, const char* buf, size_t count, off_t offset) {
-  if (UNLIKELY(offset < 0))
+ssize_t FileSystem_PWrite(
+  struct FileSystem* thisArg,
+  unsigned int fdNum,
+  const char* buf,
+  size_t count,
+  off_t offset
+) {
+  if (offset < 0)
     return -EINVAL;
   struct FSInternal* fs = (struct FSInternal*)thisArg->data;
   pthread_mutex_lock(&fs->mtx);
   struct Fd* fd;
-  if (UNLIKELY(!(fd = GetFd(fs, fdNum))) ||
-      UNLIKELY(!(fd->flags & (O_WRONLY | O_RDWR)))) {
+  if (!(fd = GetFd(fs, fdNum)) || !(fd->flags & (O_WRONLY | O_RDWR))) {
     pthread_mutex_unlock(&fs->mtx);
     return -EBADF;
   }
@@ -2586,18 +2672,18 @@ ssize_t FileSystem_PWrite(struct FileSystem* thisArg, unsigned int fdNum, const 
     pthread_mutex_unlock(&fs->mtx);
     return 0;
   }
-  if (count > 0x7ffff000)
-    count = 0x7ffff000;
+  if (count > RW_MAX)
+    count = RW_MAX;
   struct BaseINode* inode = fd->inode;
   {
     off_t res;
-    if (UNLIKELY(__builtin_add_overflow(offset, count, &res))) {
+    if (__builtin_add_overflow(offset, count, &res)) {
       pthread_mutex_unlock(&fs->mtx);
       return -EFBIG;
     }
   }
   struct DataRange* range = RegularINode_AllocData((struct RegularINode*)inode, offset, count);
-  if (UNLIKELY(!range)) {
+  if (!range) {
     pthread_mutex_unlock(&fs->mtx);
     return -EIO;
   }
@@ -2608,14 +2694,19 @@ ssize_t FileSystem_PWrite(struct FileSystem* thisArg, unsigned int fdNum, const 
   pthread_mutex_unlock(&fs->mtx);
   return count;
 }
-ssize_t FileSystem_PWritev(struct FileSystem* thisArg, unsigned int fdNum, struct iovec* iov, int iovcnt, off_t offset) {
-  if (UNLIKELY(offset < 0))
+ssize_t FileSystem_PWritev(
+  struct FileSystem* thisArg,
+  unsigned int fdNum,
+  struct iovec* iov,
+  int iovcnt,
+  off_t offset
+) {
+  if (offset < 0)
     return -EINVAL;
   struct FSInternal* fs = (struct FSInternal*)thisArg->data;
   pthread_mutex_lock(&fs->mtx);
   struct Fd* fd;
-  if (UNLIKELY(!(fd = GetFd(fs, fdNum))) ||
-      UNLIKELY(!(fd->flags & (O_WRONLY | O_RDWR)))) {
+  if (!(fd = GetFd(fs, fdNum)) || !(fd->flags & (O_WRONLY | O_RDWR))) {
     pthread_mutex_unlock(&fs->mtx);
     return -EBADF;
   }
@@ -2623,8 +2714,7 @@ ssize_t FileSystem_PWritev(struct FileSystem* thisArg, unsigned int fdNum, struc
     pthread_mutex_unlock(&fs->mtx);
     return 0;
   }
-  if (UNLIKELY(iovcnt < 0) ||
-      UNLIKELY(iovcnt > 1024)) {
+  if (iovcnt < 0 || iovcnt > IOV_MAX) {
     pthread_mutex_unlock(&fs->mtx);
     return -EINVAL;
   }
@@ -2633,31 +2723,31 @@ ssize_t FileSystem_PWritev(struct FileSystem* thisArg, unsigned int fdNum, struc
     ssize_t len = iov[i].iov_len;
     if (len == 0)
       continue;
-    if (UNLIKELY(len < 0)) {
+    if (len < 0) {
       pthread_mutex_unlock(&fs->mtx);
       return -EINVAL;
     }
-    size_t limit = 0x7ffff000 - totalLen;
+    size_t limit = RW_MAX - totalLen;
     if (len > limit) {
       len = limit;
       iov[i].iov_len = len;
     }
     totalLen += len;
   }
-  if (UNLIKELY(totalLen == 0)) {
+  if (totalLen == 0) {
     pthread_mutex_unlock(&fs->mtx);
     return 0;
   }
   struct BaseINode* inode = fd->inode;
   {
     off_t res;
-    if (UNLIKELY(__builtin_add_overflow(offset, totalLen, &res))) {
+    if (__builtin_add_overflow(offset, totalLen, &res)) {
       pthread_mutex_unlock(&fs->mtx);
       return -EFBIG;
     }
   }
   struct DataRange* range = RegularINode_AllocData((struct RegularINode*)inode, offset, totalLen);
-  if (UNLIKELY(!range)) {
+  if (!range) {
     pthread_mutex_unlock(&fs->mtx);
     return -EIO;
   }
@@ -2677,24 +2767,29 @@ ssize_t FileSystem_PWritev(struct FileSystem* thisArg, unsigned int fdNum, struc
   pthread_mutex_unlock(&fs->mtx);
   return count;
 }
-ssize_t FileSystem_SendFile(struct FileSystem* thisArg, unsigned int outFd, unsigned int inFd, off_t* offset, size_t count) {
+ssize_t FileSystem_SendFile(
+  struct FileSystem* thisArg,
+  unsigned int outFd,
+  unsigned int inFd,
+  off_t* offset,
+  size_t count
+) {
   struct FSInternal* fs = (struct FSInternal*)thisArg->data;
   pthread_mutex_lock(&fs->mtx);
   struct Fd* fdIn;
   struct Fd* fdOut;
-  if (UNLIKELY(!(fdIn = GetFd(fs, inFd))) || UNLIKELY(fdIn->flags & O_WRONLY) ||
-      UNLIKELY(!(fdOut = GetFd(fs, outFd))) || UNLIKELY(!(fdOut->flags & (O_WRONLY | O_RDWR)))) {
+  if (!(fdIn = GetFd(fs, inFd)) || fdIn->flags & O_WRONLY ||
+      !(fdOut = GetFd(fs, outFd)) || !(fdOut->flags & (O_WRONLY | O_RDWR))) {
     pthread_mutex_unlock(&fs->mtx);
     return -EBADF;
   }
-  if (UNLIKELY(S_ISDIR(fdIn->inode->mode)) ||
-      UNLIKELY(fdOut->flags & O_APPEND)) {
+  if (S_ISDIR(fdIn->inode->mode) || fdOut->flags & O_APPEND) {
     pthread_mutex_unlock(&fs->mtx);
     return -EINVAL;
   }
   off_t off;
   if (offset) {
-    if (UNLIKELY((off = *offset) < 0)) {
+    if ((off = *offset) < 0) {
       pthread_mutex_unlock(&fs->mtx);
       return -EINVAL;
     }
@@ -2703,12 +2798,12 @@ ssize_t FileSystem_SendFile(struct FileSystem* thisArg, unsigned int outFd, unsi
     pthread_mutex_unlock(&fs->mtx);
     return 0;
   }
-  if (count > 0x7ffff000)
-    count = 0x7ffff000;
+  if (count > RW_MAX)
+    count = RW_MAX;
   struct BaseINode* inodeIn = fdIn->inode;
   struct BaseINode* inodeOut = fdOut->inode;
   off_t outSeekEnd;
-  if (UNLIKELY(__builtin_add_overflow(fdOut->seekOff, count, &outSeekEnd))) {
+  if (__builtin_add_overflow(fdOut->seekOff, count, &outSeekEnd)) {
     pthread_mutex_unlock(&fs->mtx);
     return -EFBIG;
   }
@@ -2770,8 +2865,12 @@ ssize_t FileSystem_SendFile(struct FileSystem* thisArg, unsigned int outFd, unsi
     }
     struct DataRange* rangeIn = DataIterator_GetRange(&itIn);
     amount = MinUnsigned((rangeIn->offset + rangeIn->size) - currEndIn, amountToRead);
-    struct DataRange* rangeOut = RegularINode_AllocData((struct RegularINode*)inodeOut, currEndOut, amount);
-    if (UNLIKELY(!rangeOut)) {
+    struct DataRange* rangeOut = RegularINode_AllocData(
+      (struct RegularINode*)inodeOut,
+      currEndOut,
+      amount
+    );
+    if (!rangeOut) {
       pthread_mutex_unlock(&fs->mtx);
       return -EIO;
     }
@@ -2793,22 +2892,21 @@ ssize_t FileSystem_SendFile(struct FileSystem* thisArg, unsigned int outFd, unsi
   return count;
 }
 int FileSystem_FTruncate(struct FileSystem* thisArg, unsigned int fdNum, off_t length) {
-  if (UNLIKELY(length < 0))
+  if (length < 0)
     return -EINVAL;
   struct FSInternal* fs = (struct FSInternal*)thisArg->data;
   pthread_mutex_lock(&fs->mtx);
   struct Fd* fd;
-  if (UNLIKELY(!(fd = GetFd(fs, fdNum)))) {
+  if (!(fd = GetFd(fs, fdNum))) {
     pthread_mutex_unlock(&fs->mtx);
     return -EBADF;
   }
   struct BaseINode* inode = fd->inode;
-  if (UNLIKELY(!S_ISREG(inode->mode)) ||
-      UNLIKELY(!(fd->flags & (O_WRONLY | O_RDWR)))) {
+  if (!S_ISREG(inode->mode) || !(fd->flags & (O_WRONLY | O_RDWR))) {
     pthread_mutex_unlock(&fs->mtx);
     return -EINVAL;
   }
-  if (UNLIKELY(fd->flags & O_APPEND)) {
+  if (fd->flags & O_APPEND) {
     pthread_mutex_unlock(&fs->mtx);
     return -EPERM;
   }
@@ -2820,25 +2918,25 @@ int FileSystem_FTruncate(struct FileSystem* thisArg, unsigned int fdNum, off_t l
   return 0;
 }
 int FileSystem_Truncate(struct FileSystem* thisArg, const char* path, off_t length) {
-  if (UNLIKELY(length < 0))
+  if (length < 0)
     return -EINVAL;
   struct FSInternal* fs = (struct FSInternal*)thisArg->data;
   pthread_mutex_lock(&fs->mtx);
   struct BaseINode* inode;
   int res = GetINodeNoParentFollow(fs, path, &inode, true);
-  if (UNLIKELY(res != 0)) {
+  if (res != 0) {
     pthread_mutex_unlock(&fs->mtx);
     return res;
   }
-  if (UNLIKELY(S_ISDIR(inode->mode))) {
+  if (S_ISDIR(inode->mode)) {
     pthread_mutex_unlock(&fs->mtx);
     return -EISDIR;
   }
-  if (UNLIKELY(!S_ISREG(inode->mode))) {
+  if (!S_ISREG(inode->mode)) {
     pthread_mutex_unlock(&fs->mtx);
     return -EINVAL;
   }
-  if (UNLIKELY(!BaseINode_CanUse(inode, W_OK))) {
+  if (!BaseINode_CanUse(inode, W_OK)) {
     pthread_mutex_unlock(&fs->mtx);
     return -EACCES;
   }
@@ -2855,7 +2953,7 @@ int FileSystem_FChModAt(struct FileSystem* thisArg, int dirFd, const char* path,
   struct DirectoryINode* origCwd = fs->cwd.inode;
   if (dirFd != AT_FDCWD) {
     struct Fd* fd;
-    if (UNLIKELY(!(fd = GetFd(fs, dirFd)))) {
+    if (!(fd = GetFd(fs, dirFd))) {
       pthread_mutex_unlock(&fs->mtx);
       return -EBADF;
     }
@@ -2864,7 +2962,7 @@ int FileSystem_FChModAt(struct FileSystem* thisArg, int dirFd, const char* path,
   struct BaseINode* inode;
   int res = GetINodeNoParent(fs, path, &inode);
   fs->cwd.inode = origCwd;
-  if (UNLIKELY(res != 0)) {
+  if (res != 0) {
     pthread_mutex_unlock(&fs->mtx);
     return res;
   }
@@ -2877,7 +2975,7 @@ int FileSystem_FChMod(struct FileSystem* thisArg, unsigned int fdNum, mode_t mod
   struct FSInternal* fs = (struct FSInternal*)thisArg->data;
   pthread_mutex_lock(&fs->mtx);
   struct Fd* fd;
-  if (UNLIKELY(!(fd = GetFd(fs, fdNum)))) {
+  if (!(fd = GetFd(fs, fdNum))) {
     pthread_mutex_unlock(&fs->mtx);
     return -EBADF;
   }
@@ -2887,25 +2985,22 @@ int FileSystem_FChMod(struct FileSystem* thisArg, unsigned int fdNum, mode_t mod
   pthread_mutex_unlock(&fs->mtx);
   return 0;
 }
-int FileSystem_ChMod(struct FileSystem* thisArg, const char* path, mode_t mode) {
-  return FileSystem_FChModAt(thisArg, AT_FDCWD, path, mode);
-}
 int FileSystem_ChDir(struct FileSystem* thisArg, const char* path) {
   struct FSInternal* fs = (struct FSInternal*)thisArg->data;
   pthread_mutex_lock(&fs->mtx);
   struct BaseINode* inode;
   struct DirectoryINode* parent;
   int res = GetINodeParentFollow(fs, path, &inode, &parent, true);
-  if (UNLIKELY(res != 0)) {
+  if (res != 0) {
     pthread_mutex_unlock(&fs->mtx);
     return res;
   }
-  if (UNLIKELY(!S_ISDIR(inode->mode))) {
+  if (!S_ISDIR(inode->mode)) {
     pthread_mutex_unlock(&fs->mtx);
     return -ENOTDIR;
   }
   const char* absPath = AbsolutePath(fs, path);
-  if (UNLIKELY(!absPath)) {
+  if (!absPath) {
     pthread_mutex_unlock(&fs->mtx);
     return -ENOMEM;
   }
@@ -2923,13 +3018,13 @@ int FileSystem_GetCwd(struct FileSystem* thisArg, char* buf, size_t size) {
     struct BaseINode* inode;
     struct DirectoryINode* parent;
     int res = GetINodeParentFollow(fs, fs->cwd.path, &inode, &parent, true);
-    if (UNLIKELY(res != 0)) {
+    if (res != 0) {
       pthread_mutex_unlock(&fs->mtx);
       return res;
     }
   }
   size_t cwdLen = strlen(fs->cwd.path);
-  if (UNLIKELY(size <= cwdLen)) {
+  if (size <= cwdLen) {
     pthread_mutex_unlock(&fs->mtx);
     return -ERANGE;
   }
@@ -2944,12 +3039,11 @@ int FileSystem_FStat(struct FileSystem* thisArg, unsigned int fdNum, struct stat
   struct FSInternal* fs = (struct FSInternal*)thisArg->data;
   pthread_mutex_lock(&fs->mtx);
   struct Fd* fd;
-  if (UNLIKELY(!(fd = GetFd(fs, fdNum)))) {
+  if (!(fd = GetFd(fs, fdNum))) {
     pthread_mutex_unlock(&fs->mtx);
     return -EBADF;
   }
   BaseINode_FillStat(fd->inode, buf);
-  pthread_mutex_unlock(&fs->mtx);
   return 0;
 }
 int FileSystem_Stat(struct FileSystem* thisArg, const char* path, struct stat* buf) {
@@ -2957,12 +3051,11 @@ int FileSystem_Stat(struct FileSystem* thisArg, const char* path, struct stat* b
   pthread_mutex_lock(&fs->mtx);
   struct BaseINode* inode;
   int res = GetINodeNoParentFollow(fs, path, &inode, true);
-  if (UNLIKELY(res != 0)) {
+  if (res != 0) {
     pthread_mutex_unlock(&fs->mtx);
     return res;
   }
   BaseINode_FillStat(inode, buf);
-  pthread_mutex_unlock(&fs->mtx);
   return 0;
 }
 int FileSystem_LStat(struct FileSystem* thisArg, const char* path, struct stat* buf) {
@@ -2970,25 +3063,30 @@ int FileSystem_LStat(struct FileSystem* thisArg, const char* path, struct stat* 
   pthread_mutex_lock(&fs->mtx);
   struct BaseINode* inode;
   int res = GetINodeNoParent(fs, path, &inode);
-  if (UNLIKELY(res != 0)) {
+  if (res != 0) {
     pthread_mutex_unlock(&fs->mtx);
     return res;
   }
   BaseINode_FillStat(inode, buf);
-  pthread_mutex_unlock(&fs->mtx);
   return 0;
 }
-int FileSystem_Statx(struct FileSystem* thisArg, int dirFd, const char* path, int flags, int mask, struct statx* buf) {
-  if (UNLIKELY(flags & ~(AT_SYMLINK_NOFOLLOW | AT_EMPTY_PATH)) ||
-      UNLIKELY(mask & ~STATX_ALL) ||
-      UNLIKELY(flags & AT_EMPTY_PATH && path[0] != '\0'))
+int FileSystem_Statx(
+  struct FileSystem* thisArg,
+  int dirFd,
+  const char* path,
+  int flags,
+  int mask,
+  struct statx* buf
+) {
+  if (flags & ~(AT_SYMLINK_NOFOLLOW | AT_EMPTY_PATH) || mask & ~STATX_ALL ||
+      (flags & AT_EMPTY_PATH && path[0] != '\0'))
     return -EINVAL;
   struct FSInternal* fs = (struct FSInternal*)thisArg->data;
   pthread_mutex_lock(&fs->mtx);
   struct DirectoryINode* origCwd = fs->cwd.inode;
   if (dirFd != AT_FDCWD) {
     struct Fd* fd;
-    if (UNLIKELY(!(fd = GetFd(fs, dirFd)))) {
+    if (!(fd = GetFd(fs, dirFd))) {
       pthread_mutex_unlock(&fs->mtx);
       return -EBADF;
     }
@@ -3000,23 +3098,28 @@ int FileSystem_Statx(struct FileSystem* thisArg, int dirFd, const char* path, in
     inode = (struct BaseINode*)fs->cwd.inode;
   else res = GetINodeNoParentFollow(fs, path, &inode, !(flags & AT_SYMLINK_NOFOLLOW));
   fs->cwd.inode = origCwd;
-  if (UNLIKELY(res != 0)) {
+  if (res != 0) {
     pthread_mutex_unlock(&fs->mtx);
     return res;
   }
   BaseINode_FillStatx(inode, buf, mask);
-  pthread_mutex_unlock(&fs->mtx);
   return 0;
 }
-int FileSystem_UTimeNsAt(struct FileSystem* thisArg, int dirFd, const char* path, const struct timespec* times, int flags) {
-  if (UNLIKELY(flags & ~AT_SYMLINK_NOFOLLOW))
+int FileSystem_UTimeNsAt(
+  struct FileSystem* thisArg,
+  int dirFd,
+  const char* path,
+  const struct timespec* times,
+  int flags
+) {
+  if (flags & ~AT_SYMLINK_NOFOLLOW)
     return -EINVAL;
   struct FSInternal* fs = (struct FSInternal*)thisArg->data;
   pthread_mutex_lock(&fs->mtx);
   struct DirectoryINode* origCwd = fs->cwd.inode;
   if (dirFd != AT_FDCWD) {
     struct Fd* fd;
-    if (UNLIKELY(!(fd = GetFd(fs, dirFd)))) {
+    if (!(fd = GetFd(fs, dirFd))) {
       pthread_mutex_unlock(&fs->mtx);
       return -EBADF;
     }
@@ -3025,7 +3128,7 @@ int FileSystem_UTimeNsAt(struct FileSystem* thisArg, int dirFd, const char* path
   struct BaseINode* inode;
   int res = GetINodeNoParentFollow(fs, path, &inode, !(flags & AT_SYMLINK_NOFOLLOW));
   fs->cwd.inode = origCwd;
-  if (UNLIKELY(res != 0)) {
+  if (res != 0) {
     pthread_mutex_unlock(&fs->mtx);
     return res;
   }
@@ -3047,11 +3150,15 @@ int FileSystem_UTimeNsAt(struct FileSystem* thisArg, int dirFd, const char* path
   pthread_mutex_unlock(&fs->mtx);
   return 0;
 }
-int FileSystem_FUTimesAt(struct FileSystem* thisArg, unsigned int fdNum, const char* path, const struct timeval* times) {
-  if (times &&
-      UNLIKELY(
-        UNLIKELY(times[0].tv_usec < 0) || UNLIKELY(times[0].tv_usec >= 1000000) ||
-        UNLIKELY(times[1].tv_usec < 0) || UNLIKELY(times[1].tv_usec >= 1000000)
+int FileSystem_FUTimesAt(
+  struct FileSystem* thisArg,
+  unsigned int fdNum,
+  const char* path,
+  const struct timeval* times
+) {
+  if (times && (
+        (times[0].tv_usec < 0 || times[0].tv_usec >= 1000000) ||
+        (times[1].tv_usec < 0 || times[1].tv_usec >= 1000000)
       ))
     return -EINVAL;
   struct FSInternal* fs = (struct FSInternal*)thisArg->data;
@@ -3059,7 +3166,7 @@ int FileSystem_FUTimesAt(struct FileSystem* thisArg, unsigned int fdNum, const c
   struct DirectoryINode* origCwd = fs->cwd.inode;
   if (fdNum != AT_FDCWD) {
     struct Fd* fd;
-    if (UNLIKELY(!(fd = GetFd(fs, fdNum)))) {
+    if (!(fd = GetFd(fs, fdNum))) {
       pthread_mutex_unlock(&fs->mtx);
       return -EBADF;
     }
@@ -3068,7 +3175,7 @@ int FileSystem_FUTimesAt(struct FileSystem* thisArg, unsigned int fdNum, const c
   struct BaseINode* inode;
   int res = GetINodeNoParentFollow(fs, path, &inode, true);
   fs->cwd.inode = origCwd;
-  if (UNLIKELY(res != 0)) {
+  if (res != 0) {
     pthread_mutex_unlock(&fs->mtx);
     return res;
   }
@@ -3084,21 +3191,8 @@ int FileSystem_FUTimesAt(struct FileSystem* thisArg, unsigned int fdNum, const c
   pthread_mutex_unlock(&fs->mtx);
   return 0;
 }
-int FileSystem_UTimes(struct FileSystem* thisArg, const char* path, const struct timeval* times) {
-  return FileSystem_FUTimesAt(thisArg, AT_FDCWD, path, times);
-}
-int FileSystem_UTime(struct FileSystem* thisArg, const char* path, const struct utimbuf* times) {
-  struct timeval ts[2];
-  if (times) {
-    ts[0].tv_sec = times->actime;
-    ts[0].tv_usec = 0;
-    ts[1].tv_sec = times->modtime;
-    ts[1].tv_usec = 0;
-  }
-  return FileSystem_FUTimesAt(thisArg, AT_FDCWD, path, times ? ts : NULL);
-}
 
-#define TimeSpec_Create(ts_sec, ts_nsec) ({ \
+#define TimeSpec_New(ts_sec, ts_nsec) ({ \
   struct timespec ts; \
   ts.tv_sec = ts_sec; \
   ts.tv_nsec = ts_nsec; \
@@ -3109,10 +3203,10 @@ bool FileSystem_DumpToFile(struct FileSystem* thisArg, const char* filename) {
   struct FSInternal* fs = (struct FSInternal*)thisArg->data;
   pthread_mutex_lock(&fs->mtx);
   int fd = creat(filename, 0644);
-  if (UNLIKELY(fd < 0))
+  if (fd < 0)
     goto err1;
-  if (UNLIKELY(write(fd, "\x7FVFS", 4) != 4) ||
-      UNLIKELY(write(fd, &fs->inodeCount, sizeof(ino_t)) != sizeof(ino_t)))
+  if (write(fd, "\x7FVFS", 4) != 4 ||
+      write(fd, &fs->inodeCount, sizeof(ino_t)) != sizeof(ino_t))
     goto err2;
   for (ino_t i = 0, inodeCount = fs->inodeCount; i != inodeCount; ++i) {
     struct BaseINode* inode = fs->inodes[i];
@@ -3121,46 +3215,50 @@ bool FileSystem_DumpToFile(struct FileSystem* thisArg, const char* filename) {
     dumped.size = inode->size;
     dumped.nlink = inode->nlink;
     dumped.mode = inode->mode;
-    dumped.btime = TimeSpec_Create(inode->btime.tv_sec, inode->btime.tv_nsec);
-    dumped.ctime = TimeSpec_Create(inode->ctime.tv_sec, inode->ctime.tv_nsec);
-    dumped.mtime = TimeSpec_Create(inode->mtime.tv_sec, inode->mtime.tv_nsec);
-    dumped.atime = TimeSpec_Create(inode->atime.tv_sec, inode->atime.tv_nsec);
-    if (UNLIKELY(write(fd, &dumped, sizeof(struct DumpedINode)) != sizeof(struct DumpedINode)))
+    dumped.btime = TimeSpec_New(inode->btime.tv_sec, inode->btime.tv_nsec);
+    dumped.ctime = TimeSpec_New(inode->ctime.tv_sec, inode->ctime.tv_nsec);
+    dumped.mtime = TimeSpec_New(inode->mtime.tv_sec, inode->mtime.tv_nsec);
+    dumped.atime = TimeSpec_New(inode->atime.tv_sec, inode->atime.tv_nsec);
+    if (write(fd, &dumped, sizeof(struct DumpedINode)) != sizeof(struct DumpedINode))
       goto err2;
     if (S_ISLNK(inode->mode)) {
       size_t targetLen = strlen(((struct SymLinkINode*)inode)->target) + 1;
       off_t dataLen = inode->size;
-      if (UNLIKELY(write(fd, ((struct SymLinkINode*)inode)->target, targetLen) != targetLen) ||
-          UNLIKELY(write(fd, ((struct SymLinkINode*)inode)->data, dataLen) != dataLen))
+      if (write(fd, ((struct SymLinkINode*)inode)->target, targetLen) != targetLen ||
+          write(fd, ((struct SymLinkINode*)inode)->data, dataLen) != dataLen)
         goto err2;
     }
     if (S_ISDIR(inode->mode)) {
-      if (UNLIKELY(write(fd, &((struct DirectoryINode*)inode)->dentCount, sizeof(off_t)) != sizeof(off_t)) ||
-          UNLIKELY(write(fd, &((struct DirectoryINode*)inode)->dents[1].inode->ndx, sizeof(ino_t)) != sizeof(ino_t)))
+      if (write(fd, &((struct DirectoryINode*)inode)->dentCount, sizeof(off_t)) != sizeof(off_t) ||
+          write(
+            fd,
+            &((struct DirectoryINode*)inode)->dents[1].inode->ndx,
+            sizeof(ino_t)
+          ) != sizeof(ino_t))
         goto err2;
       for (off_t j = 2; j != ((struct DirectoryINode*)inode)->dentCount; ++j) {
         struct Dent* dent = &((struct DirectoryINode*)inode)->dents[j];
         size_t nameLen = strlen(dent->name) + 1;
-        if (UNLIKELY(write(fd, &dent->inode->ndx, sizeof(ino_t)) != sizeof(ino_t)) ||
-            UNLIKELY(write(fd, dent->name, nameLen) != nameLen))
+        if (write(fd, &dent->inode->ndx, sizeof(ino_t)) != sizeof(ino_t) ||
+            write(fd, dent->name, nameLen) != nameLen)
           goto err2;
       }
     } else if (inode->size != 0) {
-      if (UNLIKELY(write(fd, &((struct RegularINode*)inode)->dataRangeCount, sizeof(off_t)) != sizeof(off_t)))
+      if (write(fd, &((struct RegularINode*)inode)->dataRangeCount, sizeof(off_t)) != sizeof(off_t))
         goto err2;
       off_t dataRangeCount = ((struct RegularINode*)inode)->dataRangeCount;
       for (off_t j = 0; j != dataRangeCount; ++j) {
         struct DataRange* range = ((struct RegularINode*)inode)->dataRanges[j];
-        if (UNLIKELY(write(fd, &range->offset, sizeof(off_t)) != sizeof(off_t)) ||
-            UNLIKELY(write(fd, &range->size, sizeof(off_t)) != sizeof(off_t)))
+        if (write(fd, &range->offset, sizeof(off_t)) != sizeof(off_t) ||
+            write(fd, &range->size, sizeof(off_t)) != sizeof(off_t))
           goto err2;
         ssize_t written = 0;
         while (written != range->size) {
           size_t amount = range->size - written;
-          if (amount > 0x7ffff000)
-            amount = 0x7ffff000;
+          if (amount > RW_MAX)
+            amount = RW_MAX;
           ssize_t count = write(fd, range->data + written, amount);
-          if (UNLIKELY(count < 0))
+          if (count != amount)
             goto err2;
           written += count;
         }
@@ -3176,63 +3274,52 @@ bool FileSystem_DumpToFile(struct FileSystem* thisArg, const char* filename) {
   pthread_mutex_unlock(&fs->mtx);
   return false;
 }
-
-bool TryAllocFromMode(struct BaseINode** inode, mode_t mode) {
-  if (S_ISREG(mode))
-    return TryAlloc((void**)inode, sizeof(struct RegularINode));
-  if (S_ISDIR(mode))
-    return TryAlloc((void**)inode, sizeof(struct DirectoryINode));
-  if (S_ISLNK(mode))
-    return TryAlloc((void**)inode, sizeof(struct SymLinkINode));
-  __builtin_unreachable();
-}
-
 struct FileSystem* FileSystem_LoadFromFile(const char* filename) {
   int fd = open(filename, O_RDONLY);
-  if (UNLIKELY(fd < 0))
+  if (fd < 0)
     goto err_at_open;
   char magic[4];
   ino_t inodeCount;
   struct BaseINode** inodes;
-  if (UNLIKELY(read(fd, magic, 4) != 4) ||
-      UNLIKELY(memcmp(magic, "\x7FVFS", 4) != 0) ||
-      UNLIKELY(read(fd, &inodeCount, sizeof(ino_t)) != sizeof(ino_t)))
+  if (read(fd, magic, 4) != 4 ||
+      memcmp(magic, "\x7FVFS", 4) != 0 ||
+      read(fd, &inodeCount, sizeof(ino_t)) != sizeof(ino_t))
     goto err_after_open;
-  if (UNLIKELY(!TryAlloc((void**)&inodes, sizeof(struct BaseINode*) * inodeCount)))
+  if (!TryAlloc((void**)&inodes, sizeof(struct BaseINode*) * inodeCount))
     goto err_after_open;
   for (ino_t i = 0; i != inodeCount; ++i) {
     struct BaseINode* inode;
     struct DumpedINode dumped;
-    if (UNLIKELY(read(fd, &dumped, sizeof(struct DumpedINode)) != sizeof(struct DumpedINode)))
+    if (read(fd, &dumped, sizeof(struct DumpedINode)) != sizeof(struct DumpedINode))
       goto err_at_inode_loop;
-    if (UNLIKELY(!TryAllocFromMode(&inode, dumped.mode)))
+    if (!TryAllocFromMode(&inode, dumped.mode))
       goto err_at_inode_loop;
     inode->ndx = i;
     inode->id = dumped.id;
     inode->size = dumped.size;
     inode->nlink = dumped.nlink;
     inode->mode = dumped.mode;
-    inode->btime = TimeSpec_Create(dumped.btime.tv_sec, dumped.btime.tv_nsec);
-    inode->ctime = TimeSpec_Create(dumped.ctime.tv_sec, dumped.ctime.tv_nsec);
-    inode->mtime = TimeSpec_Create(dumped.mtime.tv_sec, dumped.mtime.tv_nsec);
-    inode->atime = TimeSpec_Create(dumped.atime.tv_sec, dumped.atime.tv_nsec);
+    inode->btime = TimeSpec_New(dumped.btime.tv_sec, dumped.btime.tv_nsec);
+    inode->ctime = TimeSpec_New(dumped.ctime.tv_sec, dumped.ctime.tv_nsec);
+    inode->mtime = TimeSpec_New(dumped.mtime.tv_sec, dumped.mtime.tv_nsec);
+    inode->atime = TimeSpec_New(dumped.atime.tv_sec, dumped.atime.tv_nsec);
     if (S_ISLNK(inode->mode)) {
       char target[PATH_MAX];
       size_t targetLen = 0;
       do {
-        if (UNLIKELY(read(fd, &target[targetLen], 1) != 1))
+        if (read(fd, &target[targetLen], 1) != 1)
           goto err_after_inode_init;
       } while (target[targetLen++] != '\0');
       ((struct SymLinkINode*)inode)->target = strdup(target);
-      if (UNLIKELY(!((struct SymLinkINode*)inode)->target))
+      if (!((struct SymLinkINode*)inode)->target)
         goto err_after_inode_init;
       char data[PATH_MAX];
       size_t dataLen = 0;
       do {
-        if (UNLIKELY(read(fd, &data[dataLen], 1) != 1))
+        if (read(fd, &data[dataLen], 1) != 1)
           goto err_after_target_alloc;
       } while (data[dataLen++] != '\0');
-      if (UNLIKELY(!TryAlloc((void**)&((struct SymLinkINode*)inode)->data, dataLen)))
+      if (!TryAlloc((void**)&((struct SymLinkINode*)inode)->data, sizeof(char) * dataLen))
         goto err_after_target_alloc;
       memcpy(((struct SymLinkINode*)inode)->data, data, dataLen);
       goto success_symlink;
@@ -3244,26 +3331,33 @@ struct FileSystem* FileSystem_LoadFromFile(const char* filename) {
     }
     if (S_ISDIR(inode->mode)) {
       off_t dentCount;
-      if (UNLIKELY(read(fd, &dentCount, sizeof(off_t)) != sizeof(off_t)))
+      if (read(fd, &dentCount, sizeof(off_t)) != sizeof(off_t))
         goto err_after_inode_init;
-      if (UNLIKELY(!TryAlloc((void**)&((struct DirectoryINode*)inode)->dents, sizeof(struct Dent) * dentCount)))
+      if (!TryAlloc(
+            (void**)&((struct DirectoryINode*)inode)->dents,
+            sizeof(struct Dent) * dentCount
+          ))
         goto err_after_inode_init;
-      ((struct DirectoryINode*)inode)->dents[0] = Dent_Create(".", inode);
+      ((struct DirectoryINode*)inode)->dents[0] = Dent_New(".", inode);
       ((struct DirectoryINode*)inode)->dents[1].name = "..";
-      if (UNLIKELY(read(fd, &((struct DirectoryINode*)inode)->dents[1].inode, sizeof(ino_t)) != sizeof(ino_t)))
+      if (read(
+            fd,
+            &((struct DirectoryINode*)inode)->dents[1].inode,
+            sizeof(ino_t)
+          ) != sizeof(ino_t))
         goto err_after_dent_alloc;
       for (off_t j = 2; j != dentCount; ++j) {
         struct Dent* dent = &((struct DirectoryINode*)inode)->dents[j];
         char name[PATH_MAX];
         size_t nameLen = 0;
-        if (UNLIKELY(read(fd, &dent->inode, sizeof(ino_t)) != sizeof(ino_t)))
+        if (read(fd, &dent->inode, sizeof(ino_t)) != sizeof(ino_t))
           goto err_after_dent_list_init;
         do {
-          if (UNLIKELY(read(fd, &name[nameLen], 1) != 1))
+          if (read(fd, &name[nameLen], 1) != 1)
             goto err_after_dent_list_init;
         } while (name[nameLen++] != '\0');
         dent->name = strdup(name);
-        if (UNLIKELY(!dent->name))
+        if (!dent->name)
           goto err_after_dent_list_init;
         goto success_dent;
 
@@ -3282,35 +3376,38 @@ struct FileSystem* FileSystem_LoadFromFile(const char* filename) {
      success_dents: {}
     }
     if (S_ISREG(inode->mode)) {
-      if (LIKELY(inode->size != 0)) {
+      if (inode->size != 0) {
         off_t dataRangeCount;
-        if (UNLIKELY(read(fd, &dataRangeCount, sizeof(off_t)) != sizeof(off_t)))
+        if (read(fd, &dataRangeCount, sizeof(off_t)) != sizeof(off_t))
           goto err_after_inode_init;
-        if (UNLIKELY(!TryAlloc((void**)&((struct RegularINode*)inode)->dataRanges, sizeof(struct DataRange*) * dataRangeCount)))
+        if (!TryAlloc(
+              (void**)&((struct RegularINode*)inode)->dataRanges,
+              sizeof(struct DataRange*) * dataRangeCount
+            ))
           goto err_after_inode_init;
         for (off_t j = 0; j != dataRangeCount; ++j) {
           struct DataRange* range;
           ssize_t nread = 0;
           off_t offset;
           off_t size;
-          if (UNLIKELY(read(fd, &offset, sizeof(off_t)) != sizeof(off_t)) ||
-              UNLIKELY(read(fd, &size, sizeof(off_t)) != sizeof(off_t)))
+          if (read(fd, &offset, sizeof(off_t)) != sizeof(off_t) ||
+              read(fd, &size, sizeof(off_t)) != sizeof(off_t))
             goto err_after_dataranges_init;
-          if (UNLIKELY(offset < 0) || UNLIKELY(offset > inode->size - size) ||
-              UNLIKELY(size < 0) || UNLIKELY(size > inode->size - offset))
+          if (offset < 0 || offset > inode->size - size ||
+              size   < 0 || size   > inode->size - offset)
             goto err_after_dataranges_init;
-          if (UNLIKELY(!TryAlloc((void**)&range, sizeof(struct DataRange))))
+          if (!TryAlloc((void**)&range, sizeof(struct DataRange)))
             goto err_after_dataranges_init;
           range->offset = offset;
           range->size = size;
-          if (UNLIKELY(!TryAlloc((void**)&range->data, size)))
+          if (!TryAlloc((void**)&range->data, sizeof(char) * size))
             goto err_after_range_alloc;
           while (nread != size) {
             size_t amount = size - nread;
-            if (amount > 0x7ffff000)
-              amount = 0x7ffff000;
+            if (amount > RW_MAX)
+              amount = RW_MAX;
             ssize_t count = read(fd, range->data + nread, amount);
-            if (UNLIKELY(count != amount))
+            if (count != amount)
               goto err_after_range_data_alloc;
             nread += count;
           }
@@ -3356,7 +3453,7 @@ struct FileSystem* FileSystem_LoadFromFile(const char* filename) {
       for (off_t j = 1; j != dentCount; ++j) {
         struct Dent* dent = &((struct DirectoryINode*)inode)->dents[j];
         ino_t ino = (ino_t)dent->inode;
-        if (UNLIKELY(ino >= inodeCount))
+        if (ino >= inodeCount)
           goto err_after_inodes;
         dent->inode = inodes[ino];
       }
@@ -3377,14 +3474,13 @@ struct FileSystem* FileSystem_LoadFromFile(const char* filename) {
   close(fd);
   struct FileSystem* fs;
   struct FSInternal* data;
-  if (UNLIKELY(!TryAlloc((void**)&fs, sizeof(struct FileSystem))))
+  if (!TryAlloc((void**)&fs, sizeof(struct FileSystem)))
     goto err_after_inodes;
-  if (UNLIKELY(!TryAlloc((void**)&data, sizeof(struct FSInternal))))
+  if (!TryAlloc((void**)&data, sizeof(struct FSInternal)))
     goto err_after_fs_init;
-  FSInternal_New(data);
   data->inodes = inodes;
   data->inodeCount = inodeCount;
-  if (UNLIKELY(!(data->cwd.path = strdup("/"))))
+  if (!(data->cwd.path = strdup("/")))
     goto err_after_fsdata_init;
   data->cwd.inode = data->cwd.parent = (struct DirectoryINode*)inodes[0];
   fs->data = data;

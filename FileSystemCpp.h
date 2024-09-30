@@ -92,7 +92,13 @@ class FileSystem {
   int RmDir(const char* path) {
     return UnlinkAt(AT_FDCWD, path, AT_REMOVEDIR);
   }
-  int RenameAt2(int oldDirFd, const char* oldPath, int newDirFd, const char* newPath, unsigned int flags);
+  int RenameAt2(
+    int oldDirFd,
+    const char* oldPath,
+    int newDirFd,
+    const char* newPath,
+    unsigned int flags
+  );
   int RenameAt(int oldDirFd, const char* oldPath, int newDirFd, const char* newPath) {
     return RenameAt2(oldDirFd, oldPath, newDirFd, newPath, 0);
   }

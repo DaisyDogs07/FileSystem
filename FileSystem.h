@@ -55,42 +55,151 @@ struct FileSystem {
 struct FileSystem* FileSystem_New();
 void FileSystem_Delete(struct FileSystem* thisArg);
 
-int FileSystem_FAccessAt2(struct FileSystem* thisArg, int dirFd, const char* path, int mode, int flags);
+int FileSystem_FAccessAt2(
+  struct FileSystem* thisArg,
+  int dirFd,
+  const char* path,
+  int mode,
+  int flags
+);
 int FileSystem_FAccessAt(struct FileSystem* thisArg, int dirFd, const char* path, int mode);
 int FileSystem_Access(struct FileSystem* thisArg, const char* path, int mode);
-int FileSystem_OpenAt(struct FileSystem* thisArg, int dirFd, const char* path, int flags, mode_t mode);
+int FileSystem_OpenAt(
+  struct FileSystem* thisArg,
+  int dirFd,
+  const char* path,
+  int flags,
+  mode_t mode
+);
 int FileSystem_Open(struct FileSystem* thisArg, const char* path, int flags, mode_t mode);
 int FileSystem_Creat(struct FileSystem* thisArg, const char* path, mode_t mode);
 int FileSystem_Close(struct FileSystem* thisArg, unsigned int fd);
-int FileSystem_CloseRange(struct FileSystem* thisArg, unsigned int fd, unsigned int maxFd, unsigned int flags);
-int FileSystem_MkNodAt(struct FileSystem* thisArg, int dirFd, const char* path, mode_t mode, dev_t dev);
+int FileSystem_CloseRange(
+  struct FileSystem* thisArg,
+  unsigned int fd,
+  unsigned int maxFd,
+  unsigned int flags
+);
+int FileSystem_MkNodAt(
+  struct FileSystem* thisArg,
+  int dirFd,
+  const char* path,
+  mode_t mode,
+  dev_t dev
+);
 int FileSystem_MkNod(struct FileSystem* thisArg, const char* path, mode_t mode, dev_t dev);
 int FileSystem_MkDirAt(struct FileSystem* thisArg, int dirFd, const char* path, mode_t mode);
 int FileSystem_MkDir(struct FileSystem* thisArg, const char* path, mode_t mode);
-int FileSystem_SymLinkAt(struct FileSystem* thisArg, const char* oldPath, int newDirFd, const char* newPath);
+int FileSystem_SymLinkAt(
+  struct FileSystem* thisArg,
+  const char* oldPath,
+  int newDirFd,
+  const char* newPath
+);
 int FileSystem_SymLink(struct FileSystem* thisArg, const char* oldPath, const char* newPath);
-int FileSystem_ReadLinkAt(struct FileSystem* thisArg, int dirFd, const char* path, char* buf, int bufLen);
+int FileSystem_ReadLinkAt(
+  struct FileSystem* thisArg,
+  int dirFd,
+  const char* path,
+  char* buf,
+  int bufLen
+);
 int FileSystem_ReadLink(struct FileSystem* thisArg, const char* path, char* buf, int bufLen);
-int FileSystem_GetDents(struct FileSystem* thisArg, unsigned int fdNum, struct linux_dirent* dirp, unsigned int count);
-int FileSystem_LinkAt(struct FileSystem* thisArg, int oldDirFd, const char* oldPath, int newDirFd, const char* newPath, int flags);
+int FileSystem_GetDents(
+  struct FileSystem* thisArg,
+  unsigned int fdNum,
+  struct linux_dirent* dirp,
+  unsigned int count
+);
+int FileSystem_LinkAt(
+  struct FileSystem* thisArg,
+  int oldDirFd,
+  const char* oldPath,
+  int newDirFd,
+  const char* newPath,
+  int flags
+);
 int FileSystem_Link(struct FileSystem* thisArg, const char* oldPath, const char* newPath);
 int FileSystem_UnlinkAt(struct FileSystem* thisArg, int dirFd, const char* path, int flags);
 int FileSystem_Unlink(struct FileSystem* thisArg, const char* path);
 int FileSystem_RmDir(struct FileSystem* thisArg, const char* path);
-int FileSystem_RenameAt2(struct FileSystem* thisArg, int oldDirFd, const char* oldPath, int newDirFd, const char* newPath, unsigned int flags);
-int FileSystem_RenameAt(struct FileSystem* thisArg, int oldDirFd, const char* oldPath, int newDirFd, const char* newPath);
+int FileSystem_RenameAt2(
+  struct FileSystem* thisArg,
+  int oldDirFd,
+  const char* oldPath,
+  int newDirFd,
+  const char* newPath,
+  unsigned int flags
+);
+int FileSystem_RenameAt(
+  struct FileSystem* thisArg,
+  int oldDirFd,
+  const char* oldPath,
+  int newDirFd,
+  const char* newPath
+);
 int FileSystem_Rename(struct FileSystem* thisArg, const char* oldPath, const char* newPath);
 int FileSystem_FAllocate(struct FileSystem* thisArg, int fdNum, int mode, off_t offset, off_t len);
-off_t FileSystem_LSeek(struct FileSystem* thisArg, unsigned int fdNum, off_t offset, unsigned int whence);
+off_t FileSystem_LSeek(
+  struct FileSystem* thisArg,
+  unsigned int fdNum,
+  off_t offset,
+  unsigned int whence
+);
 ssize_t FileSystem_Read(struct FileSystem* thisArg, unsigned int fdNum, char* buf, size_t count);
-ssize_t FileSystem_Readv(struct FileSystem* thisArg, unsigned int fdNum, struct iovec* iov, int iovcnt);
-ssize_t FileSystem_PRead(struct FileSystem* thisArg, unsigned int fdNum, char* buf, size_t count, off_t offset);
-ssize_t FileSystem_PReadv(struct FileSystem* thisArg, unsigned int fdNum, struct iovec* iov, int iovcnt, off_t offset);
-ssize_t FileSystem_Write(struct FileSystem* thisArg, unsigned int fdNum, const char* buf, size_t count);
-ssize_t FileSystem_Writev(struct FileSystem* thisArg, unsigned int fdNum, struct iovec* iov, int iovcnt);
-ssize_t FileSystem_PWrite(struct FileSystem* thisArg, unsigned int fdNum, const char* buf, size_t count, off_t offset);
-ssize_t FileSystem_PWritev(struct FileSystem* thisArg, unsigned int fdNum, struct iovec* iov, int iovcnt, off_t offset);
-ssize_t FileSystem_SendFile(struct FileSystem* thisArg, unsigned int outFd, unsigned int inFd, off_t* offset, size_t count);
+ssize_t FileSystem_Readv(
+  struct FileSystem* thisArg,
+  unsigned int fdNum,
+  struct iovec* iov,
+  int iovcnt
+);
+ssize_t FileSystem_PRead(
+  struct FileSystem* thisArg,
+  unsigned int fdNum,
+  char* buf,
+  size_t count,
+  off_t offset
+);
+ssize_t FileSystem_PReadv(
+  struct FileSystem* thisArg,
+  unsigned int fdNum,
+  struct iovec* iov,
+  int iovcnt,
+  off_t offset
+);
+ssize_t FileSystem_Write(
+  struct FileSystem* thisArg,
+  unsigned int fdNum,
+  const char* buf,
+  size_t count
+);
+ssize_t FileSystem_Writev(
+  struct FileSystem* thisArg,
+  unsigned int fdNum,
+  struct iovec* iov,
+  int iovcnt
+);
+ssize_t FileSystem_PWrite(
+  struct FileSystem* thisArg,
+  unsigned int fdNum,
+  const char* buf,
+  size_t count,
+  off_t offset
+);
+ssize_t FileSystem_PWritev(
+  struct FileSystem* thisArg,
+  unsigned int fdNum,
+  struct iovec* iov,
+  int iovcnt,
+  off_t offset
+);
+ssize_t FileSystem_SendFile(
+  struct FileSystem* thisArg,
+  unsigned int outFd,
+  unsigned int inFd,
+  off_t* offset,
+  size_t count
+);
 int FileSystem_FTruncate(struct FileSystem* thisArg, unsigned int fdNum, off_t length);
 int FileSystem_Truncate(struct FileSystem* thisArg, const char* path, off_t length);
 int FileSystem_FChModAt(struct FileSystem* thisArg, int dirFd, const char* path, mode_t mode);
@@ -101,9 +210,27 @@ int FileSystem_GetCwd(struct FileSystem* thisArg, char* buf, size_t size);
 int FileSystem_FStat(struct FileSystem* thisArg, unsigned int fdNum, struct stat* buf);
 int FileSystem_Stat(struct FileSystem* thisArg, const char* path, struct stat* buf);
 int FileSystem_LStat(struct FileSystem* thisArg, const char* path, struct stat* buf);
-int FileSystem_Statx(struct FileSystem* thisArg, int dirFd, const char* path, int flags, int mask, struct statx* buf);
-int FileSystem_UTimeNsAt(struct FileSystem* thisArg, int dirFd, const char* path, const struct timespec* times, int flags);
-int FileSystem_FUTimesAt(struct FileSystem* thisArg, unsigned int fdNum, const char* path, const struct timeval* times);
+int FileSystem_Statx(
+  struct FileSystem* thisArg,
+  int dirFd,
+  const char* path,
+  int flags,
+  int mask,
+  struct statx* buf
+);
+int FileSystem_UTimeNsAt(
+  struct FileSystem* thisArg,
+  int dirFd,
+  const char* path,
+  const struct timespec* times,
+  int flags
+);
+int FileSystem_FUTimesAt(
+  struct FileSystem* thisArg,
+  unsigned int fdNum,
+  const char* path,
+  const struct timeval* times
+);
 int FileSystem_UTimes(struct FileSystem* thisArg, const char* path, const struct timeval* times);
 int FileSystem_UTime(struct FileSystem* thisArg, const char* path, const struct utimbuf* times);
 

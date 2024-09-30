@@ -117,10 +117,20 @@ declare module "@daisydogs07/filesystem" {
     static EOPNOTSUPP: number;
 
     constructor();
-    faccessat2(dirFd: number | BigInt, path: string, mode: number | BigInt, flags: number | BigInt): void;
+    faccessat2(
+      dirFd: number | BigInt,
+      path: string,
+      mode: number | BigInt,
+      flags: number | BigInt
+    ): void;
     faccessat(dirFd: number | BigInt, path: string, mode: number | BigInt): void;
     access(path: string, mode: number | BigInt): void;
-    openat(dirFd: number | BigInt, path: string, flags: number | BigInt, mode: number | BigInt): number;
+    openat(
+      dirFd: number | BigInt,
+      path: string,
+      flags: number | BigInt,
+      mode: number | BigInt
+    ): number;
     open(path: string, flags: number | BigInt, mode: number | BigInt): number;
     creat(path: string, mode: number | BigInt): number;
     close(fd: number | BigInt): void;
@@ -134,15 +144,37 @@ declare module "@daisydogs07/filesystem" {
     readlinkat(dirFd: number | BigInt, path: string): string;
     readlink(path: string): string;
     getdents(fd: number | BigInt, count?: number | BigInt): Dirent[];
-    linkat(oldDirFd: number | BigInt, oldPath: string, newDirFd: number | BigInt, newPath: string, flags: number | BigInt): void;
+    linkat(
+      oldDirFd: number | BigInt,
+      oldPath: string,
+      newDirFd: number | BigInt,
+      newPath: string,
+      flags: number | BigInt
+    ): void;
     link(oldPath: string, newPath: string): void;
     unlinkat(dirFd: number | BigInt, path: string, flags: number | BigInt): void;
     unlink(path: string): void;
     rmdir(path: string): void;
-    renameat2(oldDirFd: number | BigInt, oldPath: string, newDirFd: number | BigInt, newPath: string, flags: number | BigInt): void;
-    renameat(oldDirFd: number | BigInt, oldPath: string, newDirFd: number | BigInt, newPath: string): void;
+    renameat2(
+      oldDirFd: number | BigInt,
+      oldPath: string,
+      newDirFd: number | BigInt,
+      newPath: string,
+      flags: number | BigInt
+    ): void;
+    renameat(
+      oldDirFd: number | BigInt,
+      oldPath: string,
+      newDirFd: number | BigInt,
+      newPath: string
+    ): void;
     rename(oldPath: string, newPath: string): void;
-    fallocate(fd: number | BigInt, mode: number | BigInt, offset: number | BigInt, len: number | BigInt): void;
+    fallocate(
+      fd: number | BigInt,
+      mode: number | BigInt,
+      offset: number | BigInt,
+      len: number | BigInt
+    ): void;
     lseek(fd: number | BigInt, offset: number | BigInt, whence: number | BigInt): BigInt;
     read(fd: number | BigInt, count: number | BigInt): Buffer;
     readv(fd: number | BigInt, iov: Buffer[]): BigInt;
@@ -150,9 +182,19 @@ declare module "@daisydogs07/filesystem" {
     preadv(fd: number | BigInt, iov: Buffer[], offset: number | BigInt): BigInt;
     write(fd: number | BigInt, buffer: string | Buffer, count?: number | BigInt): BigInt;
     writev(fd: number | BigInt, iov: Buffer[]): BigInt;
-    pwrite(fd: number | BigInt, buffer: string | Buffer, offset: number | BigInt, count?: number | BigInt): BigInt;
+    pwrite(
+      fd: number | BigInt,
+      buffer: string | Buffer,
+      offset: number | BigInt,
+      count?: number | BigInt
+    ): BigInt;
     pwritev(fd: number | BigInt, iov: Buffer[], offset: number | BigInt): BigInt;
-    sendfile(outFd: number | BigInt, inFd: number | BigInt, offset: null | number | BigInt, count: number | BigInt): BigInt;
+    sendfile(
+      outFd: number | BigInt,
+      inFd: number | BigInt,
+      offset: null | number | BigInt,
+      count: number | BigInt
+    ): BigInt;
     ftruncate(fd: number | BigInt, length: number | BigInt): void;
     truncate(path: string, length: number | BigInt): void;
     fchmodat(dirFd: number | BigInt, path: string, mode: number | BigInt): void;
