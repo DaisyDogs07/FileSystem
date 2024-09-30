@@ -599,6 +599,7 @@ namespace {
     struct Fd** fds = NULL;
     int fdCount = 0;
     struct Cwd cwd = {};
+    int umask = 0000;
     pthread_mutex_t mtx;
   };
 
@@ -1010,16 +1011,16 @@ int FileSystem::OpenAt(int dirFd, const char* path, int flags, mode_t mode) {
         O_DIRECTORY | O_NOFOLLOW | O_NOATIME
       ))
     return -EINVAL;
-  if (flags & 020000000) {
+  if (flags & O_TMPFILE) {
     if (!(flags & O_DIRECTORY) ||
         flags & O_CREAT ||
         !(flags & (O_WRONLY | O_RDWR)) ||
-        mode & ~07777 || mode == 0)
+        mode & ~0777 || mode == 0)
       return -EINVAL;
     mode |= S_IFREG;
   } else if (flags & O_CREAT) {
     if (flags & O_DIRECTORY ||
-        mode & ~07777)
+        mode & ~0777)
       return -EINVAL;
     mode |= S_IFREG;
   } else if (mode != 0)
@@ -1077,7 +1078,7 @@ int FileSystem::OpenAt(int dirFd, const char* path, int flags, mode_t mode) {
         delete name;
         return -EIO;
       }
-      x->mode = mode;
+      x->mode = mode & ~fs->umask;
       x->nlink = 1;
       parent->ctime = parent->mtime = x->btime;
       res = PushFd(fs, x, flags);
@@ -1098,7 +1099,7 @@ int FileSystem::OpenAt(int dirFd, const char* path, int flags, mode_t mode) {
         delete x;
         return -EIO;
       }
-      x->mode = (mode & ~S_IFMT) | S_IFREG;
+      x->mode = (mode & ~fs->umask) | S_IFREG;
       res = PushFd(fs, x, flags);
       if (res < 0)
         RemoveINode(fs, x);
@@ -1190,7 +1191,7 @@ int FileSystem::MkNodAt(int dirFd, const char* path, mode_t mode, dev_t dev) {
     delete name;
     return -EIO;
   }
-  x->mode = (mode & 07777) | S_IFREG;
+  x->mode = ((mode & 0777) & ~fs->umask) | S_IFREG;
   x->nlink = 1;
   parent->ctime = parent->mtime = x->btime;
   return 0;
@@ -1241,7 +1242,7 @@ int FileSystem::MkDirAt(int dirFd, const char* path, mode_t mode) {
     delete name;
     return -EIO;
   }
-  x->mode = (mode & 07777) | S_IFDIR;
+  x->mode = ((mode & 0777) & ~fs->umask) | S_IFDIR;
   x->nlink = 2;
   x->dents[0] = { ".", x };
   x->dents[1] = { "..", parent };
@@ -2425,7 +2426,7 @@ int FileSystem::FChModAt(int dirFd, const char* path, mode_t mode) {
   fs->cwd.inode = origCwd;
   if (res != 0)
     return res;
-  inode->mode = (mode & 07777) | (inode->mode & S_IFMT);
+  inode->mode = (mode & 0777) | (inode->mode & S_IFMT);
   clock_gettime(CLOCK_REALTIME, &inode->ctime);
   return 0;
 }
@@ -2436,7 +2437,7 @@ int FileSystem::FChMod(unsigned int fdNum, mode_t mode) {
   if (!(fd = GetFd(fs, fdNum)))
     return -EBADF;
   struct BaseINode* inode = fd->inode;
-  inode->mode = (mode & 07777) | (inode->mode & S_IFMT);
+  inode->mode = (mode & 0777) | (inode->mode & S_IFMT);
   clock_gettime(CLOCK_REALTIME, &inode->ctime);
   return 0;
 }
@@ -2595,6 +2596,13 @@ int FileSystem::FUTimesAt(unsigned int fdNum, const char* path, const struct tim
   } else inode->atime = inode->mtime = ts;
   inode->ctime = ts;
   return 0;
+}
+int FileSystem::UMask(int mask) {
+  struct FSInternal* fs = (struct FSInternal*)data;
+  ScopedLock lock(fs->mtx);
+  int prev = fs->umask;
+  fs->umask = mask & 0777;
+  return prev;
 }
 
 bool FileSystem::DumpToFile(const char* filename) {

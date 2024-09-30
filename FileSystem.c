@@ -611,6 +611,7 @@ struct FSInternal {
   struct Fd** fds;
   int fdCount;
   struct Cwd cwd;
+  int umask;
   pthread_mutex_t mtx;
 };
 
@@ -619,6 +620,7 @@ void FSInternal_New(struct FSInternal* thisArg) {
   thisArg->inodeCount = 0;
   thisArg->fds = NULL;
   thisArg->fdCount = 0;
+  thisArg->umask = 0000;
   Cwd_New(&thisArg->cwd);
   pthread_mutex_init(&thisArg->mtx, NULL);
 }
@@ -1086,16 +1088,16 @@ int FileSystem_OpenAt(
         O_DIRECTORY | O_NOFOLLOW | O_NOATIME
       ))
     return -EINVAL;
-  if (flags & 020000000) {
+  if (flags & O_TMPFILE) {
     if (!(flags & O_DIRECTORY) ||
         flags & O_CREAT ||
         !(flags & (O_WRONLY | O_RDWR)) ||
-        mode & ~07777 || mode == 0)
+        mode & ~0777 || mode == 0)
       return -EINVAL;
     mode |= S_IFREG;
   } else if (flags & O_CREAT) {
     if (flags & O_DIRECTORY ||
-        mode & ~07777)
+        mode & ~0777)
       return -EINVAL;
     mode |= S_IFREG;
   } else if (mode != 0)
@@ -1173,7 +1175,7 @@ int FileSystem_OpenAt(
         pthread_mutex_unlock(&fs->mtx);
         return -EIO;
       }
-      x->base.mode = mode;
+      x->base.mode = mode & ~fs->umask;
       x->base.nlink = 1;
       parent->base.ctime = parent->base.mtime = x->base.btime;
       res = PushFd(fs, (struct BaseINode*)x, flags);
@@ -1199,7 +1201,7 @@ int FileSystem_OpenAt(
         pthread_mutex_unlock(&fs->mtx);
         return -EIO;
       }
-      x->base.mode = (mode & ~S_IFMT) | S_IFREG;
+      x->base.mode = (mode & ~fs->umask) | S_IFREG;
       res = PushFd(fs, (struct BaseINode*)x, flags);
       if (res < 0)
         RemoveINode(fs, (struct BaseINode*)x);
@@ -1331,7 +1333,7 @@ int FileSystem_MkNodAt(
     free((void*)name);
     return -EIO;
   }
-  x->base.mode = (mode & 07777) | S_IFREG;
+  x->base.mode = ((mode & 0777) & ~fs->umask) | S_IFREG;
   x->base.nlink = 1;
   parent->base.ctime = parent->base.mtime = x->base.btime;
   return 0;
@@ -1402,7 +1404,7 @@ int FileSystem_MkDirAt(struct FileSystem* thisArg, int dirFd, const char* path, 
     pthread_mutex_unlock(&fs->mtx);
     return -EIO;
   }
-  x->base.mode = (mode & 07777) | S_IFDIR;
+  x->base.mode = ((mode & 0777) & ~fs->umask) | S_IFDIR;
   x->base.nlink = 2;
   x->dents[0] = Dent_New(".", (struct BaseINode*)x);
   x->dents[1] = Dent_New("..", (struct BaseINode*)parent);
@@ -3011,7 +3013,7 @@ int FileSystem_FChModAt(struct FileSystem* thisArg, int dirFd, const char* path,
     pthread_mutex_unlock(&fs->mtx);
     return res;
   }
-  inode->mode = (mode & 07777) | (inode->mode & S_IFMT);
+  inode->mode = (mode & 0777) | (inode->mode & S_IFMT);
   clock_gettime(CLOCK_REALTIME, &inode->ctime);
   pthread_mutex_unlock(&fs->mtx);
   return 0;
@@ -3025,7 +3027,7 @@ int FileSystem_FChMod(struct FileSystem* thisArg, unsigned int fdNum, mode_t mod
     return -EBADF;
   }
   struct BaseINode* inode = fd->inode;
-  inode->mode = (mode & 07777) | (inode->mode & S_IFMT);
+  inode->mode = (mode & 0777) | (inode->mode & S_IFMT);
   clock_gettime(CLOCK_REALTIME, &inode->ctime);
   pthread_mutex_unlock(&fs->mtx);
   return 0;
@@ -3251,6 +3253,14 @@ int FileSystem_UTime(struct FileSystem* thisArg, const char* path, const struct 
     ts[1].tv_usec = 0;
   }
   return FileSystem_FUTimesAt(thisArg, AT_FDCWD, path, times ? ts : NULL);
+}
+int FileSystem_UMask(struct FileSystem* thisArg, int mask) {
+  struct FSInternal* fs = (struct FSInternal*)thisArg->data;
+  pthread_mutex_lock(&fs->mtx);
+  int prev = fs->umask;
+  fs->umask = mask & 0777;
+  pthread_mutex_unlock(&fs->mtx);
+  return prev;
 }
 
 #define TimeSpec_New(ts_sec, ts_nsec) ({ \

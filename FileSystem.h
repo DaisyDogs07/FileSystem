@@ -233,6 +233,7 @@ int FileSystem_FUTimesAt(
 );
 int FileSystem_UTimes(struct FileSystem* thisArg, const char* path, const struct timeval* times);
 int FileSystem_UTime(struct FileSystem* thisArg, const char* path, const struct utimbuf* times);
+int FileSystem_UMask(struct FileSystem* thisArg, int mask);
 
 /**
  * format:

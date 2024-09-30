@@ -210,6 +210,7 @@ declare module "@daisydogs07/filesystem" {
     futimesat(dirFd: number | BigInt, path: string, times: number[]): void;
     utimes(path: string, times: number[]): void;
     utime(path: string, times: number[]): void;
+    umask(mask: number | BigInt): number;
     dumpTo(path: string): void;
     static loadFrom(path: string): FileSystem;
   }

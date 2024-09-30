@@ -144,6 +144,7 @@ class FileSystem {
     }
     return FUTimesAt(AT_FDCWD, path, times ? ts : NULL);
   }
+  int UMask(int mask);
 
   /**
    * format:
