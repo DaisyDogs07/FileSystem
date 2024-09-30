@@ -1067,6 +1067,12 @@ int FileSystem_FAccessAt2(
   pthread_mutex_unlock(&fs->mtx);
   return 0;
 }
+int FileSystem_FAccessAt(struct FileSystem* thisArg, int dirFd, const char* path, int mode) {
+  return FileSystem_FAccessAt2(thisArg, dirFd, path, mode, F_OK);
+};
+int FileSystem_Access(struct FileSystem* thisArg, const char* path, int mode) {
+  return FileSystem_FAccessAt2(thisArg, AT_FDCWD, path, mode, F_OK);
+}
 int FileSystem_OpenAt(
   struct FileSystem* thisArg,
   int dirFd,
@@ -1215,6 +1221,12 @@ int FileSystem_OpenAt(
   pthread_mutex_unlock(&fs->mtx);
   return PushFd(fs, inode, flags);
 }
+int FileSystem_Open(struct FileSystem* thisArg, const char* path, int flags, mode_t mode) {
+  return FileSystem_OpenAt(thisArg, AT_FDCWD, path, flags, mode);
+}
+int FileSystem_Creat(struct FileSystem* thisArg, const char* path, mode_t mode) {
+  return FileSystem_OpenAt(thisArg, AT_FDCWD, path, O_CREAT | O_WRONLY | O_TRUNC, mode);
+}
 int FileSystem_Close(struct FileSystem* thisArg, unsigned int fd) {
   struct FSInternal* fs = (struct FSInternal*)thisArg->data;
   pthread_mutex_lock(&fs->mtx);
@@ -1324,6 +1336,9 @@ int FileSystem_MkNodAt(
   parent->base.ctime = parent->base.mtime = x->base.btime;
   return 0;
 }
+int FileSystem_MkNod(struct FileSystem* thisArg, const char* path, mode_t mode, dev_t dev) {
+  return FileSystem_MkNodAt(thisArg, AT_FDCWD, path, mode, dev);
+}
 int FileSystem_MkDirAt(struct FileSystem* thisArg, int dirFd, const char* path, mode_t mode) {
   struct FSInternal* fs = (struct FSInternal*)thisArg->data;
   pthread_mutex_lock(&fs->mtx);
@@ -1394,6 +1409,9 @@ int FileSystem_MkDirAt(struct FileSystem* thisArg, int dirFd, const char* path, 
   ++parent->base.nlink;
   parent->base.ctime = parent->base.mtime = x->base.btime;
   return 0;
+}
+int FileSystem_MkDir(struct FileSystem* thisArg, const char* path, mode_t mode) {
+  return FileSystem_MkDirAt(thisArg, AT_FDCWD, path, mode);
 }
 int FileSystem_SymLinkAt(
   struct FileSystem* thisArg,
@@ -1472,6 +1490,9 @@ int FileSystem_SymLinkAt(
   newParent->base.ctime = newParent->base.mtime = x->base.btime;
   return 0;
 }
+int FileSystem_SymLink(struct FileSystem* thisArg, const char* oldPath, const char* newPath) {
+  return FileSystem_SymLinkAt(thisArg, oldPath, AT_FDCWD, newPath);
+}
 int FileSystem_ReadLinkAt(
   struct FileSystem* thisArg,
   int dirFd,
@@ -1513,6 +1534,9 @@ int FileSystem_ReadLinkAt(
   clock_gettime(CLOCK_REALTIME, &inode->atime);
   pthread_mutex_unlock(&fs->mtx);
   return bufLen;
+}
+int FileSystem_ReadLink(struct FileSystem* thisArg, const char* path, char* buf, int bufLen) {
+  return FileSystem_ReadLinkAt(thisArg, AT_FDCWD, path, buf, bufLen);
 }
 int FileSystem_GetDents(
   struct FileSystem* thisArg,
@@ -1658,6 +1682,9 @@ int FileSystem_LinkAt(
   pthread_mutex_unlock(&fs->mtx);
   return 0;
 }
+int FileSystem_Link(struct FileSystem* thisArg, const char* oldPath, const char* newPath) {
+  return FileSystem_LinkAt(thisArg, AT_FDCWD, oldPath, AT_FDCWD, newPath, 0);
+}
 int FileSystem_UnlinkAt(struct FileSystem* thisArg, int dirFd, const char* path, int flags) {
   if (flags & ~AT_REMOVEDIR)
     return -EINVAL;
@@ -1739,6 +1766,12 @@ int FileSystem_UnlinkAt(struct FileSystem* thisArg, int dirFd, const char* path,
   else inode->ctime = ts;
   parent->base.ctime = parent->base.mtime = ts;
   return 0;
+}
+int FileSystem_Unlink(struct FileSystem* thisArg, const char* path) {
+  return FileSystem_UnlinkAt(thisArg, AT_FDCWD, path, 0);
+}
+int FileSystem_RmDir(struct FileSystem* thisArg, const char* path) {
+  return FileSystem_UnlinkAt(thisArg, AT_FDCWD, path, AT_REMOVEDIR);
 }
 int FileSystem_RenameAt2(
   struct FileSystem* thisArg,
@@ -1897,6 +1930,18 @@ int FileSystem_RenameAt2(
   newParent->base.ctime = newParent->base.mtime = ts;
   pthread_mutex_unlock(&fs->mtx);
   return 0;
+}
+int FileSystem_RenameAt(
+  struct FileSystem* thisArg,
+  int oldDirFd,
+  const char* oldPath,
+  int newDirFd,
+  const char* newPath
+) {
+  return FileSystem_RenameAt2(thisArg, oldDirFd, oldPath, newDirFd, newPath, 0);
+}
+int FileSystem_Rename(struct FileSystem* thisArg, const char* oldPath, const char* newPath) {
+  return FileSystem_RenameAt2(thisArg, AT_FDCWD, oldPath, AT_FDCWD, newPath, 0);
 }
 int FileSystem_FAllocate(struct FileSystem* thisArg, int fdNum, int mode, off_t offset, off_t len) {
   struct FSInternal* fs = (struct FSInternal*)thisArg->data;
@@ -2985,6 +3030,9 @@ int FileSystem_FChMod(struct FileSystem* thisArg, unsigned int fdNum, mode_t mod
   pthread_mutex_unlock(&fs->mtx);
   return 0;
 }
+int FileSystem_ChMod(struct FileSystem* thisArg, const char* path, mode_t mode) {
+  return FileSystem_FChModAt(thisArg, AT_FDCWD, path, mode);
+}
 int FileSystem_ChDir(struct FileSystem* thisArg, const char* path) {
   struct FSInternal* fs = (struct FSInternal*)thisArg->data;
   pthread_mutex_lock(&fs->mtx);
@@ -3190,6 +3238,19 @@ int FileSystem_FUTimesAt(
   inode->ctime = ts;
   pthread_mutex_unlock(&fs->mtx);
   return 0;
+}
+int FileSystem_UTimes(struct FileSystem* thisArg, const char* path, const struct timeval* times) {
+  return FileSystem_FUTimesAt(thisArg, AT_FDCWD, path, times);
+}
+int FileSystem_UTime(struct FileSystem* thisArg, const char* path, const struct utimbuf* times) {
+  struct timeval ts[2];
+  if (times) {
+    ts[0].tv_sec = times->actime;
+    ts[0].tv_usec = 0;
+    ts[1].tv_sec = times->modtime;
+    ts[1].tv_usec = 0;
+  }
+  return FileSystem_FUTimesAt(thisArg, AT_FDCWD, path, times ? ts : NULL);
 }
 
 #define TimeSpec_New(ts_sec, ts_nsec) ({ \
