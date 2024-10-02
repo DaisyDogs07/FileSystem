@@ -1,4 +1,4 @@
-#include "FileSystemCpp.h"
+#include "FileSystem.h"
 #include "node.h"
 #include "node_buffer.h"
 #include <type_traits>
@@ -1372,6 +1372,374 @@ void FileSystemStatx(const FunctionCallbackInfo<Value>& args) {
     StatxToObj(isolate, s)
   );
 }
+void FileSystemGetXAttr(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "getxattr");
+  ASSERT(args.Length() == 3);
+  ASSERT(args[0]->IsString());
+  ASSERT(args[1]->IsString());
+  ASSERT(IsNumeric(args[2]));
+  FileSystem* fs = reinterpret_cast<FileSystem*>(
+    self->GetInternalField(0).As<External>()->Value()
+  );
+  char* value = NULL;
+  size_t valSize = Val<size_t>(args[2]);
+  if (valSize != 0 && !TryAlloc(&value, valSize))
+    THROWERR(-ENOMEM);
+  int res = fs->GetXAttr(
+    *String::Utf8Value(isolate, args[0].As<String>()),
+    *String::Utf8Value(isolate, args[1].As<String>()),
+    value,
+    Val<size_t>(args[2])
+  );
+  if (res != 0) {
+    if (valSize == 0) {
+      if (res == -ENODATA) {
+        args.GetReturnValue().Set(False(isolate));
+        return;
+      }
+    } else delete value;
+    THROWERR(res);
+  }
+  if (valSize == 0) {
+    args.GetReturnValue().Set(True(isolate));
+    return;
+  }
+  args.GetReturnValue().Set(
+    Buffer::New(isolate, value, valSize).ToLocalChecked()
+  );
+}
+void FileSystemLGetXAttr(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "lgetxattr");
+  ASSERT(args.Length() == 3);
+  ASSERT(args[0]->IsString());
+  ASSERT(args[1]->IsString());
+  ASSERT(IsNumeric(args[2]));
+  FileSystem* fs = reinterpret_cast<FileSystem*>(
+    self->GetInternalField(0).As<External>()->Value()
+  );
+  char* value = NULL;
+  size_t valSize = Val<size_t>(args[2]);
+  if (valSize != 0 && !TryAlloc(&value, valSize))
+    THROWERR(-ENOMEM);
+  int res = fs->LGetXAttr(
+    *String::Utf8Value(isolate, args[0].As<String>()),
+    *String::Utf8Value(isolate, args[1].As<String>()),
+    value,
+    Val<size_t>(args[2])
+  );
+  if (res != 0) {
+    if (valSize == 0) {
+      if (res == -ENODATA) {
+        args.GetReturnValue().Set(False(isolate));
+        return;
+      }
+    } else delete value;
+    THROWERR(res);
+  }
+  if (valSize == 0) {
+    args.GetReturnValue().Set(True(isolate));
+    return;
+  }
+  args.GetReturnValue().Set(
+    Buffer::New(isolate, value, valSize).ToLocalChecked()
+  );
+}
+void FileSystemFGetXAttr(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "fgetxattr");
+  ASSERT(args.Length() == 3);
+  ASSERT(IsNumeric(args[0]));
+  ASSERT(args[1]->IsString());
+  ASSERT(IsNumeric(args[2]));
+  FileSystem* fs = reinterpret_cast<FileSystem*>(
+    self->GetInternalField(0).As<External>()->Value()
+  );
+  char* value = NULL;
+  size_t valSize = Val<size_t>(args[2]);
+  if (valSize != 0 && !TryAlloc(&value, valSize))
+    THROWERR(-ENOMEM);
+  int res = fs->FGetXAttr(
+    Val<int>(args[0]),
+    *String::Utf8Value(isolate, args[1].As<String>()),
+    value,
+    Val<size_t>(args[2])
+  );
+  if (res != 0) {
+    if (valSize == 0) {
+      if (res == -ENODATA) {
+        args.GetReturnValue().Set(False(isolate));
+        return;
+      }
+    } else delete value;
+    THROWERR(res);
+  }
+  if (valSize == 0) {
+    args.GetReturnValue().Set(True(isolate));
+    return;
+  }
+  args.GetReturnValue().Set(
+    Buffer::New(isolate, value, valSize).ToLocalChecked()
+  );
+}
+void FileSystemSetXAttr(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "setxattr");
+  ASSERT(args.Length() == 4);
+  ASSERT(args[0]->IsString());
+  ASSERT(args[1]->IsString());
+  ASSERT(IsStrOrBuf(args[2]));
+  ASSERT(IsNumeric(args[3]));
+  FileSystem* fs = reinterpret_cast<FileSystem*>(
+    self->GetInternalField(0).As<External>()->Value()
+  );
+  bool isString = args[2]->IsString();
+  THROWIFERR(
+    fs->SetXAttr(
+      *String::Utf8Value(isolate, args[0].As<String>()),
+      *String::Utf8Value(isolate, args[1].As<String>()),
+      isString ? *String::Utf8Value(isolate, args[2].As<String>()) : Buffer::Data(args[2]),
+      isString ? args[2].As<String>()->Utf8Length(isolate) : Buffer::Length(args[2]),
+      Val<int>(args[3])
+    )
+  );
+}
+void FileSystemLSetXAttr(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "setxattr");
+  ASSERT(args.Length() == 4);
+  ASSERT(args[0]->IsString());
+  ASSERT(args[1]->IsString());
+  ASSERT(IsStrOrBuf(args[2]));
+  ASSERT(IsNumeric(args[3]));
+  FileSystem* fs = reinterpret_cast<FileSystem*>(
+    self->GetInternalField(0).As<External>()->Value()
+  );
+  bool isString = args[2]->IsString();
+  THROWIFERR(
+    fs->LSetXAttr(
+      *String::Utf8Value(isolate, args[0].As<String>()),
+      *String::Utf8Value(isolate, args[1].As<String>()),
+      isString ? *String::Utf8Value(isolate, args[2].As<String>()) : Buffer::Data(args[2]),
+      isString ? args[2].As<String>()->Utf8Length(isolate) : Buffer::Length(args[2]),
+      Val<int>(args[3])
+    )
+  );
+}
+void FileSystemFSetXAttr(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "setxattr");
+  ASSERT(args.Length() == 4);
+  ASSERT(IsNumeric(args[0]));
+  ASSERT(args[1]->IsString());
+  ASSERT(IsStrOrBuf(args[2]));
+  ASSERT(IsNumeric(args[3]));
+  FileSystem* fs = reinterpret_cast<FileSystem*>(
+    self->GetInternalField(0).As<External>()->Value()
+  );
+  bool isString = args[2]->IsString();
+  THROWIFERR(
+    fs->FSetXAttr(
+      Val<int>(args[0]),
+      *String::Utf8Value(isolate, args[1].As<String>()),
+      isString ? *String::Utf8Value(isolate, args[2].As<String>()) : Buffer::Data(args[2]),
+      isString ? args[2].As<String>()->Utf8Length(isolate) : Buffer::Length(args[2]),
+      Val<int>(args[3])
+    )
+  );
+}
+void FileSystemRemoveXAttr(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "removexattr");
+  ASSERT(args.Length() == 2);
+  ASSERT(args[0]->IsString());
+  ASSERT(args[1]->IsString());
+  FileSystem* fs = reinterpret_cast<FileSystem*>(
+    self->GetInternalField(0).As<External>()->Value()
+  );
+  THROWIFERR(
+    fs->RemoveXAttr(
+      *String::Utf8Value(isolate, args[0].As<String>()),
+      *String::Utf8Value(isolate, args[1].As<String>())
+    )
+  );
+}
+void FileSystemLRemoveXAttr(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "lremovexattr");
+  ASSERT(args.Length() == 2);
+  ASSERT(args[0]->IsString());
+  ASSERT(args[1]->IsString());
+  FileSystem* fs = reinterpret_cast<FileSystem*>(
+    self->GetInternalField(0).As<External>()->Value()
+  );
+  THROWIFERR(
+    fs->LRemoveXAttr(
+      *String::Utf8Value(isolate, args[0].As<String>()),
+      *String::Utf8Value(isolate, args[1].As<String>())
+    )
+  );
+}
+void FileSystemFRemoveXAttr(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "fremovexattr");
+  ASSERT(args.Length() == 2);
+  ASSERT(IsNumeric(args[0]));
+  ASSERT(args[1]->IsString());
+  FileSystem* fs = reinterpret_cast<FileSystem*>(
+    self->GetInternalField(0).As<External>()->Value()
+  );
+  THROWIFERR(
+    fs->FRemoveXAttr(
+      Val<int>(args[0]),
+      *String::Utf8Value(isolate, args[1].As<String>())
+    )
+  );
+}
+void FileSystemListXAttr(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Context> context = isolate->GetCurrentContext();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "listxattr");
+  ASSERT(args.Length() == 1);
+  ASSERT(args[0]->IsString());
+  FileSystem* fs = reinterpret_cast<FileSystem*>(
+    self->GetInternalField(0).As<External>()->Value()
+  );
+  String::Utf8Value utf8Val = String::Utf8Value(isolate, args[0].As<String>());
+  char* val = *utf8Val;
+  ssize_t res = fs->ListXAttr(val, NULL, 0);
+  if (res < 0)
+    THROWERR(res);
+  char* list;
+  if (!TryAlloc(&list, res))
+    THROWERR(-ENOMEM);
+  res = fs->ListXAttr(
+    val,
+    list,
+    res
+  );
+  if (res < 0) {
+    delete list;
+    THROWERR(res);
+  }
+  Local<Array> listArr = Array::New(isolate);
+  size_t i = 0;
+  while (i != res) {
+    size_t entryLen = strlen(&list[i]);
+    listArr->Set(
+      context,
+      listArr->Length(),
+      String::NewFromUtf8(
+        isolate,
+        &list[i],
+        NewStringType::kNormal,
+        entryLen
+      ).ToLocalChecked()
+    ).Check();
+    i += entryLen + 1;
+  }
+  args.GetReturnValue().Set(listArr);
+}
+void FileSystemLListXAttr(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Context> context = isolate->GetCurrentContext();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "listxattr");
+  ASSERT(args.Length() == 1);
+  ASSERT(args[0]->IsString());
+  FileSystem* fs = reinterpret_cast<FileSystem*>(
+    self->GetInternalField(0).As<External>()->Value()
+  );
+  String::Utf8Value utf8Val = String::Utf8Value(isolate, args[0].As<String>());
+  char* val = *utf8Val;
+  ssize_t res = fs->LListXAttr(val, NULL, 0);
+  if (res < 0)
+    THROWERR(res);
+  char* list;
+  if (!TryAlloc(&list, res))
+    THROWERR(-ENOMEM);
+  res = fs->LListXAttr(
+    val,
+    list,
+    res
+  );
+  if (res < 0) {
+    delete list;
+    THROWERR(res);
+  }
+  Local<Array> listArr = Array::New(isolate);
+  size_t i = 0;
+  while (i != res) {
+    size_t entryLen = strlen(&list[i]);
+    listArr->Set(
+      context,
+      listArr->Length(),
+      String::NewFromUtf8(
+        isolate,
+        &list[i],
+        NewStringType::kNormal,
+        entryLen
+      ).ToLocalChecked()
+    ).Check();
+    i += entryLen + 1;
+  }
+  args.GetReturnValue().Set(listArr);
+}
+void FileSystemFListXAttr(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Context> context = isolate->GetCurrentContext();
+  Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
+  THROWIFNOTFS(self, "listxattr");
+  ASSERT(args.Length() == 1);
+  ASSERT(IsNumeric(args[0]));
+  FileSystem* fs = reinterpret_cast<FileSystem*>(
+    self->GetInternalField(0).As<External>()->Value()
+  );
+  int val = Val<int>(args[0]);
+  ssize_t res = fs->FListXAttr(val, NULL, 0);
+  if (res < 0)
+    THROWERR(res);
+  char* list;
+  if (!TryAlloc(&list, res))
+    THROWERR(-ENOMEM);
+  res = fs->FListXAttr(
+    val,
+    list,
+    res
+  );
+  if (res < 0) {
+    delete list;
+    THROWERR(res);
+  }
+  Local<Array> listArr = Array::New(isolate);
+  size_t i = 0;
+  while (i != res) {
+    size_t entryLen = strlen(&list[i]);
+    listArr->Set(
+      context,
+      listArr->Length(),
+      String::NewFromUtf8(
+        isolate,
+        &list[i],
+        NewStringType::kNormal,
+        entryLen
+      ).ToLocalChecked()
+    ).Check();
+    i += entryLen + 1;
+  }
+  args.GetReturnValue().Set(listArr);
+}
 void FileSystemUTimeNsAt(const FunctionCallbackInfo<Value>& args) {
   Isolate* isolate = args.GetIsolate();
   Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
@@ -1545,11 +1913,13 @@ void FileSystemUMask(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  int mask = fs->UMask(
-    Val<int>(args[0])
-  );
   args.GetReturnValue().Set(
-    Integer::New(isolate, mask)
+    Integer::New(
+      isolate,
+      fs->UMask(
+        Val<int>(args[0])
+      )
+    )
   );
 }
 
@@ -1693,6 +2063,8 @@ void DefineConstants(Isolate* isolate, Local<FunctionTemplate> func) {
   DefineFlag(W_OK);
   DefineFlag(X_OK);
   DefineFlag(F_OK);
+  DefineFlag(XATTR_CREATE);
+  DefineFlag(XATTR_REPLACE);
 
   DefineFlag(EPERM);
   DefineFlag(ENOENT);
@@ -1711,6 +2083,7 @@ void DefineConstants(Isolate* isolate, Local<FunctionTemplate> func) {
   DefineFlag(ENAMETOOLONG);
   DefineFlag(ENOTEMPTY);
   DefineFlag(ELOOP);
+  DefineFlag(ENODATA);
   DefineFlag(EOVERFLOW);
   DefineFlag(EOPNOTSUPP);
 #undef DefineFlag
@@ -1742,59 +2115,71 @@ void DefineFunction(
   );
 }
 void DefineTemplateFunctions(Isolate* isolate, Local<ObjectTemplate> tmpl) {
-  DefineFunction(isolate, tmpl, "faccessat2",  FileSystemFAccessAt2, 4);
-  DefineFunction(isolate, tmpl, "faccessat",   FileSystemFAccessAt,  3);
-  DefineFunction(isolate, tmpl, "access",      FileSystemAccess,     2);
-  DefineFunction(isolate, tmpl, "openat",      FileSystemOpenAt,     4);
-  DefineFunction(isolate, tmpl, "open",        FileSystemOpen,       3);
-  DefineFunction(isolate, tmpl, "creat",       FileSystemCreat,      2);
-  DefineFunction(isolate, tmpl, "close",       FileSystemClose,      1);
-  DefineFunction(isolate, tmpl, "close_range", FileSystemCloseRange, 2);
-  DefineFunction(isolate, tmpl, "mknodat",     FileSystemMkNodAt,    3);
-  DefineFunction(isolate, tmpl, "mknod",       FileSystemMkNod,      2);
-  DefineFunction(isolate, tmpl, "mkdirat",     FileSystemMkDirAt,    3);
-  DefineFunction(isolate, tmpl, "mkdir",       FileSystemMkDir,      2);
-  DefineFunction(isolate, tmpl, "symlinkat",   FileSystemSymLinkAt,  3);
-  DefineFunction(isolate, tmpl, "symlink",     FileSystemSymLink,    2);
-  DefineFunction(isolate, tmpl, "readlinkat",  FileSystemReadLinkAt, 2);
-  DefineFunction(isolate, tmpl, "readlink",    FileSystemReadLink,   1);
-  DefineFunction(isolate, tmpl, "getdents",    FileSystemGetDents,   1);
-  DefineFunction(isolate, tmpl, "linkat",      FileSystemLinkAt,     5);
-  DefineFunction(isolate, tmpl, "link",        FileSystemLink,       2);
-  DefineFunction(isolate, tmpl, "unlinkat",    FileSystemUnlinkAt,   3);
-  DefineFunction(isolate, tmpl, "unlink",      FileSystemUnlink,     1);
-  DefineFunction(isolate, tmpl, "rmdir",       FileSystemRmDir,      1);
-  DefineFunction(isolate, tmpl, "renameat2",   FileSystemRenameAt2,  5);
-  DefineFunction(isolate, tmpl, "renameat",    FileSystemRenameAt,   4);
-  DefineFunction(isolate, tmpl, "rename",      FileSystemRename,     2);
-  DefineFunction(isolate, tmpl, "fallocate",   FileSystemFAllocate,  4);
-  DefineFunction(isolate, tmpl, "lseek",       FileSystemLSeek,      3);
-  DefineFunction(isolate, tmpl, "read",        FileSystemRead,       2);
-  DefineFunction(isolate, tmpl, "readv",       FileSystemReadv,      2);
-  DefineFunction(isolate, tmpl, "pread",       FileSystemPRead,      3);
-  DefineFunction(isolate, tmpl, "preadv",      FileSystemPReadv,     3);
-  DefineFunction(isolate, tmpl, "write",       FileSystemWrite,      2);
-  DefineFunction(isolate, tmpl, "writev",      FileSystemWritev,     2);
-  DefineFunction(isolate, tmpl, "pwrite",      FileSystemPWrite,     3);
-  DefineFunction(isolate, tmpl, "pwritev",     FileSystemPWritev,    3);
-  DefineFunction(isolate, tmpl, "sendfile",    FileSystemSendFile,   4);
-  DefineFunction(isolate, tmpl, "ftruncate",   FileSystemFTruncate,  2);
-  DefineFunction(isolate, tmpl, "truncate",    FileSystemTruncate,   2);
-  DefineFunction(isolate, tmpl, "fchmodat",    FileSystemFChModAt,   3);
-  DefineFunction(isolate, tmpl, "fchmod",      FileSystemFChMod,     2);
-  DefineFunction(isolate, tmpl, "chmod",       FileSystemChMod,      2);
-  DefineFunction(isolate, tmpl, "chdir",       FileSystemChDir,      1);
-  DefineFunction(isolate, tmpl, "getcwd",      FileSystemGetCwd,     0);
-  DefineFunction(isolate, tmpl, "fstat",       FileSystemFStat,      1);
-  DefineFunction(isolate, tmpl, "stat",        FileSystemStat,       1);
-  DefineFunction(isolate, tmpl, "lstat",       FileSystemLStat,      1);
-  DefineFunction(isolate, tmpl, "statx",       FileSystemStatx,      4);
-  DefineFunction(isolate, tmpl, "utimensat",   FileSystemUTimeNsAt,  4);
-  DefineFunction(isolate, tmpl, "futimesat",   FileSystemFUTimesAt,  3);
-  DefineFunction(isolate, tmpl, "utimes",      FileSystemUTimes,     2);
-  DefineFunction(isolate, tmpl, "utime",       FileSystemUTime,      2);
-  DefineFunction(isolate, tmpl, "umask",       FileSystemUMask,      1);
-  DefineFunction(isolate, tmpl, "dumpTo",      FileSystemDumpTo,     1);
+  DefineFunction(isolate, tmpl, "faccessat2",   FileSystemFAccessAt2,   4);
+  DefineFunction(isolate, tmpl, "faccessat",    FileSystemFAccessAt,    3);
+  DefineFunction(isolate, tmpl, "access",       FileSystemAccess,       2);
+  DefineFunction(isolate, tmpl, "openat",       FileSystemOpenAt,       4);
+  DefineFunction(isolate, tmpl, "open",         FileSystemOpen,         3);
+  DefineFunction(isolate, tmpl, "creat",        FileSystemCreat,        2);
+  DefineFunction(isolate, tmpl, "close",        FileSystemClose,        1);
+  DefineFunction(isolate, tmpl, "close_range",  FileSystemCloseRange,   2);
+  DefineFunction(isolate, tmpl, "mknodat",      FileSystemMkNodAt,      3);
+  DefineFunction(isolate, tmpl, "mknod",        FileSystemMkNod,        2);
+  DefineFunction(isolate, tmpl, "mkdirat",      FileSystemMkDirAt,      3);
+  DefineFunction(isolate, tmpl, "mkdir",        FileSystemMkDir,        2);
+  DefineFunction(isolate, tmpl, "symlinkat",    FileSystemSymLinkAt,    3);
+  DefineFunction(isolate, tmpl, "symlink",      FileSystemSymLink,      2);
+  DefineFunction(isolate, tmpl, "readlinkat",   FileSystemReadLinkAt,   2);
+  DefineFunction(isolate, tmpl, "readlink",     FileSystemReadLink,     1);
+  DefineFunction(isolate, tmpl, "getdents",     FileSystemGetDents,     1);
+  DefineFunction(isolate, tmpl, "linkat",       FileSystemLinkAt,       5);
+  DefineFunction(isolate, tmpl, "link",         FileSystemLink,         2);
+  DefineFunction(isolate, tmpl, "unlinkat",     FileSystemUnlinkAt,     3);
+  DefineFunction(isolate, tmpl, "unlink",       FileSystemUnlink,       1);
+  DefineFunction(isolate, tmpl, "rmdir",        FileSystemRmDir,        1);
+  DefineFunction(isolate, tmpl, "renameat2",    FileSystemRenameAt2,    5);
+  DefineFunction(isolate, tmpl, "renameat",     FileSystemRenameAt,     4);
+  DefineFunction(isolate, tmpl, "rename",       FileSystemRename,       2);
+  DefineFunction(isolate, tmpl, "fallocate",    FileSystemFAllocate,    4);
+  DefineFunction(isolate, tmpl, "lseek",        FileSystemLSeek,        3);
+  DefineFunction(isolate, tmpl, "read",         FileSystemRead,         2);
+  DefineFunction(isolate, tmpl, "readv",        FileSystemReadv,        2);
+  DefineFunction(isolate, tmpl, "pread",        FileSystemPRead,        3);
+  DefineFunction(isolate, tmpl, "preadv",       FileSystemPReadv,       3);
+  DefineFunction(isolate, tmpl, "write",        FileSystemWrite,        2);
+  DefineFunction(isolate, tmpl, "writev",       FileSystemWritev,       2);
+  DefineFunction(isolate, tmpl, "pwrite",       FileSystemPWrite,       3);
+  DefineFunction(isolate, tmpl, "pwritev",      FileSystemPWritev,      3);
+  DefineFunction(isolate, tmpl, "sendfile",     FileSystemSendFile,     4);
+  DefineFunction(isolate, tmpl, "ftruncate",    FileSystemFTruncate,    2);
+  DefineFunction(isolate, tmpl, "truncate",     FileSystemTruncate,     2);
+  DefineFunction(isolate, tmpl, "fchmodat",     FileSystemFChModAt,     3);
+  DefineFunction(isolate, tmpl, "fchmod",       FileSystemFChMod,       2);
+  DefineFunction(isolate, tmpl, "chmod",        FileSystemChMod,        2);
+  DefineFunction(isolate, tmpl, "chdir",        FileSystemChDir,        1);
+  DefineFunction(isolate, tmpl, "getcwd",       FileSystemGetCwd,       0);
+  DefineFunction(isolate, tmpl, "fstat",        FileSystemFStat,        1);
+  DefineFunction(isolate, tmpl, "stat",         FileSystemStat,         1);
+  DefineFunction(isolate, tmpl, "lstat",        FileSystemLStat,        1);
+  DefineFunction(isolate, tmpl, "statx",        FileSystemStatx,        4);
+  DefineFunction(isolate, tmpl, "getxattr",     FileSystemGetXAttr,     3);
+  DefineFunction(isolate, tmpl, "lgetxattr",    FileSystemLGetXAttr,    3);
+  DefineFunction(isolate, tmpl, "fgetxattr",    FileSystemFGetXAttr,    3);
+  DefineFunction(isolate, tmpl, "setxattr",     FileSystemSetXAttr,     4);
+  DefineFunction(isolate, tmpl, "lsetxattr",    FileSystemLSetXAttr,    4);
+  DefineFunction(isolate, tmpl, "fsetxattr",    FileSystemFSetXAttr,    4);
+  DefineFunction(isolate, tmpl, "removexattr",  FileSystemRemoveXAttr,  2);
+  DefineFunction(isolate, tmpl, "lremovexattr", FileSystemLRemoveXAttr, 2);
+  DefineFunction(isolate, tmpl, "fremovexattr", FileSystemFRemoveXAttr, 2);
+  DefineFunction(isolate, tmpl, "listxattr",    FileSystemListXAttr,    1);
+  DefineFunction(isolate, tmpl, "llistxattr",   FileSystemLListXAttr,   1);
+  DefineFunction(isolate, tmpl, "flistxattr",   FileSystemFListXAttr,   1);
+  DefineFunction(isolate, tmpl, "utimensat",    FileSystemUTimeNsAt,    4);
+  DefineFunction(isolate, tmpl, "futimesat",    FileSystemFUTimesAt,    3);
+  DefineFunction(isolate, tmpl, "utimes",       FileSystemUTimes,       2);
+  DefineFunction(isolate, tmpl, "utime",        FileSystemUTime,        2);
+  DefineFunction(isolate, tmpl, "umask",        FileSystemUMask,        1);
+  DefineFunction(isolate, tmpl, "dumpTo",       FileSystemDumpTo,       1);
 }
 
 NODE_MODULE_INIT() {

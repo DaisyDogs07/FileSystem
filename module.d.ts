@@ -95,6 +95,8 @@ declare module "@daisydogs07/filesystem" {
     static W_OK: number;
     static X_OK: number;
     static F_OK: number;
+    static XATTR_CREATE: number;
+    static XATTR_REPLACE: number;
 
     static EPERM: number;
     static ENOENT: number;
@@ -113,6 +115,7 @@ declare module "@daisydogs07/filesystem" {
     static ENAMETOOLONG: number;
     static ENOTEMPTY: number;
     static ELOOP: number;
+    static ENODATA: number;
     static EOVERFLOW: number;
     static EOPNOTSUPP: number;
 
@@ -206,6 +209,26 @@ declare module "@daisydogs07/filesystem" {
     stat(path: string): Stats;
     lstat(path: string): Stats;
     statx(dirFd: number | BigInt, path: string, flags: number | BigInt): Statx;
+    getxattr(path: string, name: string, size: number | BigInt): Buffer;
+    getxattr(path: string, name: string, size: 0 | 0n): boolean;
+    lgetxattr(path: string, name: string, size: number | BigInt): Buffer;
+    lgetxattr(path: string, name: string, size: 0 | 0n): boolean;
+    fgetxattr(fd: number | BigInt, name: string, size: number | BigInt): Buffer;
+    fgetxattr(fd: number | BigInt, name: string, size: 0 | 0n): boolean;
+    setxattr(path: string, name: string, data: string | Buffer, flags: number | BigInt): void;
+    lsetxattr(path: string, name: string, data: string | Buffer, flags: number | BigInt): void;
+    fsetxattr(
+      fd: number | BigInt,
+      name: string,
+      data: string | Buffer,
+      flags: number | BigInt
+    ): void;
+    removexattr(path: string, name: string): void;
+    lremovexattr(path: string, name: string): void;
+    fremovexattr(fd: number | BigInt, name: string): void;
+    listxattr(path: string): string[];
+    llistxattr(path: string): string[];
+    flistxattr(fd: number | BigInt): string[];
     utimensat(dirFd: number | BigInt, path: string, times: number[], flags: number | BigInt): void;
     futimesat(dirFd: number | BigInt, path: string, times: number[]): void;
     utimes(path: string, times: number[]): void;

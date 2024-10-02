@@ -15,7 +15,7 @@
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-#include "FileSystemCpp.h"
+#include "FileSystem.h"
 #include <new>
 #include <pthread.h>
 #include <stdlib.h>
@@ -76,6 +76,28 @@ namespace {
     pthread_mutex_t* mtx_;
   };
 
+  struct Attribute {
+    const char* name;
+    size_t size;
+    char* data;
+  };
+
+  struct Attributes {
+    ~Attributes() {
+      if (list) {
+        for (size_t i = 0; i != count; ++i) {
+          struct Attribute attrib = list[i];
+          delete attrib.name;
+          if (attrib.size != 0)
+            delete attrib.data;
+        }
+        delete list;
+      }
+    }
+    size_t count = 0;
+    struct Attribute* list = NULL;
+  };
+
   struct BaseINode {
     BaseINode() {
       clock_gettime(CLOCK_REALTIME, &btime);
@@ -90,6 +112,7 @@ namespace {
     struct timespec ctime;
     struct timespec mtime;
     struct timespec atime;
+    struct Attributes attribs = {};
 
     bool CanUse(int perms) {
       if ((mode & perms) != perms &&
@@ -307,8 +330,7 @@ namespace {
 
   RegularINode::~RegularINode() {
     if (dataRanges) {
-      off_t len = dataRangeCount;
-      for (off_t i = 0; i != len; ++i)
+      for (off_t i = 0; i != dataRangeCount; ++i)
         delete dataRanges[i];
       delete dataRanges;
     }
@@ -481,8 +503,7 @@ namespace {
     }
     size = length;
     if (length == 0) {
-      off_t len = dataRangeCount;
-      for (off_t i = 0; i != len; ++i)
+      for (off_t i = 0; i != dataRangeCount; ++i)
         delete dataRanges[i];
       delete dataRanges;
       dataRanges = NULL;
@@ -504,8 +525,7 @@ namespace {
 
   DirectoryINode::~DirectoryINode() {
     if (dents) {
-      off_t len = dentCount;
-      for (off_t i = 2; i != len; ++i)
+      for (off_t i = 2; i != dentCount; ++i)
         delete dents[i].name;
       delete dents;
     }
@@ -518,13 +538,12 @@ namespace {
     return true;
   }
   void DirectoryINode::RemoveDent(const char* name) {
-    off_t len = dentCount;
-    for (off_t i = 2; i != len; ++i) {
+    for (off_t i = 2; i != dentCount; ++i) {
       const char* d_name = dents[i].name;
       if (strcmp(d_name, name) == 0) {
         delete d_name;
-        if (i != len - 1)
-          memmove(&dents[i], &dents[i + 1], sizeof(struct Dent) * (len - i));
+        if (i != dentCount - 1)
+          memmove(&dents[i], &dents[i + 1], sizeof(struct Dent) * (dentCount - i));
         dents = (struct Dent*)realloc(dents, sizeof(struct Dent) * --dentCount);
         size -= strlen(name);
         break;
@@ -581,15 +600,11 @@ namespace {
     }
     ~FSInternal() {
       pthread_mutex_destroy(&mtx);
-      {
-        ino_t len = inodeCount;
-        for (ino_t i = 0; i != len; ++i)
-          DeleteINode(inodes[i]);
-      }
+      for (ino_t i = 0; i != inodeCount; ++i)
+        DeleteINode(inodes[i]);
       delete inodes;
       if (fds) {
-        int len = fdCount;
-        for (int i = 0; i != len; ++i)
+        for (int i = 0; i != fdCount; ++i)
           delete fds[i];
         delete fds;
       }
@@ -626,8 +641,7 @@ namespace {
         &fs->inodes[id],
         sizeof(struct BaseINode*) * (fs->inodeCount - id)
       );
-      ino_t endIdx = fs->inodeCount + 1;
-      for (ino_t i = id + 1; i != endIdx; ++i)
+      for (ino_t i = id + 1; i != fs->inodeCount + 1; ++i)
         ++fs->inodes[i]->ndx;
     }
     inode->ndx = id;
@@ -641,10 +655,9 @@ namespace {
     DeleteINode(inode);
     if (i != fs->inodeCount - 1) {
       memmove(&fs->inodes[i], &fs->inodes[i + 1], sizeof(struct BaseINode*) * (fs->inodeCount - i));
-      ino_t endIdx = fs->inodeCount - 1;
       do {
         --fs->inodes[i++]->ndx;
-      } while (i != endIdx);
+      } while (i != fs->inodeCount - 1);
     }
     fs->inodes = (struct BaseINode**)realloc(
       fs->inodes,
@@ -1125,18 +1138,15 @@ int FileSystem::CloseRange(unsigned int fd, unsigned int maxFd, unsigned int fla
     return -EINVAL;
   struct FSInternal* fs = (struct FSInternal*)data;
   ScopedLock lock(fs->mtx);
-  int endIdx = fs->fdCount;
-  for (int i = 0; i != endIdx; ++i) {
+  for (int i = 0; i != fs->fdCount; ++i) {
     struct Fd* f = fs->fds[i];
     if (f->fd >= fd) {
       RemoveFd2(fs, f, i);
-      --endIdx;
-      while (i != endIdx) {
+      while (i != fs->fdCount) {
         f = fs->fds[i];
-        if (f->fd < maxFd) {
+        if (f->fd < maxFd)
           RemoveFd2(fs, f, i);
-          --endIdx;
-        } else break;
+        else break;
       }
       break;
     }
@@ -1343,7 +1353,6 @@ int FileSystem::GetDents(unsigned int fdNum, struct linux_dirent* dirp, unsigned
     return 0;
   unsigned int nread = 0;
   char* dirpData = (char*)dirp;
-  off_t endIdx = ((struct DirectoryINode*)inode)->dentCount;
   do {
     struct Dent d = ((struct DirectoryINode*)inode)->dents[fd->seekOff];
     size_t nameLen = strlen(d.name);
@@ -1362,7 +1371,7 @@ int FileSystem::GetDents(unsigned int fdNum, struct linux_dirent* dirp, unsigned
     dirpData[reclen - 1] = IFTODT(d.inode->mode);
     dirpData += reclen;
     nread += reclen;
-  } while (++fd->seekOff != endIdx);
+  } while (++fd->seekOff != ((struct DirectoryINode*)inode)->dentCount);
   if (nread == 0)
     return -EINVAL;
   if (!(fd->flags & O_NOATIME))
@@ -1462,12 +1471,9 @@ int FileSystem::UnlinkAt(int dirFd, const char* path, int flags) {
       return -EBUSY;
   } else if (S_ISDIR(inode->mode))
     return -EISDIR;
-  {
-    int fdCount = fs->fdCount;
-    for (int i = 0; i != fdCount; ++i)
-      if (fs->fds[i]->inode == inode)
-        return -EBUSY;
-  }
+  for (int i = 0; i != fs->fdCount; ++i)
+    if (fs->fds[i]->inode == inode)
+      return -EBUSY;
   if (flags & AT_REMOVEDIR) {
     const char* last = GetLast(path);
     if (!last)
@@ -1575,11 +1581,9 @@ int FileSystem::RenameAt2(
     return -ENOMEM;
   }
   if (flags & RENAME_EXCHANGE) {
-    off_t oldDentCount = oldParent->dentCount;
-    for (off_t i = 0; i != oldDentCount; ++i)
+    for (off_t i = 0; i != oldParent->dentCount; ++i)
       if (strcmp(oldParent->dents[i].name, oldName) == 0) {
-        off_t newDentCount = newParent->dentCount;
-        for (off_t j = 0; j != newDentCount; ++j)
+        for (off_t j = 0; j != newParent->dentCount; ++j)
           if (strcmp(newParent->dents[j].name, newName) == 0) {
             oldParent->dents[i].inode = newInode;
             newParent->dents[j].inode = oldInode;
@@ -2532,6 +2536,429 @@ int FileSystem::Statx(int dirFd, const char* path, int flags, int mask, struct s
   inode->FillStatx(buf, mask);
   return 0;
 }
+int FileSystem::GetXAttr(const char* path, const char* name, void* value, size_t size) {
+  if (size != 0 && (strlen(name) > XATTR_NAME_MAX || size > XATTR_SIZE_MAX))
+    return -ERANGE;
+  struct FSInternal* fs = (struct FSInternal*)data;
+  ScopedLock lock(fs->mtx);
+  struct BaseINode* inode;
+  int res = GetINode(fs, path, &inode, NULL, true);
+  if (res != 0)
+    return res;
+  for (size_t i = 0; i != inode->attribs.count; ++i) {
+    struct Attribute* attrib = &inode->attribs.list[i];
+    if (strcmp(name, attrib->name) == 0) {
+      if (size != 0) {
+        if (size < attrib->size)
+          return -ERANGE;
+        if (attrib->size != 0)
+          memcpy(value, attrib->data, attrib->size);
+      }
+      return 0;
+    }
+  }
+  return -ENODATA;
+}
+int FileSystem::LGetXAttr(const char* path, const char* name, void* value, size_t size) {
+  if (size != 0 && (strlen(name) > XATTR_NAME_MAX || size > XATTR_SIZE_MAX))
+    return -ERANGE;
+  struct FSInternal* fs = (struct FSInternal*)data;
+  ScopedLock lock(fs->mtx);
+  struct BaseINode* inode;
+  int res = GetINode(fs, path, &inode);
+  if (res != 0)
+    return res;
+  for (size_t i = 0; i != inode->attribs.count; ++i) {
+    struct Attribute* attrib = &inode->attribs.list[i];
+    if (strcmp(name, attrib->name) == 0) {
+      if (size != 0) {
+        if (size < attrib->size)
+          return -ERANGE;
+        if (attrib->size != 0)
+          memcpy(value, attrib->data, attrib->size);
+      }
+      return 0;
+    }
+  }
+  return -ENODATA;
+}
+int FileSystem::FGetXAttr(int fdNum, const char* name, void* value, size_t size) {
+  if (size != 0 && (strlen(name) > XATTR_NAME_MAX || size > XATTR_SIZE_MAX))
+    return -ERANGE;
+  struct FSInternal* fs = (struct FSInternal*)data;
+  ScopedLock lock(fs->mtx);
+  struct Fd* fd;
+  if (!(fd = GetFd(fs, fdNum)))
+    return -EBADF;
+  struct BaseINode* inode = fd->inode;
+  for (size_t i = 0; i != inode->attribs.count; ++i) {
+    struct Attribute* attrib = &inode->attribs.list[i];
+    if (strcmp(name, attrib->name) == 0) {
+      if (size != 0) {
+        if (size < attrib->size)
+          return -ERANGE;
+        if (attrib->size != 0)
+          memcpy(value, attrib->data, attrib->size);
+      }
+      return 0;
+    }
+  }
+  return -ENODATA;
+}
+int FileSystem::SetXAttr(const char* path, const char* name, void* value, size_t size, int flags) {
+  if (strlen(name) > XATTR_NAME_MAX || size > XATTR_SIZE_MAX)
+    return -ERANGE;
+  struct FSInternal* fs = (struct FSInternal*)data;
+  ScopedLock lock(fs->mtx);
+  struct BaseINode* inode;
+  int res = GetINode(fs, path, &inode, NULL, true);
+  if (res != 0)
+    return res;
+  struct Attributes* attribs = &inode->attribs;
+  for (size_t i = 0; i != attribs->count; ++i) {
+    struct Attribute* attrib = &attribs->list[i];
+    if (strcmp(name, attrib->name) == 0) {
+      if (flags & XATTR_CREATE)
+        return -EEXIST;
+      const char* kname;
+      if (!(kname = strdup(name)))
+        return -ENOMEM;
+      char* data = NULL;
+      if (size != 0) {
+        if (!TryAlloc(&data, size)) {
+          delete kname;
+          return -ENOMEM;
+        }
+        memcpy(data, value, size);
+      }
+      attribs->list[i] = {
+        kname,
+        size,
+        data
+      };
+      return 0;
+    }
+  }
+  if (flags & XATTR_REPLACE)
+    return -ENODATA;
+  const char* kname;
+  if (!(kname = strdup(name)))
+    return -ENOMEM;
+  char* data = NULL;
+  if (size != 0) {
+    if (!TryAlloc(&data, size)) {
+      delete kname;
+      return -ENOMEM;
+    }
+    memcpy(data, value, size);
+  }
+  if (!TryRealloc(&attribs->list, attribs->count + 1)) {
+    delete kname;
+    if (size != 0)
+      delete data;
+    return -ENOMEM;
+  }
+  attribs->list[attribs->count] = {
+    kname,
+    size,
+    data
+  };
+  ++attribs->count;
+  return 0;
+}
+int FileSystem::LSetXAttr(const char* path, const char* name, void* value, size_t size, int flags) {
+  if (strlen(name) > XATTR_NAME_MAX || size > XATTR_SIZE_MAX)
+    return -ERANGE;
+  struct FSInternal* fs = (struct FSInternal*)data;
+  ScopedLock lock(fs->mtx);
+  struct BaseINode* inode;
+  int res = GetINode(fs, path, &inode);
+  if (res != 0)
+    return res;
+  struct Attributes* attribs = &inode->attribs;
+  for (size_t i = 0; i != attribs->count; ++i) {
+    struct Attribute* attrib = &attribs->list[i];
+    if (strcmp(name, attrib->name) == 0) {
+      if (flags & XATTR_CREATE)
+        return -EEXIST;
+      const char* kname;
+      if (!(kname = strdup(name)))
+        return -ENOMEM;
+      char* data = NULL;
+      if (size != 0) {
+        if (!TryAlloc(&data, size)) {
+          delete kname;
+          return -ENOMEM;
+        }
+        memcpy(data, value, size);
+      }
+      attribs->list[i] = {
+        kname,
+        size,
+        data
+      };
+      return 0;
+    }
+  }
+  if (flags & XATTR_REPLACE)
+    return -ENODATA;
+  const char* kname;
+  if (!(kname = strdup(name)))
+    return -ENOMEM;
+  char* data = NULL;
+  if (size != 0) {
+    if (!TryAlloc(&data, size)) {
+      delete kname;
+      return -ENOMEM;
+    }
+    memcpy(data, value, size);
+  }
+  if (!TryRealloc(&attribs->list, attribs->count + 1)) {
+    delete kname;
+    if (size != 0)
+      delete data;
+    return -ENOMEM;
+  }
+  attribs->list[attribs->count] = {
+    kname,
+    size,
+    data
+  };
+  ++attribs->count;
+  return 0;
+}
+int FileSystem::FSetXAttr(int fdNum, const char* name, void* value, size_t size, int flags) {
+  if (strlen(name) > XATTR_NAME_MAX || size > XATTR_SIZE_MAX)
+    return -ERANGE;
+  struct FSInternal* fs = (struct FSInternal*)data;
+  ScopedLock lock(fs->mtx);
+  struct Fd* fd;
+  if (!(fd = GetFd(fs, fdNum)))
+    return -EBADF;
+  struct BaseINode* inode = fd->inode;
+  struct Attributes* attribs = &inode->attribs;
+  for (size_t i = 0; i != attribs->count; ++i) {
+    struct Attribute* attrib = &attribs->list[i];
+    if (strcmp(name, attrib->name) == 0) {
+      if (flags & XATTR_CREATE)
+        return -EEXIST;
+      const char* kname;
+      if (!(kname = strdup(name)))
+        return -ENOMEM;
+      char* data = NULL;
+      if (size != 0) {
+        if (!TryAlloc(&data, size)) {
+          delete kname;
+          return -ENOMEM;
+        }
+        memcpy(data, value, size);
+      }
+      attribs->list[i] = {
+        kname,
+        size,
+        data
+      };
+      return 0;
+    }
+  }
+  if (flags & XATTR_REPLACE)
+    return -ENODATA;
+  const char* kname;
+  if (!(kname = strdup(name)))
+    return -ENOMEM;
+  char* data = NULL;
+  if (size != 0) {
+    if (!TryAlloc(&data, size)) {
+      delete kname;
+      return -ENOMEM;
+    }
+    memcpy(data, value, size);
+  }
+  if (!TryRealloc(&attribs->list, attribs->count + 1)) {
+    delete kname;
+    if (size != 0)
+      delete data;
+    return -ENOMEM;
+  }
+  attribs->list[attribs->count] = {
+    kname,
+    size,
+    data
+  };
+  ++attribs->count;
+  return 0;
+}
+int FileSystem::RemoveXAttr(const char* path, const char* name) {
+  if (strlen(name) > XATTR_NAME_MAX)
+    return -ERANGE;
+  struct FSInternal* fs = (struct FSInternal*)data;
+  ScopedLock lock(fs->mtx);
+  struct BaseINode* inode;
+  int res = GetINode(fs, path, &inode, NULL, true);
+  if (res != 0)
+    return res;
+  struct Attributes* attribs = &inode->attribs;
+  for (size_t i = 0; i != attribs->count; ++i) {
+    struct Attribute* attrib = &attribs->list[i];
+    if (strcmp(name, attrib->name) == 0) {
+      if (attribs->count == 1) {
+        delete attribs->list;
+        attribs->list = NULL;
+        attribs->count = 0;
+        return 0;
+      }
+      if (attrib->size != 0)
+        delete attrib->data;
+      if (i != attribs->count - 1)
+        memmove(&attribs->list[i], &attribs->list[i + 1], sizeof(struct Attribute) * (attribs->count - i));
+      attribs->list = (struct Attribute*)realloc(
+        attribs->list,
+        sizeof(struct Attribute) * --attribs->count
+      );
+      return 0;
+    }
+  }
+  return -ENODATA;
+}
+int FileSystem::LRemoveXAttr(const char* path, const char* name) {
+  if (strlen(name) > XATTR_NAME_MAX)
+    return -ERANGE;
+  struct FSInternal* fs = (struct FSInternal*)data;
+  ScopedLock lock(fs->mtx);
+  struct BaseINode* inode;
+  int res = GetINode(fs, path, &inode);
+  if (res != 0)
+    return res;
+  struct Attributes* attribs = &inode->attribs;
+  for (size_t i = 0; i != attribs->count; ++i) {
+    struct Attribute* attrib = &attribs->list[i];
+    if (strcmp(name, attrib->name) == 0) {
+      if (attribs->count == 1) {
+        delete attribs->list;
+        attribs->list = NULL;
+        attribs->count = 0;
+        return 0;
+      }
+      if (attrib->size != 0)
+        delete attrib->data;
+      if (i != attribs->count - 1)
+        memmove(&attribs->list[i], &attribs->list[i + 1], sizeof(struct Attribute) * (attribs->count - i));
+      attribs->list = (struct Attribute*)realloc(
+        attribs->list,
+        sizeof(struct Attribute) * --attribs->count
+      );
+      return 0;
+    }
+  }
+  return -ENODATA;
+}
+int FileSystem::FRemoveXAttr(int fdNum, const char* name) {
+  if (strlen(name) > XATTR_NAME_MAX)
+    return -ERANGE;
+  struct FSInternal* fs = (struct FSInternal*)data;
+  ScopedLock lock(fs->mtx);
+  struct Fd* fd;
+  if (!(fd = GetFd(fs, fdNum)))
+    return -EBADF;
+  struct BaseINode* inode = fd->inode;
+  struct Attributes* attribs = &inode->attribs;
+  for (size_t i = 0; i != attribs->count; ++i) {
+    struct Attribute* attrib = &attribs->list[i];
+    if (strcmp(name, attrib->name) == 0) {
+      if (attribs->count == 1) {
+        delete attribs->list;
+        attribs->list = NULL;
+        attribs->count = 0;
+        return 0;
+      }
+      if (attrib->size != 0)
+        delete attrib->data;
+      if (i != attribs->count - 1)
+        memmove(&attribs->list[i], &attribs->list[i + 1], sizeof(struct Attribute) * (attribs->count - i));
+      attribs->list = (struct Attribute*)realloc(
+        attribs->list,
+        sizeof(struct Attribute) * --attribs->count
+      );
+      return 0;
+    }
+  }
+  return -ENODATA;
+}
+ssize_t FileSystem::ListXAttr(const char* path, char* list, size_t size) {
+  struct FSInternal* fs = (struct FSInternal*)data;
+  ScopedLock lock(fs->mtx);
+  struct BaseINode* inode;
+  int res = GetINode(fs, path, &inode, NULL, true);
+  if (res != 0)
+    return res;
+  size_t listLen = 0;
+  for (size_t i = 0; i != inode->attribs.count; ++i) {
+    struct Attribute* attrib = &inode->attribs.list[i];
+    listLen += strlen(attrib->name) + 1;
+    if ((size != 0 && listLen > size) || listLen > XATTR_LIST_MAX)
+      return -ERANGE;
+  }
+  if (size == 0)
+    return listLen;
+  size_t i = 0;
+  for (size_t j = 0; j != inode->attribs.count; ++j) {
+    struct Attribute* attrib = &inode->attribs.list[j];
+    size_t nameLen = strlen(attrib->name) + 1;
+    memcpy(&list[i], attrib->name, nameLen);
+    i += nameLen;
+  }
+  return listLen;
+}
+ssize_t FileSystem::LListXAttr(const char* path, char* list, size_t size) {
+  struct FSInternal* fs = (struct FSInternal*)data;
+  ScopedLock lock(fs->mtx);
+  struct BaseINode* inode;
+  int res = GetINode(fs, path, &inode);
+  if (res != 0)
+    return res;
+  size_t listLen = 0;
+  for (size_t i = 0; i != inode->attribs.count; ++i) {
+    struct Attribute* attrib = &inode->attribs.list[i];
+    listLen += strlen(attrib->name) + 1;
+    if (listLen > size || listLen > XATTR_LIST_MAX)
+      return -ERANGE;
+  }
+  if (size == 0)
+    return listLen;
+  size_t i = 0;
+  for (size_t j = 0; j != inode->attribs.count; ++j) {
+    struct Attribute* attrib = &inode->attribs.list[j];
+    size_t nameLen = strlen(attrib->name) + 1;
+    memcpy(&list[i], attrib->name, nameLen);
+    i += nameLen;
+  }
+  return listLen;
+}
+ssize_t FileSystem::FListXAttr(int fdNum, char* list, size_t size) {
+  struct FSInternal* fs = (struct FSInternal*)data;
+  ScopedLock lock(fs->mtx);
+  struct Fd* fd;
+  if (!(fd = GetFd(fs, fdNum)))
+    return -EBADF;
+  struct BaseINode* inode = fd->inode;
+  size_t listLen = 0;
+  for (size_t i = 0; i != inode->attribs.count; ++i) {
+    struct Attribute* attrib = &inode->attribs.list[i];
+    listLen += strlen(attrib->name) + 1;
+    if (listLen > size || listLen > XATTR_LIST_MAX)
+      return -ERANGE;
+  }
+  if (size == 0)
+    return listLen;
+  size_t i = 0;
+  for (size_t j = 0; j != inode->attribs.count; ++j) {
+    struct Attribute* attrib = &inode->attribs.list[j];
+    size_t nameLen = strlen(attrib->name) + 1;
+    memcpy(&list[i], attrib->name, nameLen);
+    i += nameLen;
+  }
+  return listLen;
+}
 int FileSystem::UTimeNsAt(int dirFd, const char* path, const struct timespec* times, int flags) {
   if (flags & ~AT_SYMLINK_NOFOLLOW)
     return -EINVAL;
@@ -2614,7 +3041,7 @@ bool FileSystem::DumpToFile(const char* filename) {
   if (write(fd, "\x7FVFS", 4) != 4 ||
       write(fd, &fs->inodeCount, sizeof(ino_t)) != sizeof(ino_t))
     goto err2;
-  for (ino_t i = 0, inodeCount = fs->inodeCount; i != inodeCount; ++i) {
+  for (ino_t i = 0; i != fs->inodeCount; ++i) {
     struct BaseINode* inode = fs->inodes[i];
     struct DumpedINode dumped;
     dumped.id = inode->id;
@@ -2664,8 +3091,7 @@ bool FileSystem::DumpToFile(const char* filename) {
     } else if (inode->size != 0) {
       if (write(fd, &((struct RegularINode*)inode)->dataRangeCount, sizeof(off_t)) != sizeof(off_t))
         goto err2;
-      off_t dataRangeCount = ((struct RegularINode*)inode)->dataRangeCount;
-      for (off_t j = 0; j != dataRangeCount; ++j) {
+      for (off_t j = 0; j != ((struct RegularINode*)inode)->dataRangeCount; ++j) {
         struct DataRange* range = ((struct RegularINode*)inode)->dataRanges[j];
         if (write(fd, &range->offset, sizeof(off_t)) != sizeof(off_t) ||
             write(fd, &range->size, sizeof(off_t)) != sizeof(off_t))
@@ -2871,8 +3297,7 @@ FileSystem* FileSystem::LoadFromFile(const char* filename) {
   for (ino_t i = 0; i != inodeCount; ++i) {
     struct BaseINode* inode = inodes[i];
     if (S_ISDIR(inode->mode)) {
-      off_t dentCount = ((struct DirectoryINode*)inode)->dentCount;
-      for (off_t j = 1; j != dentCount; ++j) {
+      for (off_t j = 1; j != ((struct DirectoryINode*)inode)->dentCount; ++j) {
         struct Dent* dent = &((struct DirectoryINode*)inode)->dents[j];
         ino_t ino = (ino_t)dent->inode;
         if (ino >= inodeCount)
