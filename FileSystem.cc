@@ -3064,8 +3064,18 @@ bool FileSystem::DumpToFile(const char* filename) {
       inode->atime.tv_sec,
       inode->atime.tv_nsec
     };
-    if (write(fd, &dumped, sizeof(struct DumpedINode)) != sizeof(struct DumpedINode))
+    if (write(fd, &dumped, sizeof(struct DumpedINode)) != sizeof(struct DumpedINode) ||
+        write(fd, &inode->attribs.count, sizeof(size_t)) != sizeof(size_t))
       goto err2;
+    if (inode->attribs.count != 0)
+      for (size_t j = 0; j != inode->attribs.count; ++j) {
+        struct Attribute* attrib = &inode->attribs.list[j];
+        size_t nameLen = strlen(attrib->name) + 1;
+        if (write(fd, attrib->name, nameLen) != nameLen ||
+            write(fd, &attrib->size, sizeof(size_t)) != sizeof(size_t) ||
+            (attrib->size != 0 && write(fd, attrib->data, attrib->size) != attrib->size))
+          goto err2;
+      }
     if (S_ISLNK(inode->mode)) {
       size_t targetLen = strlen(((struct SymLinkINode*)inode)->target) + 1;
       off_t dataLen = inode->size;
@@ -3157,6 +3167,53 @@ FileSystem* FileSystem::LoadFromFile(const char* filename) {
       dumped.atime.tv_sec,
       dumped.atime.tv_nsec
     };
+    inode->attribs = {};
+    size_t attribCount;
+    if (read(fd, &attribCount, sizeof(size_t)) != sizeof(size_t))
+      goto err_after_inode_init;
+    if (attribCount != 0) {
+      inode->attribs.count = attribCount;
+      if (!TryAlloc(&inode->attribs.list, attribCount))
+        goto err_after_inode_init;
+      for (size_t j = 0; j != attribCount; ++j) {
+        struct Attribute attr = {};
+        char name[XATTR_NAME_MAX];
+        size_t nameLen = 0;
+        size_t size;
+        do {
+          if (read(fd, &name[nameLen], 1) != 1)
+            goto err_after_attribs_init;
+        } while (name[nameLen++] != '\0');
+        if (!(attr.name = strdup(name)))
+          goto err_after_attribs_init;
+        if (read(fd, &size, sizeof(size_t)) != sizeof(size_t))
+          goto err_after_attrib_name;
+        if (size != 0) {
+          attr.size = size;
+          if (!TryAlloc(&attr.data, size))
+            goto err_after_attrib_name;
+          if (read(fd, attr.data, size) != size)
+            goto err_after_attrib_data_init;
+        }
+        inode->attribs.list[j] = attr;
+        goto success_attrib;
+
+       err_after_attrib_data_init:
+        free(attr.data);
+       err_after_attrib_name:
+        free((void*)attr.name);
+       err_after_attribs_init:
+        for (size_t k = 0; k != j; ++k) {
+          struct Attribute* attrib = &inode->attribs.list[k];
+          free((void*)attrib->name);
+          if (attrib->size != 0)
+            free(attrib->data);
+        }
+        free(inode->attribs.list);
+        goto err_after_inode_init;
+       success_attrib: {}
+      }
+    }
     if (S_ISLNK(inode->mode)) {
       char target[PATH_MAX];
       size_t targetLen = 0;
@@ -3164,8 +3221,7 @@ FileSystem* FileSystem::LoadFromFile(const char* filename) {
         if (read(fd, &target[targetLen], 1) != 1)
           goto err_after_inode_init;
       } while (target[targetLen++] != '\0');
-      ((struct SymLinkINode*)inode)->target = strdup(target);
-      if (!((struct SymLinkINode*)inode)->target)
+      if (!(((struct SymLinkINode*)inode)->target = strdup(target)))
         goto err_after_inode_init;
       char data[PATH_MAX];
       size_t dataLen = 0;
@@ -3207,8 +3263,7 @@ FileSystem* FileSystem::LoadFromFile(const char* filename) {
           if (read(fd, &name[nameLen], 1) != 1)
             goto err_after_dent_list_init;
         } while (name[nameLen++] != '\0');
-        dent->name = strdup(name);
-        if (!dent->name)
+        if (!(dent->name = strdup(name)))
           goto err_after_dent_list_init;
         goto success_dent;
 

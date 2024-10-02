@@ -172,6 +172,11 @@ class FileSystem {
    *     ctime
    *     mtime
    *     atime
+   *     attribCount
+   *     attribs (if attribCount is not zero):
+   *       name
+   *       size
+   *       data (if size is not zero)
    *     target (if symlink)
    *     data (if symlink)
    *     dentCount (if directory)
