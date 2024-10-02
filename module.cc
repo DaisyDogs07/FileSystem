@@ -1505,7 +1505,7 @@ void FileSystemSetXAttr(const FunctionCallbackInfo<Value>& args) {
       *String::Utf8Value(isolate, args[1].As<String>()),
       isString ? *String::Utf8Value(isolate, args[2].As<String>()) : Buffer::Data(args[2]),
       isString ? args[2].As<String>()->Utf8Length(isolate) : Buffer::Length(args[2]),
-      Val<int>(args[3])
+      Val<size_t>(args[3])
     )
   );
 }
@@ -1528,7 +1528,7 @@ void FileSystemLSetXAttr(const FunctionCallbackInfo<Value>& args) {
       *String::Utf8Value(isolate, args[1].As<String>()),
       isString ? *String::Utf8Value(isolate, args[2].As<String>()) : Buffer::Data(args[2]),
       isString ? args[2].As<String>()->Utf8Length(isolate) : Buffer::Length(args[2]),
-      Val<int>(args[3])
+      Val<size_t>(args[3])
     )
   );
 }
@@ -1551,7 +1551,7 @@ void FileSystemFSetXAttr(const FunctionCallbackInfo<Value>& args) {
       *String::Utf8Value(isolate, args[1].As<String>()),
       isString ? *String::Utf8Value(isolate, args[2].As<String>()) : Buffer::Data(args[2]),
       isString ? args[2].As<String>()->Utf8Length(isolate) : Buffer::Length(args[2]),
-      Val<int>(args[3])
+      Val<size_t>(args[3])
     )
   );
 }
