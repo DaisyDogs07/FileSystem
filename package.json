@@ -1,6 +1,6 @@
 {
   "name": "@daisydogs07/filesystem",
-  "version": "4.0.1",
+  "version": "4.0.2",
   "main": "./build/Release/module.node",
   "types": "module.d.ts",
   "author": "DaisyDogs07",

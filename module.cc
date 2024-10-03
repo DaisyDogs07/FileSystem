@@ -28,10 +28,7 @@ namespace {
   Persistent<ObjectTemplate> FSInstanceTmpl;
 }
 
-#define IsArray(x) x->IsArray()
 #define IsBuffer(x) Buffer::HasInstance(x)
-#define IsString(x) x->IsString()
-#define IsNull(x) x->IsNull()
 #define IsNumberLike(x) \
   (x->IsNumber() || x->IsBigInt())
 #define IsDataLike(x) \
@@ -135,7 +132,7 @@ void FileSystemFAccessAt2(const FunctionCallbackInfo<Value>& args) {
   THROWIFNOTFS(self, "faccessat2");
   ASSERT(args.Length() == 4);
   ASSERT(IsNumberLike(args[0]));
-  ASSERT(IsString(args[1]));
+  ASSERT(args[1]->IsString());
   ASSERT(IsNumberLike(args[2]));
   ASSERT(IsNumberLike(args[3]));
   FileSystem* fs = reinterpret_cast<FileSystem*>(
@@ -156,7 +153,7 @@ void FileSystemFAccessAt(const FunctionCallbackInfo<Value>& args) {
   THROWIFNOTFS(self, "faccessat");
   ASSERT(args.Length() == 3);
   ASSERT(IsNumberLike(args[0]));
-  ASSERT(IsString(args[1]));
+  ASSERT(args[1]->IsString());
   ASSERT(IsNumberLike(args[2]));
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
@@ -174,7 +171,7 @@ void FileSystemAccess(const FunctionCallbackInfo<Value>& args) {
   Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
   THROWIFNOTFS(self, "access");
   ASSERT(args.Length() == 2);
-  ASSERT(IsString(args[0]));
+  ASSERT(args[0]->IsString());
   ASSERT(IsNumberLike(args[1]));
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
@@ -192,7 +189,7 @@ void FileSystemOpenAt(const FunctionCallbackInfo<Value>& args) {
   THROWIFNOTFS(self, "openat");
   ASSERT(args.Length() == 4);
   ASSERT(IsNumberLike(args[0]));
-  ASSERT(IsString(args[1]));
+  ASSERT(args[1]->IsString());
   ASSERT(IsNumberLike(args[2]));
   ASSERT(IsNumberLike(args[3]));
   FileSystem* fs = reinterpret_cast<FileSystem*>(
@@ -229,7 +226,7 @@ void FileSystemOpen(const FunctionCallbackInfo<Value>& args) {
   Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
   THROWIFNOTFS(self, "open");
   ASSERT(args.Length() == 3);
-  ASSERT(IsString(args[0]));
+  ASSERT(args[0]->IsString());
   ASSERT(IsNumberLike(args[1]));
   ASSERT(IsNumberLike(args[2]));
   FileSystem* fs = reinterpret_cast<FileSystem*>(
@@ -264,7 +261,7 @@ void FileSystemCreat(const FunctionCallbackInfo<Value>& args) {
   Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
   THROWIFNOTFS(self, "creat");
   ASSERT(args.Length() == 2);
-  ASSERT(IsString(args[0]));
+  ASSERT(args[0]->IsString());
   ASSERT(IsNumberLike(args[1]));
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
@@ -328,7 +325,7 @@ void FileSystemMkNodAt(const FunctionCallbackInfo<Value>& args) {
   THROWIFNOTFS(self, "mknodat");
   ASSERT(args.Length() == 3);
   ASSERT(IsNumberLike(args[0]));
-  ASSERT(IsString(args[1]));
+  ASSERT(args[1]->IsString());
   ASSERT(IsNumberLike(args[2]));
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
@@ -358,7 +355,7 @@ void FileSystemMkNod(const FunctionCallbackInfo<Value>& args) {
   Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
   THROWIFNOTFS(self, "mknod");
   ASSERT(args.Length() == 2);
-  ASSERT(IsString(args[0]));
+  ASSERT(args[0]->IsString());
   ASSERT(IsNumberLike(args[1]));
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
@@ -387,7 +384,7 @@ void FileSystemMkDirAt(const FunctionCallbackInfo<Value>& args) {
   THROWIFNOTFS(self, "mkdirat");
   ASSERT(args.Length() == 3);
   ASSERT(IsNumberLike(args[0]));
-  ASSERT(IsString(args[1]));
+  ASSERT(args[1]->IsString());
   ASSERT(IsNumberLike(args[2]));
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
@@ -415,7 +412,7 @@ void FileSystemMkDir(const FunctionCallbackInfo<Value>& args) {
   Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
   THROWIFNOTFS(self, "mkdir");
   ASSERT(args.Length() == 2);
-  ASSERT(IsString(args[0]));
+  ASSERT(args[0]->IsString());
   ASSERT(IsNumberLike(args[1]));
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
@@ -441,9 +438,9 @@ void FileSystemSymLinkAt(const FunctionCallbackInfo<Value>& args) {
   Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
   THROWIFNOTFS(self, "symlinkat");
   ASSERT(args.Length() == 3);
-  ASSERT(IsString(args[0]));
+  ASSERT(args[0]->IsString());
   ASSERT(IsNumberLike(args[1]));
-  ASSERT(IsString(args[2]));
+  ASSERT(args[2]->IsString());
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
@@ -470,8 +467,8 @@ void FileSystemSymLink(const FunctionCallbackInfo<Value>& args) {
   Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
   THROWIFNOTFS(self, "symlink");
   ASSERT(args.Length() == 2);
-  ASSERT(IsString(args[0]));
-  ASSERT(IsString(args[1]));
+  ASSERT(args[0]->IsString());
+  ASSERT(args[1]->IsString());
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
@@ -493,7 +490,7 @@ void FileSystemReadLinkAt(const FunctionCallbackInfo<Value>& args) {
   THROWIFNOTFS(self, "readlinkat");
   ASSERT(args.Length() == 2);
   ASSERT(IsNumberLike(args[0]));
-  ASSERT(IsString(args[1]));
+  ASSERT(args[1]->IsString());
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
@@ -525,7 +522,7 @@ void FileSystemReadLink(const FunctionCallbackInfo<Value>& args) {
   Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
   THROWIFNOTFS(self, "readlink");
   ASSERT(args.Length() == 1);
-  ASSERT(IsString(args[0]));
+  ASSERT(args[0]->IsString());
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
@@ -630,9 +627,9 @@ void FileSystemLinkAt(const FunctionCallbackInfo<Value>& args) {
   THROWIFNOTFS(self, "linkat");
   ASSERT(args.Length() == 5);
   ASSERT(IsNumberLike(args[0]));
-  ASSERT(IsString(args[1]));
+  ASSERT(args[1]->IsString());
   ASSERT(IsNumberLike(args[2]));
-  ASSERT(IsString(args[3]));
+  ASSERT(args[3]->IsString());
   ASSERT(IsNumberLike(args[4]));
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
@@ -664,8 +661,8 @@ void FileSystemLink(const FunctionCallbackInfo<Value>& args) {
   Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
   THROWIFNOTFS(self, "link");
   ASSERT(args.Length() == 2);
-  ASSERT(IsString(args[0]));
-  ASSERT(IsString(args[1]));
+  ASSERT(args[0]->IsString());
+  ASSERT(args[1]->IsString());
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
@@ -691,7 +688,7 @@ void FileSystemUnlinkAt(const FunctionCallbackInfo<Value>& args) {
   THROWIFNOTFS(self, "unlinkat");
   ASSERT(args.Length() == 3);
   ASSERT(IsNumberLike(args[0]));
-  ASSERT(IsString(args[1]));
+  ASSERT(args[1]->IsString());
   ASSERT(IsNumberLike(args[2]));
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
@@ -719,7 +716,7 @@ void FileSystemUnlink(const FunctionCallbackInfo<Value>& args) {
   Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
   THROWIFNOTFS(self, "unlink");
   ASSERT(args.Length() == 1);
-  ASSERT(IsString(args[0]));
+  ASSERT(args[0]->IsString());
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
@@ -742,7 +739,7 @@ void FileSystemRmDir(const FunctionCallbackInfo<Value>& args) {
   Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
   THROWIFNOTFS(self, "rmdir");
   ASSERT(args.Length() == 1);
-  ASSERT(IsString(args[0]));
+  ASSERT(args[0]->IsString());
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
@@ -766,9 +763,9 @@ void FileSystemRenameAt2(const FunctionCallbackInfo<Value>& args) {
   THROWIFNOTFS(self, "renameat2");
   ASSERT(args.Length() == 5);
   ASSERT(IsNumberLike(args[0]));
-  ASSERT(IsString(args[1]));
+  ASSERT(args[1]->IsString());
   ASSERT(IsNumberLike(args[2]));
-  ASSERT(IsString(args[3]));
+  ASSERT(args[3]->IsString());
   ASSERT(IsNumberLike(args[4]));
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
@@ -801,9 +798,9 @@ void FileSystemRenameAt(const FunctionCallbackInfo<Value>& args) {
   THROWIFNOTFS(self, "renameat");
   ASSERT(args.Length() == 4);
   ASSERT(IsNumberLike(args[0]));
-  ASSERT(IsString(args[1]));
+  ASSERT(args[1]->IsString());
   ASSERT(IsNumberLike(args[2]));
-  ASSERT(IsString(args[3]));
+  ASSERT(args[3]->IsString());
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
@@ -832,8 +829,8 @@ void FileSystemRename(const FunctionCallbackInfo<Value>& args) {
   Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
   THROWIFNOTFS(self, "rename");
   ASSERT(args.Length() == 2);
-  ASSERT(IsString(args[0]));
-  ASSERT(IsString(args[1]));
+  ASSERT(args[0]->IsString());
+  ASSERT(args[1]->IsString());
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
@@ -960,7 +957,7 @@ void FileSystemReadv(const FunctionCallbackInfo<Value>& args) {
   THROWIFNOTFS(self, "readv");
   ASSERT(args.Length() == 2);
   ASSERT(IsNumberLike(args[0]));
-  ASSERT(IsArray(args[1]));
+  ASSERT(args[1]->IsArray());
   Local<Context> context = isolate->GetCurrentContext();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
@@ -1054,7 +1051,7 @@ void FileSystemPReadv(const FunctionCallbackInfo<Value>& args) {
   THROWIFNOTFS(self, "preadv");
   ASSERT(args.Length() == 3);
   ASSERT(IsNumberLike(args[0]));
-  ASSERT(IsArray(args[1]));
+  ASSERT(args[1]->IsArray());
   ASSERT(IsNumberLike(args[2]));
   Local<Context> context = isolate->GetCurrentContext();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
@@ -1106,7 +1103,7 @@ void FileSystemWrite(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  bool isString = IsString(args[1]);
+  bool isString = args[1]->IsString();
   size_t strLen = isString
     ? args[1].As<String>()->Utf8Length(isolate)
     : Buffer::Length(args[1]);
@@ -1160,7 +1157,7 @@ void FileSystemWritev(const FunctionCallbackInfo<Value>& args) {
   THROWIFNOTFS(self, "writev");
   ASSERT(args.Length() == 2);
   ASSERT(IsNumberLike(args[0]));
-  ASSERT(IsArray(args[1]));
+  ASSERT(args[1]->IsArray());
   Local<Context> context = isolate->GetCurrentContext();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
@@ -1226,7 +1223,7 @@ void FileSystemPWrite(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  bool isString = IsString(args[1]);
+  bool isString = args[1]->IsString();
   size_t strLen = isString
     ? args[1].As<String>()->Utf8Length(isolate)
     : Buffer::Length(args[1]);
@@ -1282,7 +1279,7 @@ void FileSystemPWritev(const FunctionCallbackInfo<Value>& args) {
   THROWIFNOTFS(self, "pwritev");
   ASSERT(args.Length() == 3);
   ASSERT(IsNumberLike(args[0]));
-  ASSERT(IsArray(args[1]));
+  ASSERT(args[1]->IsArray());
   ASSERT(IsNumberLike(args[2]));
   Local<Context> context = isolate->GetCurrentContext();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
@@ -1345,18 +1342,18 @@ void FileSystemSendFile(const FunctionCallbackInfo<Value>& args) {
   ASSERT(args.Length() == 4);
   ASSERT(IsNumberLike(args[0]));
   ASSERT(IsNumberLike(args[1]));
-  ASSERT(IsNull(args[2]) || IsNumberLike(args[2]));
+  ASSERT(args[2]->IsNull() || IsNumberLike(args[2]));
   ASSERT(IsNumberLike(args[3]));
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
   off_t off;
-  if (!IsNull(args[2]))
+  if (!args[2]->IsNull())
     off = Val<off_t>(args[2]);
   ssize_t res = fs->SendFile(
     Val<unsigned int>(args[0]),
     Val<unsigned int>(args[1]),
-    IsNull(args[2]) ? NULL : &off,
+    args[2]->IsNull() ? NULL : &off,
     Val<size_t>(args[3])
   );
   if (res < 0) {
@@ -1365,7 +1362,7 @@ void FileSystemSendFile(const FunctionCallbackInfo<Value>& args) {
       res = fs->SendFile(
         Val<unsigned int>(args[0]),
         Val<unsigned int>(args[1]),
-        IsNull(args[2]) ? NULL : &off,
+        args[2]->IsNull() ? NULL : &off,
         Val<size_t>(args[3])
       );
       if (res < 0)
@@ -1396,7 +1393,7 @@ void FileSystemTruncate(const FunctionCallbackInfo<Value>& args) {
   Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
   THROWIFNOTFS(self, "truncate");
   ASSERT(args.Length() == 2);
-  ASSERT(IsString(args[0]));
+  ASSERT(args[0]->IsString());
   ASSERT(IsNumberLike(args[1]));
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
@@ -1414,7 +1411,7 @@ void FileSystemFChModAt(const FunctionCallbackInfo<Value>& args) {
   THROWIFNOTFS(self, "fchmodat");
   ASSERT(args.Length() == 3);
   ASSERT(IsNumberLike(args[0]));
-  ASSERT(IsString(args[1]));
+  ASSERT(args[1]->IsString());
   ASSERT(IsNumberLike(args[2]));
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
@@ -1449,7 +1446,7 @@ void FileSystemChMod(const FunctionCallbackInfo<Value>& args) {
   Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
   THROWIFNOTFS(self, "chmod");
   ASSERT(args.Length() == 2);
-  ASSERT(IsString(args[0]));
+  ASSERT(args[0]->IsString());
   ASSERT(IsNumberLike(args[1]));
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
@@ -1466,7 +1463,7 @@ void FileSystemChDir(const FunctionCallbackInfo<Value>& args) {
   Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
   THROWIFNOTFS(self, "chdir");
   ASSERT(args.Length() == 1);
-  ASSERT(IsString(args[0]));
+  ASSERT(args[0]->IsString());
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
@@ -1575,7 +1572,7 @@ void FileSystemStat(const FunctionCallbackInfo<Value>& args) {
   Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
   THROWIFNOTFS(self, "stat");
   ASSERT(args.Length() == 1);
-  ASSERT(IsString(args[0]));
+  ASSERT(args[0]->IsString());
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
@@ -1595,7 +1592,7 @@ void FileSystemLStat(const FunctionCallbackInfo<Value>& args) {
   Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
   THROWIFNOTFS(self, "lstat");
   ASSERT(args.Length() == 1);
-  ASSERT(IsString(args[0]));
+  ASSERT(args[0]->IsString());
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
@@ -1648,7 +1645,7 @@ void FileSystemStatx(const FunctionCallbackInfo<Value>& args) {
   THROWIFNOTFS(self, "statx");
   ASSERT(args.Length() == 4);
   ASSERT(IsNumberLike(args[0]));
-  ASSERT(IsString(args[1]));
+  ASSERT(args[1]->IsString());
   ASSERT(IsNumberLike(args[2]));
   ASSERT(IsNumberLike(args[3]));
   FileSystem* fs = reinterpret_cast<FileSystem*>(
@@ -1673,8 +1670,8 @@ void FileSystemGetXAttr(const FunctionCallbackInfo<Value>& args) {
   Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
   THROWIFNOTFS(self, "getxattr");
   ASSERT(args.Length() == 3);
-  ASSERT(IsString(args[0]));
-  ASSERT(IsString(args[1]));
+  ASSERT(args[0]->IsString());
+  ASSERT(args[1]->IsString());
   ASSERT(IsNumberLike(args[2]));
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
@@ -1716,8 +1713,8 @@ void FileSystemLGetXAttr(const FunctionCallbackInfo<Value>& args) {
   Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
   THROWIFNOTFS(self, "lgetxattr");
   ASSERT(args.Length() == 3);
-  ASSERT(IsString(args[0]));
-  ASSERT(IsString(args[1]));
+  ASSERT(args[0]->IsString());
+  ASSERT(args[1]->IsString());
   ASSERT(IsNumberLike(args[2]));
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
@@ -1760,7 +1757,7 @@ void FileSystemFGetXAttr(const FunctionCallbackInfo<Value>& args) {
   THROWIFNOTFS(self, "fgetxattr");
   ASSERT(args.Length() == 3);
   ASSERT(IsNumberLike(args[0]));
-  ASSERT(IsString(args[1]));
+  ASSERT(args[1]->IsString());
   ASSERT(IsNumberLike(args[2]));
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
@@ -1802,8 +1799,8 @@ void FileSystemSetXAttr(const FunctionCallbackInfo<Value>& args) {
   Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
   THROWIFNOTFS(self, "setxattr");
   ASSERT(args.Length() == 4 || args.Length() == 5);
-  ASSERT(IsString(args[0]));
-  ASSERT(IsString(args[1]));
+  ASSERT(args[0]->IsString());
+  ASSERT(args[1]->IsString());
   ASSERT(IsDataLike(args[2]));
   ASSERT(IsNumberLike(args[3]));
   if (args.Length() == 5)
@@ -1811,7 +1808,7 @@ void FileSystemSetXAttr(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  bool isString = IsString(args[2]);
+  bool isString = args[2]->IsString();
   int res = fs->SetXAttr(
     *String::Utf8Value(isolate, args[0].As<String>()),
     *String::Utf8Value(isolate, args[1].As<String>()),
@@ -1847,8 +1844,8 @@ void FileSystemLSetXAttr(const FunctionCallbackInfo<Value>& args) {
   Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
   THROWIFNOTFS(self, "lsetxattr");
   ASSERT(args.Length() == 4 || args.Length() == 5);
-  ASSERT(IsString(args[0]));
-  ASSERT(IsString(args[1]));
+  ASSERT(args[0]->IsString());
+  ASSERT(args[1]->IsString());
   ASSERT(IsDataLike(args[2]));
   ASSERT(IsNumberLike(args[3]));
   if (args.Length() == 5)
@@ -1856,7 +1853,7 @@ void FileSystemLSetXAttr(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  bool isString = IsString(args[2]);
+  bool isString = args[2]->IsString();
   int res = fs->LSetXAttr(
     *String::Utf8Value(isolate, args[0].As<String>()),
     *String::Utf8Value(isolate, args[1].As<String>()),
@@ -1893,7 +1890,7 @@ void FileSystemFSetXAttr(const FunctionCallbackInfo<Value>& args) {
   THROWIFNOTFS(self, "fsetxattr");
   ASSERT(args.Length() == 4);
   ASSERT(IsNumberLike(args[0]));
-  ASSERT(IsString(args[1]));
+  ASSERT(args[1]->IsString());
   ASSERT(IsDataLike(args[2]));
   ASSERT(IsNumberLike(args[3]));
   if (args.Length() == 5)
@@ -1901,7 +1898,7 @@ void FileSystemFSetXAttr(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  bool isString = IsString(args[2]);
+  bool isString = args[2]->IsString();
   int res = fs->FSetXAttr(
     Val<int>(args[0]),
     *String::Utf8Value(isolate, args[1].As<String>()),
@@ -1937,8 +1934,8 @@ void FileSystemRemoveXAttr(const FunctionCallbackInfo<Value>& args) {
   Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
   THROWIFNOTFS(self, "removexattr");
   ASSERT(args.Length() == 2);
-  ASSERT(IsString(args[0]));
-  ASSERT(IsString(args[1]));
+  ASSERT(args[0]->IsString());
+  ASSERT(args[1]->IsString());
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
@@ -1954,8 +1951,8 @@ void FileSystemLRemoveXAttr(const FunctionCallbackInfo<Value>& args) {
   Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
   THROWIFNOTFS(self, "lremovexattr");
   ASSERT(args.Length() == 2);
-  ASSERT(IsString(args[0]));
-  ASSERT(IsString(args[1]));
+  ASSERT(args[0]->IsString());
+  ASSERT(args[1]->IsString());
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
@@ -1972,7 +1969,7 @@ void FileSystemFRemoveXAttr(const FunctionCallbackInfo<Value>& args) {
   THROWIFNOTFS(self, "fremovexattr");
   ASSERT(args.Length() == 2);
   ASSERT(IsNumberLike(args[0]));
-  ASSERT(IsString(args[1]));
+  ASSERT(args[1]->IsString());
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
@@ -1988,7 +1985,7 @@ void FileSystemListXAttr(const FunctionCallbackInfo<Value>& args) {
   Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
   THROWIFNOTFS(self, "listxattr");
   ASSERT(args.Length() == 1);
-  ASSERT(IsString(args[0]));
+  ASSERT(args[0]->IsString());
   Local<Context> context = isolate->GetCurrentContext();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
@@ -2036,7 +2033,7 @@ void FileSystemLListXAttr(const FunctionCallbackInfo<Value>& args) {
   Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
   THROWIFNOTFS(self, "listxattr");
   ASSERT(args.Length() == 1);
-  ASSERT(IsString(args[0]));
+  ASSERT(args[0]->IsString());
   Local<Context> context = isolate->GetCurrentContext();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
@@ -2132,15 +2129,15 @@ void FileSystemUTimeNsAt(const FunctionCallbackInfo<Value>& args) {
   THROWIFNOTFS(self, "utimensat");
   ASSERT(args.Length() == 4);
   ASSERT(IsNumberLike(args[0]));
-  ASSERT(IsString(args[1]));
-  ASSERT(IsNull(args[2]) || IsArray(args[2]));
+  ASSERT(args[1]->IsString());
+  ASSERT(args[2]->IsNull() || args[2]->IsArray());
   ASSERT(IsNumberLike(args[3]));
   Local<Context> context = isolate->GetCurrentContext();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
   struct timespec times[2];
-  if (!IsNull(args[2])) {
+  if (!args[2]->IsNull()) {
     Local<Value> atime = args[2].As<Array>()->Get(
       context,
       0
@@ -2172,7 +2169,7 @@ void FileSystemUTimeNsAt(const FunctionCallbackInfo<Value>& args) {
     fs->UTimeNsAt(
       Val<int>(args[0]),
       *String::Utf8Value(isolate, args[1].As<String>()),
-      IsNull(args[2]) ? NULL : times,
+      args[2]->IsNull() ? NULL : times,
       Val<int>(args[3])
     )
   );
@@ -2183,14 +2180,14 @@ void FileSystemFUTimesAt(const FunctionCallbackInfo<Value>& args) {
   THROWIFNOTFS(self, "futimesat");
   ASSERT(args.Length() == 3);
   ASSERT(IsNumberLike(args[0]));
-  ASSERT(IsString(args[1]));
-  ASSERT(IsNull(args[2]) || IsArray(args[2]));
+  ASSERT(args[1]->IsString());
+  ASSERT(args[2]->IsNull() || args[2]->IsArray());
   Local<Context> context = isolate->GetCurrentContext();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
   struct timeval times[2];
-  if (!IsNull(args[2])) {
+  if (!args[2]->IsNull()) {
     Local<Value> atime = args[2].As<Array>()->Get(
       context,
       0
@@ -2212,7 +2209,7 @@ void FileSystemFUTimesAt(const FunctionCallbackInfo<Value>& args) {
     fs->FUTimesAt(
       Val<unsigned int>(args[0]),
       *String::Utf8Value(isolate, args[1].As<String>()),
-      IsNull(args[2]) ? NULL : times
+      args[2]->IsNull() ? NULL : times
     )
   );
 }
@@ -2221,14 +2218,14 @@ void FileSystemUTimes(const FunctionCallbackInfo<Value>& args) {
   Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
   THROWIFNOTFS(self, "utimes");
   ASSERT(args.Length() == 2);
-  ASSERT(IsString(args[0]));
-  ASSERT(IsNull(args[1]) || IsArray(args[1]));
+  ASSERT(args[0]->IsString());
+  ASSERT(args[1]->IsNull() || args[1]->IsArray());
   Local<Context> context = isolate->GetCurrentContext();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
   struct timeval times[2];
-  if (!IsNull(args[1])) {
+  if (!args[1]->IsNull()) {
     Local<Value> atime = args[1].As<Array>()->Get(
       context,
       0
@@ -2249,7 +2246,7 @@ void FileSystemUTimes(const FunctionCallbackInfo<Value>& args) {
   THROWIFERR(
     fs->UTimes(
       *String::Utf8Value(isolate, args[0].As<String>()),
-      IsNull(args[1]) ? NULL : times
+      args[1]->IsNull() ? NULL : times
     )
   );
 }
@@ -2258,14 +2255,14 @@ void FileSystemUTime(const FunctionCallbackInfo<Value>& args) {
   Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
   THROWIFNOTFS(self, "utime");
   ASSERT(args.Length() == 2);
-  ASSERT(IsString(args[0]));
-  ASSERT(IsNull(args[1]) || IsArray(args[1]));
+  ASSERT(args[0]->IsString());
+  ASSERT(args[1]->IsNull() || args[1]->IsArray());
   Local<Context> context = isolate->GetCurrentContext();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
   struct utimbuf times;
-  if (!IsNull(args[1])) {
+  if (!args[1]->IsNull()) {
     Local<Value> atime = args[1].As<Array>()->Get(
       context,
       0
@@ -2282,7 +2279,7 @@ void FileSystemUTime(const FunctionCallbackInfo<Value>& args) {
   THROWIFERR(
     fs->UTime(
       *String::Utf8Value(isolate, args[0].As<String>()),
-      IsNull(args[1]) ? NULL : &times
+      args[1]->IsNull() ? NULL : &times
     )
   );
 }
@@ -2308,7 +2305,7 @@ void FileSystemDumpTo(const FunctionCallbackInfo<Value>& args) {
   Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
   THROWIFNOTFS(self, "dumpTo");
   ASSERT(args.Length() == 1);
-  ASSERT(IsString(args[0]));
+  ASSERT(args[0]->IsString());
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
@@ -2319,7 +2316,7 @@ void FileSystemDumpTo(const FunctionCallbackInfo<Value>& args) {
 void FileSystemLoadFrom(const FunctionCallbackInfo<Value>& args) {
   Isolate* isolate = args.GetIsolate();
   ASSERT(args.Length() == 1);
-  ASSERT(IsString(args[0]));
+  ASSERT(args[0]->IsString());
   Local<Context> context = isolate->GetCurrentContext();
   FileSystem* fs = fs->LoadFromFile(
     *String::Utf8Value(isolate, args[0].As<String>())
