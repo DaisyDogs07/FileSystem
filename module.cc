@@ -3,9 +3,6 @@
 #include "node_buffer.h"
 #include <type_traits>
 
-#define LIKELY(expr) __builtin_expect(!!(expr), 1)
-#define UNLIKELY(expr) __builtin_expect(!!(expr), 0)
-
 using namespace node;
 using namespace v8;
 
@@ -13,7 +10,7 @@ namespace {
   template<typename T>
   bool TryAlloc(T** ptr, size_t length = 1) {
     T* newPtr = reinterpret_cast<T*>(malloc(sizeof(T) * length));
-    if (UNLIKELY(!newPtr))
+    if (!newPtr)
       return false;
     *ptr = newPtr;
     return true;
@@ -38,7 +35,7 @@ namespace {
 
 #define THROWIFNOTFS(self, method) \
   do { \
-    if (UNLIKELY(self.IsEmpty())) { \
+    if (self.IsEmpty()) { \
       isolate->ThrowException( \
         Exception::TypeError( \
           String::NewFromUtf8Literal( \
@@ -77,7 +74,7 @@ namespace {
   } while (0)
 
 #define ASSERT(expr) { \
-  if (UNLIKELY(!(expr))) { \
+  if (!(expr)) { \
     isolate->ThrowException( \
       Exception::Error( \
         String::NewFromUtf8Literal( \
@@ -97,7 +94,7 @@ void FileSystemCleanup(void* data, size_t, void*) {
 
 void FileSystemConstructor(const FunctionCallbackInfo<Value>& args) {
   Isolate* isolate = args.GetIsolate();
-  if (UNLIKELY(!args.IsConstructCall())) {
+  if (!args.IsConstructCall()) {
     isolate->ThrowException(
       Exception::TypeError(
         String::NewFromUtf8Literal(
@@ -110,8 +107,12 @@ void FileSystemConstructor(const FunctionCallbackInfo<Value>& args) {
     return;
   }
   FileSystem* fs = FileSystem::New();
-  if (UNLIKELY(!fs))
-    THROWERR(-errno);
+  if (!fs) {
+    isolate->LowMemoryNotification();
+    fs = FileSystem::New();
+    if (!fs)
+      THROWERR(-ENOMEM);
+  }
   std::unique_ptr<BackingStore> ab = ArrayBuffer::NewBackingStore(
     fs,
     sizeof(FileSystem),
@@ -121,6 +122,7 @@ void FileSystemConstructor(const FunctionCallbackInfo<Value>& args) {
   Local<ArrayBuffer> abuf = ArrayBuffer::New(isolate, std::move(ab));
   args.This()->SetInternalField(0, External::New(isolate, fs));
   args.This()->SetInternalField(1, abuf);
+  args.This()->SetIntegrityLevel(isolate->GetCurrentContext(), IntegrityLevel::kFrozen);
 }
 
 void FileSystemFAccessAt2(const FunctionCallbackInfo<Value>& args) {
@@ -192,15 +194,25 @@ void FileSystemOpenAt(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  int res;
-  THROWIFERR(
-    res = fs->OpenAt(
-      Val<int>(args[0]),
-      *String::Utf8Value(isolate, args[1].As<String>()),
-      Val<int>(args[2]),
-      Val<mode_t>(args[3])
-    )
+  int res = fs->OpenAt(
+    Val<int>(args[0]),
+    *String::Utf8Value(isolate, args[1].As<String>()),
+    Val<int>(args[2]),
+    Val<mode_t>(args[3])
   );
+  if (res < 0) {
+    if (res == -ENOMEM) {
+      isolate->LowMemoryNotification();
+      res = fs->OpenAt(
+        Val<int>(args[0]),
+        *String::Utf8Value(isolate, args[1].As<String>()),
+        Val<int>(args[2]),
+        Val<mode_t>(args[3])
+      );
+      if (res < 0)
+        THROWERR(res);
+    } else THROWERR(res);
+  }
   args.GetReturnValue().Set(
     Integer::New(
       isolate,
@@ -219,14 +231,23 @@ void FileSystemOpen(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  int res;
-  THROWIFERR(
-    res = fs->Open(
-      *String::Utf8Value(isolate, args[0].As<String>()),
-      Val<int>(args[1]),
-      Val<mode_t>(args[2])
-    )
+  int res = fs->Open(
+    *String::Utf8Value(isolate, args[0].As<String>()),
+    Val<int>(args[1]),
+    Val<mode_t>(args[2])
   );
+  if (res < 0) {
+    if (res == -ENOMEM) {
+      isolate->LowMemoryNotification();
+      res = fs->Open(
+        *String::Utf8Value(isolate, args[0].As<String>()),
+        Val<int>(args[1]),
+        Val<mode_t>(args[2])
+      );
+      if (res < 0)
+        THROWERR(res);
+    } else THROWERR(res);
+  }
   args.GetReturnValue().Set(
     Integer::New(
       isolate,
@@ -244,13 +265,21 @@ void FileSystemCreat(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  int res;
-  THROWIFERR(
-    res = fs->Creat(
-      *String::Utf8Value(isolate, args[0].As<String>()),
-      Val<mode_t>(args[1])
-    )
+  int res = fs->Creat(
+    *String::Utf8Value(isolate, args[0].As<String>()),
+    Val<mode_t>(args[1])
   );
+  if (res < 0) {
+    if (res == -ENOMEM) {
+      isolate->LowMemoryNotification();
+      res = fs->Creat(
+        *String::Utf8Value(isolate, args[0].As<String>()),
+        Val<mode_t>(args[1])
+      );
+      if (res < 0)
+        THROWERR(res);
+    } else THROWERR(res);
+  }
   args.GetReturnValue().Set(
     Integer::New(
       isolate,
@@ -300,14 +329,25 @@ void FileSystemMkNodAt(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  THROWIFERR(
-    fs->MkNodAt(
-      Val<int>(args[0]),
-      *String::Utf8Value(isolate, args[1].As<String>()),
-      Val<mode_t>(args[2]),
-      0
-    )
+  int res = fs->MkNodAt(
+    Val<int>(args[0]),
+    *String::Utf8Value(isolate, args[1].As<String>()),
+    Val<mode_t>(args[2]),
+    0
   );
+  if (res < 0) {
+    if (res == -ENOMEM) {
+      isolate->LowMemoryNotification();
+      res = fs->MkNodAt(
+        Val<int>(args[0]),
+        *String::Utf8Value(isolate, args[1].As<String>()),
+        Val<mode_t>(args[2]),
+        0
+      );
+      if (res < 0)
+        THROWERR(res);
+    } else THROWERR(res);
+  }
 }
 void FileSystemMkNod(const FunctionCallbackInfo<Value>& args) {
   Isolate* isolate = args.GetIsolate();
@@ -319,13 +359,23 @@ void FileSystemMkNod(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  THROWIFERR(
-    fs->MkNod(
-      *String::Utf8Value(isolate, args[0].As<String>()),
-      Val<mode_t>(args[1]),
-      0
-    )
+  int res = fs->MkNod(
+    *String::Utf8Value(isolate, args[0].As<String>()),
+    Val<mode_t>(args[1]),
+    0
   );
+  if (res < 0) {
+    if (res == -ENOMEM) {
+      isolate->LowMemoryNotification();
+      res = fs->MkNod(
+        *String::Utf8Value(isolate, args[0].As<String>()),
+        Val<mode_t>(args[1]),
+        0
+      );
+      if (res < 0)
+        THROWERR(res);
+    } else THROWERR(res);
+  }
 }
 void FileSystemMkDirAt(const FunctionCallbackInfo<Value>& args) {
   Isolate* isolate = args.GetIsolate();
@@ -338,13 +388,23 @@ void FileSystemMkDirAt(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  THROWIFERR(
-    fs->MkDirAt(
-      Val<int>(args[0]),
-      *String::Utf8Value(isolate, args[1].As<String>()),
-      Val<mode_t>(args[2])
-    )
+  int res = fs->MkDirAt(
+    Val<int>(args[0]),
+    *String::Utf8Value(isolate, args[1].As<String>()),
+    Val<mode_t>(args[2])
   );
+  if (res < 0) {
+    if (res == -ENOMEM) {
+      isolate->LowMemoryNotification();
+      res = fs->MkDirAt(
+        Val<int>(args[0]),
+        *String::Utf8Value(isolate, args[1].As<String>()),
+        Val<mode_t>(args[2])
+      );
+      if (res < 0)
+        THROWERR(res);
+    } else THROWERR(res);
+  }
 }
 void FileSystemMkDir(const FunctionCallbackInfo<Value>& args) {
   Isolate* isolate = args.GetIsolate();
@@ -356,12 +416,21 @@ void FileSystemMkDir(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  THROWIFERR(
-    fs->MkDir(
-      *String::Utf8Value(isolate, args[0].As<String>()),
-      Val<mode_t>(args[1])
-    )
+  int res = fs->MkDir(
+    *String::Utf8Value(isolate, args[0].As<String>()),
+    Val<mode_t>(args[1])
   );
+  if (res < 0) {
+    if (res == -ENOMEM) {
+      isolate->LowMemoryNotification();
+      res = fs->MkDir(
+        *String::Utf8Value(isolate, args[0].As<String>()),
+        Val<mode_t>(args[1])
+      );
+      if (res < 0)
+        THROWERR(res);
+    } else THROWERR(res);
+  }
 }
 void FileSystemSymLinkAt(const FunctionCallbackInfo<Value>& args) {
   Isolate* isolate = args.GetIsolate();
@@ -374,13 +443,23 @@ void FileSystemSymLinkAt(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  THROWIFERR(
-    fs->SymLinkAt(
-      *String::Utf8Value(isolate, args[0].As<String>()),
-      Val<int>(args[1]),
-      *String::Utf8Value(isolate, args[2].As<String>())
-    )
+  int res = fs->SymLinkAt(
+    *String::Utf8Value(isolate, args[0].As<String>()),
+    Val<int>(args[1]),
+    *String::Utf8Value(isolate, args[2].As<String>())
   );
+  if (res < 0) {
+    if (res == -ENOMEM) {
+      isolate->LowMemoryNotification();
+      res = fs->SymLinkAt(
+        *String::Utf8Value(isolate, args[0].As<String>()),
+        Val<int>(args[1]),
+        *String::Utf8Value(isolate, args[2].As<String>())
+      );
+      if (res < 0)
+        THROWERR(res);
+    } else THROWERR(res);
+  }
 }
 void FileSystemSymLink(const FunctionCallbackInfo<Value>& args) {
   Isolate* isolate = args.GetIsolate();
@@ -392,12 +471,17 @@ void FileSystemSymLink(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  THROWIFERR(
-    fs->SymLink(
-      *String::Utf8Value(isolate, args[0].As<String>()),
-      *String::Utf8Value(isolate, args[1].As<String>())
-    )
+  int res = fs->SymLink(
+    *String::Utf8Value(isolate, args[0].As<String>()),
+    *String::Utf8Value(isolate, args[1].As<String>())
   );
+  if (res < 0) {
+    if (res == -ENOMEM) {
+      isolate->LowMemoryNotification();
+      if (res < 0)
+        THROWERR(res);
+    } else THROWERR(res);
+  }
 }
 void FileSystemReadLinkAt(const FunctionCallbackInfo<Value>& args) {
   Isolate* isolate = args.GetIsolate();
@@ -410,8 +494,11 @@ void FileSystemReadLinkAt(const FunctionCallbackInfo<Value>& args) {
     self->GetInternalField(0).As<External>()->Value()
   );
   char* buf;
-  if (UNLIKELY(!TryAlloc(&buf, PATH_MAX)))
-    THROWERR(-ENOMEM);
+  if (!TryAlloc(&buf, PATH_MAX)) {
+    isolate->LowMemoryNotification();
+    if (!TryAlloc(&buf, PATH_MAX))
+      THROWERR(-ENOMEM);
+  }
   int res;
   THROWIFERR(
     res = fs->ReadLinkAt(
@@ -439,8 +526,11 @@ void FileSystemReadLink(const FunctionCallbackInfo<Value>& args) {
     self->GetInternalField(0).As<External>()->Value()
   );
   char* buf;
-  if (UNLIKELY(!TryAlloc(&buf, PATH_MAX)))
-    THROWERR(-ENOMEM);
+  if (!TryAlloc(&buf, PATH_MAX)) {
+    isolate->LowMemoryNotification();
+    if (!TryAlloc(&buf, PATH_MAX))
+      THROWERR(-ENOMEM);
+  }
   int res;
   THROWIFERR(
     res = fs->ReadLink(
@@ -467,18 +557,21 @@ void FileSystemGetDents(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  uint32_t count = std::numeric_limits<uint32_t>::max();
+  size_t count = -1;
   if (args.Length() == 2) {
     ASSERT(IsNumeric(args[1]));
-    count = Val<uint32_t>(args[1]);
+    count = Val<size_t>(args[1]);
   }
   Local<Array> dentArr = Array::New(isolate);
   char* buf;
-  if (UNLIKELY(!TryAlloc(&buf, 1024)))
-    THROWERR(-ENOMEM);
+  if (!TryAlloc(&buf, 1024)) {
+    isolate->LowMemoryNotification();
+    if (!TryAlloc(&buf, 1024))
+      THROWERR(-ENOMEM);
+  }
   unsigned int fdNum = Val<unsigned int>(args[0]);
   off_t off = fs->LSeek(fdNum, 0, SEEK_CUR);
-  uint32_t i = 0;
+  size_t i = 0;
   while (i < count) {
     int nread;
     THROWIFERR(
@@ -513,6 +606,7 @@ void FileSystemGetDents(const FunctionCallbackInfo<Value>& args) {
         String::NewFromUtf8Literal(isolate, "d_type", NewStringType::kInternalized),
         Integer::New(isolate, (buf + j)[dent->d_reclen - 1])
       ).Check();
+      dentObj->SetIntegrityLevel(context, IntegrityLevel::kFrozen);
       dentArr->Set(
         context,
         dentArr->Length(),
@@ -521,6 +615,7 @@ void FileSystemGetDents(const FunctionCallbackInfo<Value>& args) {
       j += dent->d_reclen;
     }
   }
+  dentArr->SetIntegrityLevel(context, IntegrityLevel::kFrozen);
   delete buf;
   fs->LSeek(fdNum, off, SEEK_SET);
   args.GetReturnValue().Set(dentArr);
@@ -538,15 +633,27 @@ void FileSystemLinkAt(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  THROWIFERR(
-    fs->LinkAt(
-      Val<int>(args[0]),
-      *String::Utf8Value(isolate, args[1].As<String>()),
-      Val<int>(args[2]),
-      *String::Utf8Value(isolate, args[3].As<String>()),
-      Val<int>(args[4])
-    )
+  int res = fs->LinkAt(
+    Val<int>(args[0]),
+    *String::Utf8Value(isolate, args[1].As<String>()),
+    Val<int>(args[2]),
+    *String::Utf8Value(isolate, args[3].As<String>()),
+    Val<int>(args[4])
   );
+  if (res < 0) {
+    if (res == -ENOMEM) {
+      isolate->LowMemoryNotification();
+      res = fs->LinkAt(
+        Val<int>(args[0]),
+        *String::Utf8Value(isolate, args[1].As<String>()),
+        Val<int>(args[2]),
+        *String::Utf8Value(isolate, args[3].As<String>()),
+        Val<int>(args[4])
+      );
+      if (res < 0)
+        THROWERR(res);
+    } else THROWERR(res);
+  }
 }
 void FileSystemLink(const FunctionCallbackInfo<Value>& args) {
   Isolate* isolate = args.GetIsolate();
@@ -558,12 +665,21 @@ void FileSystemLink(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  THROWIFERR(
-    fs->Link(
-      *String::Utf8Value(isolate, args[0].As<String>()),
-      *String::Utf8Value(isolate, args[1].As<String>())
-    )
+  int res = fs->Link(
+    *String::Utf8Value(isolate, args[0].As<String>()),
+    *String::Utf8Value(isolate, args[1].As<String>())
   );
+  if (res < 0) {
+    if (res == -ENOMEM) {
+      isolate->LowMemoryNotification();
+      res = fs->Link(
+        *String::Utf8Value(isolate, args[0].As<String>()),
+        *String::Utf8Value(isolate, args[1].As<String>())
+      );
+      if (res < 0)
+        THROWERR(res);
+    } else THROWERR(res);
+  }
 }
 void FileSystemUnlinkAt(const FunctionCallbackInfo<Value>& args) {
   Isolate* isolate = args.GetIsolate();
@@ -576,13 +692,23 @@ void FileSystemUnlinkAt(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  THROWIFERR(
-    fs->UnlinkAt(
-      Val<int>(args[0]),
-      *String::Utf8Value(isolate, args[1].As<String>()),
-      Val<int>(args[2])
-    )
+  int res = fs->UnlinkAt(
+    Val<int>(args[0]),
+    *String::Utf8Value(isolate, args[1].As<String>()),
+    Val<int>(args[2])
   );
+  if (res < 0) {
+    if (res == -ENOMEM) {
+      isolate->LowMemoryNotification();
+      res = fs->UnlinkAt(
+        Val<int>(args[0]),
+        *String::Utf8Value(isolate, args[1].As<String>()),
+        Val<int>(args[2])
+      );
+      if (res < 0)
+        THROWERR(res);
+    } else THROWERR(res);
+  }
 }
 void FileSystemUnlink(const FunctionCallbackInfo<Value>& args) {
   Isolate* isolate = args.GetIsolate();
@@ -593,11 +719,19 @@ void FileSystemUnlink(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  THROWIFERR(
-    fs->Unlink(
-      *String::Utf8Value(isolate, args[0].As<String>())
-    )
+  int res = fs->Unlink(
+    *String::Utf8Value(isolate, args[0].As<String>())
   );
+  if (res < 0) {
+    if (res == -ENOMEM) {
+      isolate->LowMemoryNotification();
+      res = fs->Unlink(
+        *String::Utf8Value(isolate, args[0].As<String>())
+      );
+      if (res < 0)
+        THROWERR(res);
+    } else THROWERR(res);
+  }
 }
 void FileSystemRmDir(const FunctionCallbackInfo<Value>& args) {
   Isolate* isolate = args.GetIsolate();
@@ -608,11 +742,19 @@ void FileSystemRmDir(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  THROWIFERR(
-    fs->RmDir(
-      *String::Utf8Value(isolate, args[0].As<String>())
-    )
+  int res = fs->RmDir(
+    *String::Utf8Value(isolate, args[0].As<String>())
   );
+  if (res < 0) {
+    if (res == -ENOMEM) {
+      isolate->LowMemoryNotification();
+      res = fs->RmDir(
+        *String::Utf8Value(isolate, args[0].As<String>())
+      );
+      if (res < 0)
+        THROWERR(res);
+    } else THROWERR(res);
+  }
 }
 void FileSystemRenameAt2(const FunctionCallbackInfo<Value>& args) {
   Isolate* isolate = args.GetIsolate();
@@ -627,15 +769,27 @@ void FileSystemRenameAt2(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  THROWIFERR(
-    fs->RenameAt2(
-      Val<int>(args[0]),
-      *String::Utf8Value(isolate, args[1].As<String>()),
-      Val<int>(args[2]),
-      *String::Utf8Value(isolate, args[3].As<String>()),
-      Val<unsigned int>(args[4])
-    )
+  int res = fs->RenameAt2(
+    Val<int>(args[0]),
+    *String::Utf8Value(isolate, args[1].As<String>()),
+    Val<int>(args[2]),
+    *String::Utf8Value(isolate, args[3].As<String>()),
+    Val<unsigned int>(args[4])
   );
+  if (res < 0) {
+    if (res == -ENOMEM) {
+      isolate->LowMemoryNotification();
+      res = fs->RenameAt2(
+        Val<int>(args[0]),
+        *String::Utf8Value(isolate, args[1].As<String>()),
+        Val<int>(args[2]),
+        *String::Utf8Value(isolate, args[3].As<String>()),
+        Val<unsigned int>(args[4])
+      );
+      if (res < 0)
+        THROWERR(res);
+    } else THROWERR(res);
+  }
 }
 void FileSystemRenameAt(const FunctionCallbackInfo<Value>& args) {
   Isolate* isolate = args.GetIsolate();
@@ -649,14 +803,25 @@ void FileSystemRenameAt(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  THROWIFERR(
-    fs->RenameAt(
-      Val<int>(args[0]),
-      *String::Utf8Value(isolate, args[1].As<String>()),
-      Val<int>(args[2]),
-      *String::Utf8Value(isolate, args[3].As<String>())
-    )
+  int res = fs->RenameAt(
+    Val<int>(args[0]),
+    *String::Utf8Value(isolate, args[1].As<String>()),
+    Val<int>(args[2]),
+    *String::Utf8Value(isolate, args[3].As<String>())
   );
+  if (res < 0) {
+    if (res == -ENOMEM) {
+      isolate->LowMemoryNotification();
+      res = fs->RenameAt(
+        Val<int>(args[0]),
+        *String::Utf8Value(isolate, args[1].As<String>()),
+        Val<int>(args[2]),
+        *String::Utf8Value(isolate, args[3].As<String>())
+      );
+      if (res < 0)
+        THROWERR(res);
+    } else THROWERR(res);
+  }
 }
 void FileSystemRename(const FunctionCallbackInfo<Value>& args) {
   Isolate* isolate = args.GetIsolate();
@@ -668,12 +833,21 @@ void FileSystemRename(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  THROWIFERR(
-    fs->Rename(
-      *String::Utf8Value(isolate, args[0].As<String>()),
-      *String::Utf8Value(isolate, args[1].As<String>())
-    )
+  int res = fs->Rename(
+    *String::Utf8Value(isolate, args[0].As<String>()),
+    *String::Utf8Value(isolate, args[1].As<String>())
   );
+  if (res < 0) {
+    if (res == -ENOMEM) {
+      isolate->LowMemoryNotification();
+      res = fs->Rename(
+        *String::Utf8Value(isolate, args[0].As<String>()),
+        *String::Utf8Value(isolate, args[1].As<String>())
+      );
+      if (res < 0)
+        THROWERR(res);
+    } else THROWERR(res);
+  }
 }
 void FileSystemFAllocate(const FunctionCallbackInfo<Value>& args) {
   Isolate* isolate = args.GetIsolate();
@@ -687,15 +861,25 @@ void FileSystemFAllocate(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  off_t res;
-  THROWIFERR(
-    res = fs->FAllocate(
-      Val<int>(args[0]),
-      Val<int>(args[1]),
-      Val<off_t>(args[2]),
-      Val<off_t>(args[3])
-    )
+  int res = fs->FAllocate(
+    Val<int>(args[0]),
+    Val<int>(args[1]),
+    Val<off_t>(args[2]),
+    Val<off_t>(args[3])
   );
+  if (res < 0) {
+    if (res == -ENOMEM) {
+      isolate->LowMemoryNotification();
+      res = fs->FAllocate(
+        Val<int>(args[0]),
+        Val<int>(args[1]),
+        Val<off_t>(args[2]),
+        Val<off_t>(args[3])
+      );
+      if (res < 0)
+        THROWERR(res);
+    } else THROWERR(res);
+  }
 }
 void FileSystemLSeek(const FunctionCallbackInfo<Value>& args) {
   Isolate* isolate = args.GetIsolate();
@@ -741,8 +925,11 @@ void FileSystemRead(const FunctionCallbackInfo<Value>& args) {
     (size_t)0x7ffff000
   );
   char* buf;
-  if (UNLIKELY(!TryAlloc(&buf, bufLen + 1)))
-    THROWERR(-ENOMEM);
+  if (!TryAlloc(&buf, bufLen + 1)) {
+    isolate->LowMemoryNotification();
+    if (!TryAlloc(&buf, bufLen + 1))
+      THROWERR(-ENOMEM);
+  }
   ssize_t res = fs->Read(
     fdNum,
     buf,
@@ -770,10 +957,10 @@ void FileSystemReadv(const FunctionCallbackInfo<Value>& args) {
   ASSERT(args.Length() == 2);
   ASSERT(IsNumeric(args[0]));
   ASSERT(args[1]->IsArray());
+  Local<Context> context = isolate->GetCurrentContext();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  Local<Context> context = isolate->GetCurrentContext();
   Local<Array> buffers = args[1].As<Array>();
   uint32_t length = std::min(buffers->Length(), (uint32_t)1024);
   for (uint32_t i = 0; i != length; ++i) {
@@ -784,14 +971,16 @@ void FileSystemReadv(const FunctionCallbackInfo<Value>& args) {
     ASSERT(Buffer::HasInstance(buf));
   }
   struct iovec* iov;
-  if (UNLIKELY(!TryAlloc(&iov, length)))
-    THROWERR(-ENOMEM);
+  if (!TryAlloc(&iov, length)) {
+    isolate->LowMemoryNotification();
+    if (!TryAlloc(&iov, length))
+      THROWERR(-ENOMEM);
+  }
   for (uint32_t i = 0; i != length; ++i) {
     Local<Value> buf = buffers->Get(
       context,
       i
     ).ToLocalChecked();
-    ASSERT(Buffer::HasInstance(buf));
     iov[i].iov_base = Buffer::Data(buf);
     iov[i].iov_len = Buffer::Length(buf);
   }
@@ -829,8 +1018,11 @@ void FileSystemPRead(const FunctionCallbackInfo<Value>& args) {
     (size_t)0x7ffff000
   );
   char* buf;
-  if (UNLIKELY(!TryAlloc(&buf, bufLen + 1)))
-    THROWERR(-ENOMEM);
+  if (!TryAlloc(&buf, bufLen + 1)) {
+    isolate->LowMemoryNotification();
+    if (!TryAlloc(&buf, bufLen + 1))
+      THROWERR(-ENOMEM);
+  }
   ssize_t res = fs->PRead(
     fdNum,
     buf,
@@ -860,10 +1052,10 @@ void FileSystemPReadv(const FunctionCallbackInfo<Value>& args) {
   ASSERT(IsNumeric(args[0]));
   ASSERT(args[1]->IsArray());
   ASSERT(IsNumeric(args[2]));
+  Local<Context> context = isolate->GetCurrentContext();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  Local<Context> context = isolate->GetCurrentContext();
   Local<Array> buffers = args[1].As<Array>();
   uint32_t length = std::min(buffers->Length(), (uint32_t)1024);
   for (uint32_t i = 0; i != length; ++i) {
@@ -874,8 +1066,11 @@ void FileSystemPReadv(const FunctionCallbackInfo<Value>& args) {
     ASSERT(Buffer::HasInstance(buf));
   }
   struct iovec* iov;
-  if (UNLIKELY(!TryAlloc(&iov, length)))
-    THROWERR(-ENOMEM);
+  if (!TryAlloc(&iov, length)) {
+    isolate->LowMemoryNotification();
+    if (!TryAlloc(&iov, length))
+      THROWERR(-ENOMEM);
+  }
   for (uint32_t i = 0; i != length; ++i) {
     Local<Value> buf = buffers->Get(
       context,
@@ -919,19 +1114,38 @@ void FileSystemWrite(const FunctionCallbackInfo<Value>& args) {
   } else count = strLen;
   char* buf;
   if (isString) {
-    if (UNLIKELY(!TryAlloc(&buf, count)))
-      THROWERR(-ENOMEM);
+    if (!TryAlloc(&buf, count)) {
+      isolate->LowMemoryNotification();
+      if (!TryAlloc(&buf, count))
+        THROWERR(-ENOMEM);
+    }
     Local<String> str = args[1].As<String>();
     str->WriteUtf8(isolate, buf, count);
   } else buf = Buffer::Data(args[1]);
-  ssize_t res;
-  THROWIFERR(
-    res = fs->Write(
-      Val<unsigned int>(args[0]),
-      buf,
-      count
-    )
+  ssize_t res = fs->Write(
+    Val<unsigned int>(args[0]),
+    buf,
+    count
   );
+  if (res < 0) {
+    if (res == -ENOMEM) {
+      isolate->LowMemoryNotification();
+      res = fs->Write(
+        Val<unsigned int>(args[0]),
+        buf,
+        count
+      );
+      if (res < 0) {
+        if (isString)
+          delete buf;
+        THROWERR(res);
+      }
+    } else {
+      if (isString)
+        delete buf;
+      THROWERR(res);
+    }
+  }
   if (isString)
     delete buf;
   args.GetReturnValue().Set(BigInt::New(isolate, res));
@@ -943,10 +1157,10 @@ void FileSystemWritev(const FunctionCallbackInfo<Value>& args) {
   ASSERT(args.Length() == 2);
   ASSERT(IsNumeric(args[0]));
   ASSERT(args[1]->IsArray());
+  Local<Context> context = isolate->GetCurrentContext();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  Local<Context> context = isolate->GetCurrentContext();
   Local<Array> buffers = args[1].As<Array>();
   uint32_t length = std::min(buffers->Length(), (uint32_t)1024);
   for (uint32_t i = 0; i != length; ++i) {
@@ -957,8 +1171,11 @@ void FileSystemWritev(const FunctionCallbackInfo<Value>& args) {
     ASSERT(Buffer::HasInstance(buf));
   }
   struct iovec* iov;
-  if (UNLIKELY(!TryAlloc(&iov, length)))
-    THROWERR(-ENOMEM);
+  if (!TryAlloc(&iov, length)) {
+    isolate->LowMemoryNotification();
+    if (!TryAlloc(&iov, length))
+      THROWERR(-ENOMEM);
+  }
   for (uint32_t i = 0; i != length; ++i) {
     Local<Value> buf = buffers->Get(
       context,
@@ -972,9 +1189,24 @@ void FileSystemWritev(const FunctionCallbackInfo<Value>& args) {
     iov,
     length
   );
+  if (res < 0) {
+    if (res == -ENOMEM) {
+      isolate->LowMemoryNotification();
+      res = fs->Writev(
+        Val<unsigned int>(args[0]),
+        iov,
+        length
+      );
+      if (res < 0) {
+        delete iov;
+        THROWERR(res);
+      }
+    } else {
+      delete iov;
+      THROWERR(res);
+    }
+  }
   delete iov;
-  if (res < 0)
-    THROWERR(res);
   args.GetReturnValue().Set(BigInt::New(isolate, res));
 }
 void FileSystemPWrite(const FunctionCallbackInfo<Value>& args) {
@@ -1002,20 +1234,40 @@ void FileSystemPWrite(const FunctionCallbackInfo<Value>& args) {
   } else count = strLen;
   char* buf;
   if (isString) {
-    if (UNLIKELY(!TryAlloc(&buf, count)))
-      THROWERR(-ENOMEM);
+    if (!TryAlloc(&buf, count)) {
+      isolate->LowMemoryNotification();
+      if (!TryAlloc(&buf, count))
+        THROWERR(-ENOMEM);
+    }
     Local<String> str = args[1].As<String>();
     str->WriteUtf8(isolate, buf, count);
   } else buf = Buffer::Data(args[1]);
-  ssize_t res;
-  THROWIFERR(
-    res = fs->PWrite(
-      Val<unsigned int>(args[0]),
-      buf,
-      count,
-      Val<off_t>(args[2])
-    )
+  ssize_t res = fs->PWrite(
+    Val<unsigned int>(args[0]),
+    buf,
+    count,
+    Val<off_t>(args[2])
   );
+  if (res < 0) {
+    if (res == -ENOMEM) {
+      isolate->LowMemoryNotification();
+      res = fs->PWrite(
+        Val<unsigned int>(args[0]),
+        buf,
+        count,
+        Val<off_t>(args[2])
+      );
+      if (res < 0) {
+        if (isString)
+          delete buf;
+        THROWERR(res);
+      }
+    } else {
+      if (isString)
+        delete buf;
+      THROWERR(res);
+    }
+  }
   if (isString)
     delete buf;
   args.GetReturnValue().Set(BigInt::New(isolate, res));
@@ -1028,10 +1280,10 @@ void FileSystemPWritev(const FunctionCallbackInfo<Value>& args) {
   ASSERT(IsNumeric(args[0]));
   ASSERT(args[1]->IsArray());
   ASSERT(IsNumeric(args[2]));
+  Local<Context> context = isolate->GetCurrentContext();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  Local<Context> context = isolate->GetCurrentContext();
   Local<Array> buffers = args[1].As<Array>();
   uint32_t length = std::min(buffers->Length(), (uint32_t)1024);
   for (uint32_t i = 0; i != length; ++i) {
@@ -1042,8 +1294,11 @@ void FileSystemPWritev(const FunctionCallbackInfo<Value>& args) {
     ASSERT(Buffer::HasInstance(buf));
   }
   struct iovec* iov;
-  if (UNLIKELY(!TryAlloc(&iov, length)))
-    THROWERR(-ENOMEM);
+  if (!TryAlloc(&iov, length)) {
+    isolate->LowMemoryNotification();
+    if (!TryAlloc(&iov, length))
+      THROWERR(-ENOMEM);
+  }
   for (uint32_t i = 0; i != length; ++i) {
     Local<Value> buf = buffers->Get(
       context,
@@ -1058,9 +1313,25 @@ void FileSystemPWritev(const FunctionCallbackInfo<Value>& args) {
     length,
     Val<off_t>(args[2])
   );
+  if (res < 0) {
+    if (res == -ENOMEM) {
+      isolate->LowMemoryNotification();
+      res = fs->PWritev(
+        Val<unsigned int>(args[0]),
+        iov,
+        length,
+        Val<off_t>(args[2])
+      );
+      if (res < 0) {
+        delete iov;
+        THROWERR(res);
+      }
+    } else {
+      delete iov;
+      THROWERR(res);
+    }
+  }
   delete iov;
-  if (res < 0)
-    THROWERR(res);
   args.GetReturnValue().Set(BigInt::New(isolate, res));
 }
 void FileSystemSendFile(const FunctionCallbackInfo<Value>& args) {
@@ -1078,15 +1349,25 @@ void FileSystemSendFile(const FunctionCallbackInfo<Value>& args) {
   off_t off;
   if (!args[2]->IsNull())
     off = Val<off_t>(args[2]);
-  ssize_t res;
-  THROWIFERR(
-    res = fs->SendFile(
-      Val<unsigned int>(args[0]),
-      Val<unsigned int>(args[1]),
-      args[2]->IsNull() ? NULL : &off,
-      Val<size_t>(args[3])
-    )
+  ssize_t res = fs->SendFile(
+    Val<unsigned int>(args[0]),
+    Val<unsigned int>(args[1]),
+    args[2]->IsNull() ? NULL : &off,
+    Val<size_t>(args[3])
   );
+  if (res < 0) {
+    if (res == -ENOMEM) {
+      isolate->LowMemoryNotification();
+      res = fs->SendFile(
+        Val<unsigned int>(args[0]),
+        Val<unsigned int>(args[1]),
+        args[2]->IsNull() ? NULL : &off,
+        Val<size_t>(args[3])
+      );
+      if (res < 0)
+        THROWERR(res);
+    } else THROWERR(res);
+  }
   args.GetReturnValue().Set(BigInt::New(isolate, res));
 }
 void FileSystemFTruncate(const FunctionCallbackInfo<Value>& args) {
@@ -1185,11 +1466,19 @@ void FileSystemChDir(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  THROWIFERR(
-    fs->ChDir(
-      *String::Utf8Value(isolate, args[0].As<String>())
-    )
+  int res = fs->ChDir(
+    *String::Utf8Value(isolate, args[0].As<String>())
   );
+  if (res < 0) {
+    if (res == -ENOMEM) {
+      isolate->LowMemoryNotification();
+      res = fs->ChDir(
+        *String::Utf8Value(isolate, args[0].As<String>())
+      );
+      if (res < 0)
+        THROWERR(res);
+    } else THROWERR(res);
+  }
 }
 void FileSystemGetCwd(const FunctionCallbackInfo<Value>& args) {
   Isolate* isolate = args.GetIsolate();
@@ -1219,6 +1508,7 @@ void SetTimeProp(Isolate* isolate, Local<Object> obj, const char* prop, time_t s
     String::NewFromUtf8Literal(isolate, "tv_nsec", NewStringType::kInternalized),
     Integer::NewFromUnsigned(isolate, nsec)
   ).Check();
+  tim->SetIntegrityLevel(context, IntegrityLevel::kFrozen);
   obj->Set(
     context,
     String::NewFromUtf8(isolate, prop, NewStringType::kInternalized).ToLocalChecked(),
@@ -1252,6 +1542,7 @@ Local<Object> StatToObj(Isolate* isolate, struct stat s) {
   SetTimeProp(isolate, statObj, "st_atim", s.st_atim.tv_sec, s.st_atim.tv_nsec);
   SetTimeProp(isolate, statObj, "st_mtim", s.st_mtim.tv_sec, s.st_mtim.tv_nsec);
   SetTimeProp(isolate, statObj, "st_ctim", s.st_ctim.tv_sec, s.st_ctim.tv_nsec);
+  statObj->SetIntegrityLevel(context, IntegrityLevel::kFrozen);
   return statObj;
 }
 
@@ -1343,6 +1634,7 @@ Local<Object> StatxToObj(Isolate* isolate, struct statx s) {
   SetTimeProp(isolate, statxObj, "stx_mtime", s.stx_mtime.tv_sec, s.stx_mtime.tv_nsec);
   SetTimeProp(isolate, statxObj, "stx_ctime", s.stx_ctime.tv_sec, s.stx_ctime.tv_nsec);
   SetTimeProp(isolate, statxObj, "stx_btime", s.stx_btime.tv_sec, s.stx_btime.tv_nsec);
+  statxObj->SetIntegrityLevel(context, IntegrityLevel::kFrozen);
   return statxObj;
 }
 
@@ -1385,13 +1677,18 @@ void FileSystemGetXAttr(const FunctionCallbackInfo<Value>& args) {
   );
   char* value = NULL;
   size_t valSize = Val<size_t>(args[2]);
-  if (valSize != 0 && !TryAlloc(&value, valSize))
-    THROWERR(-ENOMEM);
+  if (valSize != 0) {
+    if (!TryAlloc(&value, valSize)) {
+      isolate->LowMemoryNotification();
+      if (!TryAlloc(&value, valSize))
+        THROWERR(-ENOMEM);
+    }
+  }
   int res = fs->GetXAttr(
     *String::Utf8Value(isolate, args[0].As<String>()),
     *String::Utf8Value(isolate, args[1].As<String>()),
     value,
-    Val<size_t>(args[2])
+    valSize
   );
   if (res != 0) {
     if (valSize == 0) {
@@ -1423,13 +1720,18 @@ void FileSystemLGetXAttr(const FunctionCallbackInfo<Value>& args) {
   );
   char* value = NULL;
   size_t valSize = Val<size_t>(args[2]);
-  if (valSize != 0 && !TryAlloc(&value, valSize))
-    THROWERR(-ENOMEM);
+  if (valSize != 0) {
+    if (!TryAlloc(&value, valSize)) {
+      isolate->LowMemoryNotification();
+      if (!TryAlloc(&value, valSize))
+        THROWERR(-ENOMEM);
+    }
+  }
   int res = fs->LGetXAttr(
     *String::Utf8Value(isolate, args[0].As<String>()),
     *String::Utf8Value(isolate, args[1].As<String>()),
     value,
-    Val<size_t>(args[2])
+    valSize
   );
   if (res != 0) {
     if (valSize == 0) {
@@ -1461,13 +1763,18 @@ void FileSystemFGetXAttr(const FunctionCallbackInfo<Value>& args) {
   );
   char* value = NULL;
   size_t valSize = Val<size_t>(args[2]);
-  if (valSize != 0 && !TryAlloc(&value, valSize))
-    THROWERR(-ENOMEM);
+  if (valSize != 0) {
+    if (!TryAlloc(&value, valSize)) {
+      isolate->LowMemoryNotification();
+      if (!TryAlloc(&value, valSize))
+        THROWERR(-ENOMEM);
+    }
+  }
   int res = fs->FGetXAttr(
     Val<int>(args[0]),
     *String::Utf8Value(isolate, args[1].As<String>()),
     value,
-    Val<size_t>(args[2])
+    valSize
   );
   if (res != 0) {
     if (valSize == 0) {
@@ -1490,70 +1797,136 @@ void FileSystemSetXAttr(const FunctionCallbackInfo<Value>& args) {
   Isolate* isolate = args.GetIsolate();
   Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
   THROWIFNOTFS(self, "setxattr");
-  ASSERT(args.Length() == 4);
+  ASSERT(args.Length() == 4 || args.Length() == 5);
   ASSERT(args[0]->IsString());
   ASSERT(args[1]->IsString());
   ASSERT(IsStrOrBuf(args[2]));
   ASSERT(IsNumeric(args[3]));
+  if (args.Length() == 5)
+    ASSERT(IsNumeric(args[4]));
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
   bool isString = args[2]->IsString();
-  THROWIFERR(
-    fs->SetXAttr(
-      *String::Utf8Value(isolate, args[0].As<String>()),
-      *String::Utf8Value(isolate, args[1].As<String>()),
-      isString ? *String::Utf8Value(isolate, args[2].As<String>()) : Buffer::Data(args[2]),
-      isString ? args[2].As<String>()->Utf8Length(isolate) : Buffer::Length(args[2]),
-      Val<size_t>(args[3])
-    )
+  int res = fs->SetXAttr(
+    *String::Utf8Value(isolate, args[0].As<String>()),
+    *String::Utf8Value(isolate, args[1].As<String>()),
+    isString ? *String::Utf8Value(isolate, args[2].As<String>()) : Buffer::Data(args[2]),
+    args.Length() == 5
+      ? Val<size_t>(args[3])
+      : isString
+        ? args[2].As<String>()->Utf8Length(isolate)
+        : Buffer::Length(args[2]),
+    args.Length() == 4 ? Val<size_t>(args[3]) : Val<size_t>(args[4])
   );
+  if (res < 0) {
+    if (res == -ENOMEM) {
+      isolate->LowMemoryNotification();
+      res = fs->SetXAttr(
+        *String::Utf8Value(isolate, args[0].As<String>()),
+        *String::Utf8Value(isolate, args[1].As<String>()),
+        isString ? *String::Utf8Value(isolate, args[2].As<String>()) : Buffer::Data(args[2]),
+        args.Length() == 5
+          ? Val<size_t>(args[3])
+          : isString
+            ? args[2].As<String>()->Utf8Length(isolate)
+            : Buffer::Length(args[2]),
+        args.Length() == 4 ? Val<size_t>(args[3]) : Val<size_t>(args[4])
+      );
+      if (res < 0)
+        THROWERR(res);
+    } else THROWERR(res);
+  }
 }
 void FileSystemLSetXAttr(const FunctionCallbackInfo<Value>& args) {
   Isolate* isolate = args.GetIsolate();
   Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
-  THROWIFNOTFS(self, "setxattr");
-  ASSERT(args.Length() == 4);
+  THROWIFNOTFS(self, "lsetxattr");
+  ASSERT(args.Length() == 4 || args.Length() == 5);
   ASSERT(args[0]->IsString());
   ASSERT(args[1]->IsString());
   ASSERT(IsStrOrBuf(args[2]));
   ASSERT(IsNumeric(args[3]));
+  if (args.Length() == 5)
+    ASSERT(IsNumeric(args[4]));
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
   bool isString = args[2]->IsString();
-  THROWIFERR(
-    fs->LSetXAttr(
-      *String::Utf8Value(isolate, args[0].As<String>()),
-      *String::Utf8Value(isolate, args[1].As<String>()),
-      isString ? *String::Utf8Value(isolate, args[2].As<String>()) : Buffer::Data(args[2]),
-      isString ? args[2].As<String>()->Utf8Length(isolate) : Buffer::Length(args[2]),
-      Val<size_t>(args[3])
-    )
+  int res = fs->LSetXAttr(
+    *String::Utf8Value(isolate, args[0].As<String>()),
+    *String::Utf8Value(isolate, args[1].As<String>()),
+    isString ? *String::Utf8Value(isolate, args[2].As<String>()) : Buffer::Data(args[2]),
+    args.Length() == 5
+      ? Val<size_t>(args[3])
+      : isString
+        ? args[2].As<String>()->Utf8Length(isolate)
+        : Buffer::Length(args[2]),
+    args.Length() == 4 ? Val<size_t>(args[3]) : Val<size_t>(args[4])
   );
+  if (res < 0) {
+    if (res == -ENOMEM) {
+      isolate->LowMemoryNotification();
+      res = fs->LSetXAttr(
+        *String::Utf8Value(isolate, args[0].As<String>()),
+        *String::Utf8Value(isolate, args[1].As<String>()),
+        isString ? *String::Utf8Value(isolate, args[2].As<String>()) : Buffer::Data(args[2]),
+        args.Length() == 5
+          ? Val<size_t>(args[3])
+          : isString
+            ? args[2].As<String>()->Utf8Length(isolate)
+            : Buffer::Length(args[2]),
+        args.Length() == 4 ? Val<size_t>(args[3]) : Val<size_t>(args[4])
+      );
+      if (res < 0)
+        THROWERR(res);
+    } else THROWERR(res);
+  }
 }
 void FileSystemFSetXAttr(const FunctionCallbackInfo<Value>& args) {
   Isolate* isolate = args.GetIsolate();
   Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
-  THROWIFNOTFS(self, "setxattr");
+  THROWIFNOTFS(self, "fsetxattr");
   ASSERT(args.Length() == 4);
   ASSERT(IsNumeric(args[0]));
   ASSERT(args[1]->IsString());
   ASSERT(IsStrOrBuf(args[2]));
   ASSERT(IsNumeric(args[3]));
+  if (args.Length() == 5)
+    ASSERT(IsNumeric(args[4]));
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
   bool isString = args[2]->IsString();
-  THROWIFERR(
-    fs->FSetXAttr(
-      Val<int>(args[0]),
-      *String::Utf8Value(isolate, args[1].As<String>()),
-      isString ? *String::Utf8Value(isolate, args[2].As<String>()) : Buffer::Data(args[2]),
-      isString ? args[2].As<String>()->Utf8Length(isolate) : Buffer::Length(args[2]),
-      Val<size_t>(args[3])
-    )
+  int res = fs->FSetXAttr(
+    Val<int>(args[0]),
+    *String::Utf8Value(isolate, args[1].As<String>()),
+    isString ? *String::Utf8Value(isolate, args[2].As<String>()) : Buffer::Data(args[2]),
+    args.Length() == 5
+      ? Val<size_t>(args[3])
+      : isString
+        ? args[2].As<String>()->Utf8Length(isolate)
+        : Buffer::Length(args[2]),
+    args.Length() == 4 ? Val<size_t>(args[3]) : Val<size_t>(args[4])
   );
+  if (res < 0) {
+    if (res == -ENOMEM) {
+      isolate->LowMemoryNotification();
+      res = fs->FSetXAttr(
+        Val<int>(args[0]),
+        *String::Utf8Value(isolate, args[1].As<String>()),
+        isString ? *String::Utf8Value(isolate, args[2].As<String>()) : Buffer::Data(args[2]),
+        args.Length() == 5
+          ? Val<size_t>(args[3])
+          : isString
+            ? args[2].As<String>()->Utf8Length(isolate)
+            : Buffer::Length(args[2]),
+        args.Length() == 4 ? Val<size_t>(args[3]) : Val<size_t>(args[4])
+      );
+      if (res < 0)
+        THROWERR(res);
+    } else THROWERR(res);
+  }
 }
 void FileSystemRemoveXAttr(const FunctionCallbackInfo<Value>& args) {
   Isolate* isolate = args.GetIsolate();
@@ -1608,11 +1981,11 @@ void FileSystemFRemoveXAttr(const FunctionCallbackInfo<Value>& args) {
 }
 void FileSystemListXAttr(const FunctionCallbackInfo<Value>& args) {
   Isolate* isolate = args.GetIsolate();
-  Local<Context> context = isolate->GetCurrentContext();
   Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
   THROWIFNOTFS(self, "listxattr");
   ASSERT(args.Length() == 1);
   ASSERT(args[0]->IsString());
+  Local<Context> context = isolate->GetCurrentContext();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
@@ -1622,8 +1995,11 @@ void FileSystemListXAttr(const FunctionCallbackInfo<Value>& args) {
   if (res < 0)
     THROWERR(res);
   char* list;
-  if (!TryAlloc(&list, res))
-    THROWERR(-ENOMEM);
+  if (!TryAlloc(&list, res)) {
+    isolate->LowMemoryNotification();
+    if (!TryAlloc(&list, res))
+      THROWERR(-ENOMEM);
+  }
   res = fs->ListXAttr(
     val,
     list,
@@ -1653,11 +2029,11 @@ void FileSystemListXAttr(const FunctionCallbackInfo<Value>& args) {
 }
 void FileSystemLListXAttr(const FunctionCallbackInfo<Value>& args) {
   Isolate* isolate = args.GetIsolate();
-  Local<Context> context = isolate->GetCurrentContext();
   Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
   THROWIFNOTFS(self, "listxattr");
   ASSERT(args.Length() == 1);
   ASSERT(args[0]->IsString());
+  Local<Context> context = isolate->GetCurrentContext();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
@@ -1667,8 +2043,11 @@ void FileSystemLListXAttr(const FunctionCallbackInfo<Value>& args) {
   if (res < 0)
     THROWERR(res);
   char* list;
-  if (!TryAlloc(&list, res))
-    THROWERR(-ENOMEM);
+  if (!TryAlloc(&list, res)) {
+    isolate->LowMemoryNotification();
+    if (!TryAlloc(&list, res))
+      THROWERR(-ENOMEM);
+  }
   res = fs->LListXAttr(
     val,
     list,
@@ -1698,11 +2077,11 @@ void FileSystemLListXAttr(const FunctionCallbackInfo<Value>& args) {
 }
 void FileSystemFListXAttr(const FunctionCallbackInfo<Value>& args) {
   Isolate* isolate = args.GetIsolate();
-  Local<Context> context = isolate->GetCurrentContext();
   Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
   THROWIFNOTFS(self, "listxattr");
   ASSERT(args.Length() == 1);
   ASSERT(IsNumeric(args[0]));
+  Local<Context> context = isolate->GetCurrentContext();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
@@ -1711,8 +2090,11 @@ void FileSystemFListXAttr(const FunctionCallbackInfo<Value>& args) {
   if (res < 0)
     THROWERR(res);
   char* list;
-  if (!TryAlloc(&list, res))
-    THROWERR(-ENOMEM);
+  if (!TryAlloc(&list, res)) {
+    isolate->LowMemoryNotification();
+    if (!TryAlloc(&list, res))
+      THROWERR(-ENOMEM);
+  }
   res = fs->FListXAttr(
     val,
     list,
@@ -1751,30 +2133,34 @@ void FileSystemUTimeNsAt(const FunctionCallbackInfo<Value>& args) {
   if (args[2]->IsArray())
     ASSERT(args[2].As<Array>()->Length() == 2);
   ASSERT(IsNumeric(args[3]));
+  Local<Context> context = isolate->GetCurrentContext();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  Local<Context> context = isolate->GetCurrentContext();
   struct timespec times[2];
   if (!args[2]->IsNull()) {
-    double atime = args[2].As<Array>()->Get(
+    Local<Value> atime = args[2].As<Array>()->Get(
       context,
       0
-    ).ToLocalChecked().As<Number>()->Value();
-    double mtime = args[2].As<Array>()->Get(
+    ).ToLocalChecked();
+    Local<Value> mtime = args[2].As<Array>()->Get(
       context,
       1
-    ).ToLocalChecked().As<Number>()->Value();
-    if (atime != -1) {
-      times[0].tv_sec = atime / 1000.0;
-      times[0].tv_nsec = atime * 1000000.0;
+    ).ToLocalChecked();
+    ASSERT(IsNumeric(atime));
+    ASSERT(IsNumeric(mtime));
+    time_t atimeVal = Val<time_t>(atime);
+    time_t mtimeVal = Val<time_t>(atime);
+    if (atimeVal != -1) {
+      times[0].tv_sec = atimeVal / 1000.0;
+      times[0].tv_nsec = atimeVal * 1000000.0;
     } else {
       times[0].tv_sec = 0;
       times[0].tv_nsec = UTIME_OMIT;
     }
-    if (mtime != -1) {
-      times[1].tv_sec = mtime / 1000.0;
-      times[1].tv_nsec = mtime * 1000000.0;
+    if (mtimeVal != -1) {
+      times[1].tv_sec = mtimeVal / 1000.0;
+      times[1].tv_nsec = mtimeVal * 1000000.0;
     } else {
       times[1].tv_sec = 0;
       times[1].tv_nsec = UTIME_OMIT;
@@ -1799,10 +2185,10 @@ void FileSystemFUTimesAt(const FunctionCallbackInfo<Value>& args) {
   ASSERT(args[2]->IsNull() || args[2]->IsArray());
   if (args[2]->IsArray())
     ASSERT(args[2].As<Array>()->Length() == 2);
+  Local<Context> context = isolate->GetCurrentContext();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  Local<Context> context = isolate->GetCurrentContext();
   struct timeval times[2];
   if (!args[2]->IsNull()) {
     Local<Value> atime = args[2].As<Array>()->Get(
@@ -1813,10 +2199,10 @@ void FileSystemFUTimesAt(const FunctionCallbackInfo<Value>& args) {
       context,
       1
     ).ToLocalChecked();
-    ASSERT(atime->IsNumber());
-    ASSERT(mtime->IsNumber());
-    double atimeVal = atime.As<Number>()->Value();
-    double mtimeVal = mtime.As<Number>()->Value();
+    ASSERT(IsNumeric(atime));
+    ASSERT(IsNumeric(mtime));
+    double atimeVal = Val<time_t>(atime);
+    double mtimeVal = Val<time_t>(mtime);
     times[0].tv_sec = atimeVal / 1000.0;
     times[0].tv_usec = atimeVal * 1000.0;
     times[1].tv_sec = mtimeVal / 1000.0;
@@ -1839,10 +2225,10 @@ void FileSystemUTimes(const FunctionCallbackInfo<Value>& args) {
   ASSERT(args[1]->IsNull() || args[1]->IsArray());
   if (args[1]->IsArray())
     ASSERT(args[1].As<Array>()->Length() == 2);
+  Local<Context> context = isolate->GetCurrentContext();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  Local<Context> context = isolate->GetCurrentContext();
   struct timeval times[2];
   if (!args[1]->IsNull()) {
     Local<Value> atime = args[1].As<Array>()->Get(
@@ -1853,10 +2239,10 @@ void FileSystemUTimes(const FunctionCallbackInfo<Value>& args) {
       context,
       1
     ).ToLocalChecked();
-    ASSERT(atime->IsNumber());
-    ASSERT(mtime->IsNumber());
-    double atimeVal = atime.As<Number>()->Value();
-    double mtimeVal = mtime.As<Number>()->Value();
+    ASSERT(IsNumeric(atime));
+    ASSERT(IsNumeric(mtime));
+    double atimeVal = Val<time_t>(atime);
+    double mtimeVal = Val<time_t>(mtime);
     times[0].tv_sec = atimeVal / 1000.0;
     times[0].tv_usec = atimeVal * 1000.0;
     times[1].tv_sec = mtimeVal / 1000.0;
@@ -1878,10 +2264,10 @@ void FileSystemUTime(const FunctionCallbackInfo<Value>& args) {
   ASSERT(args[1]->IsNull() || args[1]->IsArray());
   if (args[1]->IsArray())
     ASSERT(args[1].As<Array>()->Length() == 2);
+  Local<Context> context = isolate->GetCurrentContext();
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  Local<Context> context = isolate->GetCurrentContext();
   struct utimbuf times;
   if (!args[1]->IsNull()) {
     Local<Value> atime = args[1].As<Array>()->Get(
@@ -1892,10 +2278,10 @@ void FileSystemUTime(const FunctionCallbackInfo<Value>& args) {
       context,
       1
     ).ToLocalChecked();
-    ASSERT(atime->IsNumber());
-    ASSERT(mtime->IsNumber());
-    times.actime = atime.As<Number>()->Value() / 1000.0;
-    times.modtime = mtime.As<Number>()->Value() / 1000.0;
+    ASSERT(IsNumeric(atime));
+    ASSERT(IsNumeric(mtime));
+    times.actime = Val<time_t>(atime) / 1000.0;
+    times.modtime = Val<time_t>(mtime) / 1000.0;
   }
   THROWIFERR(
     fs->UTime(
@@ -1916,9 +2302,7 @@ void FileSystemUMask(const FunctionCallbackInfo<Value>& args) {
   args.GetReturnValue().Set(
     Integer::New(
       isolate,
-      fs->UMask(
-        Val<int>(args[0])
-      )
+      fs->UMask(Val<int>(args[0]))
     )
   );
 }
@@ -1932,51 +2316,28 @@ void FileSystemDumpTo(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  if (!fs->DumpToFile(
-        *String::Utf8Value(isolate, args[0].As<String>())
-      )) {
-    isolate->ThrowException(
-      Exception::Error(
-        String::NewFromUtf8(isolate, strerror(errno), NewStringType::kInternalized).ToLocalChecked()
-      )
-    );
-    errno = 0;
-  }
+  if (!fs->DumpToFile(*String::Utf8Value(isolate, args[0].As<String>())))
+    THROWERR(-errno);
 }
 
 void FileSystemLoadFrom(const FunctionCallbackInfo<Value>& args) {
   Isolate* isolate = args.GetIsolate();
   ASSERT(args.Length() == 1);
   ASSERT(args[0]->IsString());
-  errno = 0;
+  Local<Context> context = isolate->GetCurrentContext();
   FileSystem* fs = fs->LoadFromFile(
     *String::Utf8Value(isolate, args[0].As<String>())
   );
   if (!fs) {
-    if (errno) {
-      isolate->ThrowException(
-        Exception::Error(
-          String::NewFromUtf8(
-            isolate,
-            strerror(errno),
-            NewStringType::kInternalized
-          ).ToLocalChecked()
-        )
-      );
-    } else {
-      isolate->ThrowException(
-        Exception::Error(
-          String::NewFromUtf8Literal(
-            isolate,
-            "FileSystem corrupt or invalid",
-            NewStringType::kInternalized
-          )
-        )
+    if (errno == ENOMEM) {
+      isolate->LowMemoryNotification();
+      fs = fs->LoadFromFile(
+        *String::Utf8Value(isolate, args[0].As<String>())
       );
     }
-    return;
+    if (!fs)
+      THROWERR(-errno);
   }
-  Local<Context> context = isolate->GetCurrentContext();
   Local<Object> fsObj = FSInstanceTmpl.Get(isolate)->NewInstance(context).ToLocalChecked();
   std::unique_ptr<BackingStore> ab = ArrayBuffer::NewBackingStore(
     fs,
@@ -1987,6 +2348,7 @@ void FileSystemLoadFrom(const FunctionCallbackInfo<Value>& args) {
   Local<ArrayBuffer> abuf = ArrayBuffer::New(isolate, std::move(ab));
   fsObj->SetInternalField(0, External::New(isolate, fs));
   fsObj->SetInternalField(1, abuf);
+  fsObj->SetIntegrityLevel(context, IntegrityLevel::kFrozen);
   args.GetReturnValue().Set(fsObj);
 }
 
@@ -2003,48 +2365,39 @@ void DefineConstants(Isolate* isolate, Local<FunctionTemplate> func) {
   DefineFlag(AT_REMOVEDIR);
   DefineFlag(AT_SYMLINK_FOLLOW);
   DefineFlag(AT_SYMLINK_NOFOLLOW);
-  DefineFlag(DT_REG);
   DefineFlag(DT_DIR);
   DefineFlag(DT_LNK);
+  DefineFlag(DT_REG);
+  DefineFlag(FALLOC_FL_COLLAPSE_RANGE);
+  DefineFlag(FALLOC_FL_INSERT_RANGE);
   DefineFlag(FALLOC_FL_KEEP_SIZE);
   DefineFlag(FALLOC_FL_PUNCH_HOLE);
-  DefineFlag(FALLOC_FL_COLLAPSE_RANGE);
   DefineFlag(FALLOC_FL_ZERO_RANGE);
-  DefineFlag(FALLOC_FL_INSERT_RANGE);
+  DefineFlag(O_ACCMODE);
   DefineFlag(O_APPEND);
   DefineFlag(O_CREAT);
   DefineFlag(O_DIRECTORY);
   DefineFlag(O_EXCL);
   DefineFlag(O_NOATIME);
   DefineFlag(O_NOFOLLOW);
-  DefineFlag(O_TRUNC);
-  DefineFlag(O_TMPFILE);
   DefineFlag(O_RDONLY);
-  DefineFlag(O_WRONLY);
   DefineFlag(O_RDWR);
+  DefineFlag(O_TMPFILE);
+  DefineFlag(O_TRUNC);
+  DefineFlag(O_WRONLY);
+  DefineFlag(F_OK);
+  DefineFlag(R_OK);
+  DefineFlag(W_OK);
+  DefineFlag(X_OK);
+  DefineFlag(NAME_MAX);
+  DefineFlag(PATH_MAX);
   DefineFlag(RENAME_EXCHANGE);
   DefineFlag(RENAME_NOREPLACE);
-  DefineFlag(S_IFMT);
-  DefineFlag(S_IFREG);
-  DefineFlag(S_IFDIR);
-  DefineFlag(S_IFLNK);
-  DefineFlag(S_IRWXU);
-  DefineFlag(S_IRUSR);
-  DefineFlag(S_IWUSR);
-  DefineFlag(S_IXUSR);
-  DefineFlag(S_IRWXG);
-  DefineFlag(S_IRGRP);
-  DefineFlag(S_IWGRP);
-  DefineFlag(S_IXGRP);
-  DefineFlag(S_IRWXO);
-  DefineFlag(S_IROTH);
-  DefineFlag(S_IWOTH);
-  DefineFlag(S_IXOTH);
-  DefineFlag(SEEK_SET);
   DefineFlag(SEEK_CUR);
-  DefineFlag(SEEK_END);
   DefineFlag(SEEK_DATA);
+  DefineFlag(SEEK_END);
   DefineFlag(SEEK_HOLE);
+  DefineFlag(SEEK_SET);
   DefineFlag(STATX_ALL);
   DefineFlag(STATX_ATIME);
   DefineFlag(STATX_BASIC_STATS);
@@ -2057,35 +2410,48 @@ void DefineConstants(Isolate* isolate, Local<FunctionTemplate> func) {
   DefineFlag(STATX_NLINK);
   DefineFlag(STATX_SIZE);
   DefineFlag(STATX_TYPE);
+  DefineFlag(S_IFDIR);
+  DefineFlag(S_IFLNK);
+  DefineFlag(S_IFMT);
+  DefineFlag(S_IFREG);
+  DefineFlag(S_IRGRP);
+  DefineFlag(S_IROTH);
+  DefineFlag(S_IRUSR);
+  DefineFlag(S_IRWXG);
+  DefineFlag(S_IRWXO);
+  DefineFlag(S_IRWXU);
+  DefineFlag(S_IWGRP);
+  DefineFlag(S_IWOTH);
+  DefineFlag(S_IWUSR);
+  DefineFlag(S_IXGRP);
+  DefineFlag(S_IXOTH);
+  DefineFlag(S_IXUSR);
   DefineFlag(UTIME_NOW);
   DefineFlag(UTIME_OMIT);
-  DefineFlag(R_OK);
-  DefineFlag(W_OK);
-  DefineFlag(X_OK);
-  DefineFlag(F_OK);
   DefineFlag(XATTR_CREATE);
+  DefineFlag(XATTR_NAME_MAX);
   DefineFlag(XATTR_REPLACE);
+  DefineFlag(XATTR_SIZE_MAX);
 
-  DefineFlag(EPERM);
-  DefineFlag(ENOENT);
-  DefineFlag(EIO);
-  DefineFlag(EBADF);
-  DefineFlag(ENOMEM);
   DefineFlag(EACCES);
+  DefineFlag(EBADF);
   DefineFlag(EBUSY);
   DefineFlag(EEXIST);
-  DefineFlag(ENODEV);
-  DefineFlag(ENOTDIR);
-  DefineFlag(EISDIR);
-  DefineFlag(EINVAL);
   DefineFlag(EFBIG);
-  DefineFlag(ERANGE);
-  DefineFlag(ENAMETOOLONG);
-  DefineFlag(ENOTEMPTY);
+  DefineFlag(EINVAL);
+  DefineFlag(EISDIR);
   DefineFlag(ELOOP);
+  DefineFlag(ENAMETOOLONG);
   DefineFlag(ENODATA);
-  DefineFlag(EOVERFLOW);
+  DefineFlag(ENODEV);
+  DefineFlag(ENOENT);
+  DefineFlag(ENOMEM);
+  DefineFlag(ENOTDIR);
+  DefineFlag(ENOTEMPTY);
   DefineFlag(EOPNOTSUPP);
+  DefineFlag(EOVERFLOW);
+  DefineFlag(EPERM);
+  DefineFlag(ERANGE);
 #undef DefineFlag
 }
 
@@ -2095,22 +2461,20 @@ void DefineFunction(
   Local<T> obj,
   const char (&prop)[N],
   FunctionCallback fn,
-  int argc = 0,
+  int argc,
   PropertyAttribute attr = PropertyAttribute::DontEnum
 ) {
-  Local<FunctionTemplate> funcTmpl = FunctionTemplate::New(
-    isolate,
-    fn,
-    Local<Value>(),
-    Local<Signature>(),
-    argc,
-    ConstructorBehavior::kThrow,
-    SideEffectType::kHasSideEffect
-  );
-  Local<String> name = String::NewFromUtf8Literal(isolate, prop, NewStringType::kInternalized);
   obj->Set(
-    name,
-    funcTmpl,
+    String::NewFromUtf8Literal(isolate, prop, NewStringType::kInternalized),
+    FunctionTemplate::New(
+      isolate,
+      fn,
+      Local<Value>(),
+      Local<Signature>(),
+      argc,
+      ConstructorBehavior::kThrow,
+      SideEffectType::kHasSideEffect
+    ),
     attr
   );
 }
@@ -2188,9 +2552,6 @@ NODE_MODULE_INIT() {
     isolate,
     FileSystemConstructor
   );
-  FSTmpl->SetClassName(
-    String::NewFromUtf8Literal(isolate, "FileSystem", NewStringType::kInternalized)
-  );
   DefineConstants(isolate, FSTmpl);
   DefineFunction(isolate, FSTmpl, "loadFrom", FileSystemLoadFrom, 1, PropertyAttribute::None);
   FSConstructorTmpl.Reset(isolate, FSTmpl);
@@ -2199,6 +2560,8 @@ NODE_MODULE_INIT() {
   FSInstanceTmpl.Reset(isolate, instTmpl);
   DefineTemplateFunctions(isolate, FSTmpl->PrototypeTemplate());
   Local<Function> FSFunc = FSTmpl->GetFunction(context).ToLocalChecked();
+  FSFunc->SetName(String::NewFromUtf8Literal(isolate, "FileSystem", NewStringType::kInternalized));
+  FSFunc->SetIntegrityLevel(context, IntegrityLevel::kFrozen);
   module.As<Object>()->Set(
     context,
     String::NewFromUtf8Literal(isolate, "exports", NewStringType::kInternalized),

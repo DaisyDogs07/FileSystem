@@ -1079,17 +1079,17 @@ int FileSystem::OpenAt(int dirFd, const char* path, int flags, mode_t mode) {
       struct RegularINode* x;
       if (!TryAlloc<true>(&x)) {
         delete name;
-        return -EIO;
+        return -ENOMEM;
       }
       if (!PushINode(fs, x)) {
         delete x;
         delete name;
-        return -EIO;
+        return -ENOMEM;
       }
       if (!parent->PushDent(name, x)) {
         RemoveINode(fs, x);
         delete name;
-        return -EIO;
+        return -ENOMEM;
       }
       x->mode = mode & ~fs->umask;
       x->nlink = 1;
@@ -1107,10 +1107,10 @@ int FileSystem::OpenAt(int dirFd, const char* path, int flags, mode_t mode) {
     if (flags & O_TMPFILE) {
       struct RegularINode* x;
       if (!TryAlloc<true>(&x))
-        return -EIO;
+        return -ENOMEM;
       if (!PushINode(fs, x)) {
         delete x;
-        return -EIO;
+        return -ENOMEM;
       }
       x->mode = (mode & ~fs->umask) | S_IFREG;
       res = PushFd(fs, x, flags);
@@ -1189,17 +1189,17 @@ int FileSystem::MkNodAt(int dirFd, const char* path, mode_t mode, dev_t dev) {
   struct RegularINode* x;
   if (!TryAlloc<true>(&x)) {
     delete name;
-    return -EIO;
+    return -ENOMEM;
   }
   if (!PushINode(fs, x)) {
     delete x;
     delete name;
-    return -EIO;
+    return -ENOMEM;
   }
   if (!parent->PushDent(name, x)) {
     RemoveINode(fs, x);
     delete name;
-    return -EIO;
+    return -ENOMEM;
   }
   x->mode = ((mode & 0777) & ~fs->umask) | S_IFREG;
   x->nlink = 1;
@@ -1234,23 +1234,23 @@ int FileSystem::MkDirAt(int dirFd, const char* path, mode_t mode) {
   struct DirectoryINode* x;
   if (!TryAlloc<true>(&x)) {
     delete name;
-    return -EIO;
+    return -ENOMEM;
   }
   if (!TryAlloc(&x->dents, 2)) {
     delete x;
     delete name;
-    return -EIO;
+    return -ENOMEM;
   }
   x->dentCount = 2;
   if (!PushINode(fs, x)) {
     delete x;
     delete name;
-    return -EIO;
+    return -ENOMEM;
   }
   if (!parent->PushDent(name, x)) {
     RemoveINode(fs, x);
     delete name;
-    return -EIO;
+    return -ENOMEM;
   }
   x->mode = ((mode & 0777) & ~fs->umask) | S_IFDIR;
   x->nlink = 2;
@@ -1293,19 +1293,19 @@ int FileSystem::SymLinkAt(const char* oldPath, int newDirFd, const char* newPath
   struct SymLinkINode* x;
   if (!TryAlloc<true>(&x)) {
     delete name;
-    return -EIO;
+    return -ENOMEM;
   }
   size_t oldPathLen = strlen(oldPath);
   if (!TryAlloc(&x->data, oldPathLen) || !PushINode(fs, x)) {
     delete x;
     delete name;
-    return -EIO;
+    return -ENOMEM;
   }
   memcpy(x->data, oldPath, oldPathLen);
   if (!(x->target = AbsolutePath(fs, oldPath)) || !newParent->PushDent(name, x)) {
     RemoveINode(fs, x);
     delete name;
-    return -EIO;
+    return -ENOMEM;
   }
   x->mode = 0777 | S_IFLNK;
   x->nlink = 1;
@@ -1436,7 +1436,7 @@ int FileSystem::LinkAt(
     return -ENOMEM;
   if (!newParent->PushDent(name, oldInode)) {
     delete name;
-    return -EIO;
+    return -ENOMEM;
   }
   ++oldInode->nlink;
   struct timespec ts;
@@ -1597,7 +1597,7 @@ int FileSystem::RenameAt2(
     if (!newParent->PushDent(newName, oldInode)) {
       delete oldName;
       delete newName;
-      return -EIO;
+      return -ENOMEM;
     }
     oldParent->RemoveDent(oldName);
     delete oldName;
@@ -1675,7 +1675,7 @@ int FileSystem::FAllocate(int fdNum, int mode, off_t offset, off_t len) {
           inode->size = end;
       }
       if (!inode->AllocData(offset, len))
-        return -EIO;
+        return -ENOMEM;
       break;
     }
     case FALLOC_FL_ZERO_RANGE: {
@@ -1691,7 +1691,7 @@ int FileSystem::FAllocate(int fdNum, int mode, off_t offset, off_t len) {
       }
       struct DataRange* range = inode->AllocData(offset, len);
       if (!range)
-        return -EIO;
+        return -ENOMEM;
       memset(range->data, '\0', len);
       break;
     }
@@ -2139,7 +2139,7 @@ ssize_t FileSystem::Write(unsigned int fdNum, const char* buf, size_t count) {
     return -EFBIG;
   struct DataRange* range = ((struct RegularINode*)inode)->AllocData(seekOff, count);
   if (!range)
-    return -EIO;
+    return -ENOMEM;
   memcpy(range->data + (seekOff - range->offset), buf, count);
   fd->seekOff = seekEnd;
   struct timespec ts;
@@ -2182,7 +2182,7 @@ ssize_t FileSystem::Writev(unsigned int fdNum, struct iovec* iov, int iovcnt) {
     return -EFBIG;
   struct DataRange* range = ((struct RegularINode*)inode)->AllocData(seekOff, totalLen);
   if (!range)
-    return -EIO;
+    return -ENOMEM;
   ssize_t count = 0;
   for (int i = 0; i != iovcnt; ++i) {
     ssize_t len = iov[i].iov_len;
@@ -2219,7 +2219,7 @@ ssize_t FileSystem::PWrite(unsigned int fdNum, const char* buf, size_t count, of
   }
   struct DataRange* range = ((struct RegularINode*)inode)->AllocData(offset, count);
   if (!range)
-    return -EIO;
+    return -ENOMEM;
   memcpy(range->data + (offset - range->offset), buf, count);
   struct timespec ts;
   clock_gettime(CLOCK_REALTIME, &ts);
@@ -2262,7 +2262,7 @@ ssize_t FileSystem::PWritev(unsigned int fdNum, struct iovec* iov, int iovcnt, o
   }
   struct DataRange* range = ((struct RegularINode*)inode)->AllocData(offset, totalLen);
   if (!range)
-    return -EIO;
+    return -ENOMEM;
   ssize_t count = 0;
   for (int i = 0; i != iovcnt; ++i) {
     ssize_t len = iov[i].iov_len;
@@ -2358,7 +2358,7 @@ ssize_t FileSystem::SendFile(unsigned int outFd, unsigned int inFd, off_t* offse
     amount = min<size_t>((rangeIn->offset + rangeIn->size) - currEndIn, amountToRead);
     struct DataRange* rangeOut = ((struct RegularINode*)inodeOut)->AllocData(currEndOut, amount);
     if (!rangeOut)
-      return -EIO;
+      return -ENOMEM;
     memcpy(
       rangeOut->data + (currEndOut - rangeOut->offset),
       rangeIn->data + (currEndIn - rangeIn->offset),

@@ -1,12 +1,12 @@
 {
   "name": "@daisydogs07/filesystem",
-  "version": "v3.3.2",
+  "version": "4.0.0",
   "main": "./build/Release/module.node",
   "types": "module.d.ts",
   "author": "DaisyDogs07",
   "repository": {
     "type": "git",
-    "url": "https://github.com/DaisyDogs07/FileSystem"
+    "url": "git+https://github.com/DaisyDogs07/FileSystem.git"
   },
   "license": "MIT"
 }

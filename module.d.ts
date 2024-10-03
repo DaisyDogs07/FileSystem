@@ -1,4 +1,8 @@
 declare module "@daisydogs07/filesystem" {
+  type NumberLike = number | BigInt;
+  type DataLike = string | Buffer;
+  type Zero = 0 | 0n;
+
   interface Dirent {
     d_ino: BigInt;
     d_off: BigInt;
@@ -35,48 +39,39 @@ declare module "@daisydogs07/filesystem" {
     static AT_REMOVEDIR: number;
     static AT_SYMLINK_FOLLOW: number;
     static AT_SYMLINK_NOFOLLOW: number;
-    static DT_REG: number;
     static DT_DIR: number;
     static DT_LNK: number;
+    static DT_REG: number;
+    static FALLOC_FL_COLLAPSE_RANGE: number;
+    static FALLOC_FL_INSERT_RANGE: number;
     static FALLOC_FL_KEEP_SIZE: number;
     static FALLOC_FL_PUNCH_HOLE: number;
-    static FALLOC_FL_COLLAPSE_RANGE: number;
     static FALLOC_FL_ZERO_RANGE: number;
-    static FALLOC_FL_INSERT_RANGE: number;
+    static O_ACCMODE: number;
     static O_APPEND: number;
     static O_CREAT: number;
     static O_DIRECTORY: number;
     static O_EXCL: number;
     static O_NOATIME: number;
     static O_NOFOLLOW: number;
-    static O_TRUNC: number;
-    static O_TMPFILE: number;
     static O_RDONLY: number;
-    static O_WRONLY: number;
     static O_RDWR: number;
+    static O_TMPFILE: number;
+    static O_TRUNC: number;
+    static O_WRONLY: number;
+    static F_OK: number;
+    static R_OK: number;
+    static W_OK: number;
+    static X_OK: number;
+    static NAME_MAX: number;
+    static PATH_MAX: number;
     static RENAME_EXCHANGE: number;
     static RENAME_NOREPLACE: number;
-    static S_IFMT: number;
-    static S_IFREG: number;
-    static S_IFDIR: number;
-    static S_IFLNK: number;
-    static S_IRWXU: number;
-    static S_IRUSR: number;
-    static S_IWUSR: number;
-    static S_IXUSR: number;
-    static S_IRWXG: number;
-    static S_IRGRP: number;
-    static S_IWGRP: number;
-    static S_IXGRP: number;
-    static S_IRWXO: number;
-    static S_IROTH: number;
-    static S_IWOTH: number;
-    static S_IXOTH: number;
-    static SEEK_SET: number;
     static SEEK_CUR: number;
-    static SEEK_END: number;
     static SEEK_DATA: number;
+    static SEEK_END: number;
     static SEEK_HOLE: number;
+    static SEEK_SET: number;
     static STATX_ALL: number;
     static STATX_ATIME: number;
     static STATX_BASIC_STATS: number;
@@ -89,151 +84,149 @@ declare module "@daisydogs07/filesystem" {
     static STATX_NLINK: number;
     static STATX_SIZE: number;
     static STATX_TYPE: number;
+    static S_IFDIR: number;
+    static S_IFLNK: number;
+    static S_IFMT: number;
+    static S_IFREG: number;
+    static S_IRGRP: number;
+    static S_IROTH: number;
+    static S_IRUSR: number;
+    static S_IRWXG: number;
+    static S_IRWXO: number;
+    static S_IRWXU: number;
+    static S_IWGRP: number;
+    static S_IWOTH: number;
+    static S_IWUSR: number;
+    static S_IXGRP: number;
+    static S_IXOTH: number;
+    static S_IXUSR: number;
     static UTIME_NOW: number;
     static UTIME_OMIT: number;
-    static R_OK: number;
-    static W_OK: number;
-    static X_OK: number;
-    static F_OK: number;
     static XATTR_CREATE: number;
+    static XATTR_NAME_MAX: number;
     static XATTR_REPLACE: number;
+    static XATTR_SIZE_MAX: number;
 
-    static EPERM: number;
-    static ENOENT: number;
-    static EIO: number;
-    static EBADF: number;
-    static ENOMEM: number;
     static EACCES: number;
+    static EBADF: number;
     static EBUSY: number;
     static EEXIST: number;
-    static ENODEV: number;
-    static ENOTDIR: number;
-    static EISDIR: number;
-    static EINVAL: number;
     static EFBIG: number;
-    static ERANGE: number;
-    static ENAMETOOLONG: number;
-    static ENOTEMPTY: number;
+    static EINVAL: number;
+    static EISDIR: number;
     static ELOOP: number;
+    static ENAMETOOLONG: number;
     static ENODATA: number;
-    static EOVERFLOW: number;
+    static ENODEV: number;
+    static ENOENT: number;
+    static ENOMEM: number;
+    static ENOTDIR: number;
+    static ENOTEMPTY: number;
     static EOPNOTSUPP: number;
+    static EOVERFLOW: number;
+    static EPERM: number;
+    static ERANGE: number;
 
     constructor();
-    faccessat2(
-      dirFd: number | BigInt,
-      path: string,
-      mode: number | BigInt,
-      flags: number | BigInt
-    ): void;
-    faccessat(dirFd: number | BigInt, path: string, mode: number | BigInt): void;
-    access(path: string, mode: number | BigInt): void;
-    openat(
-      dirFd: number | BigInt,
-      path: string,
-      flags: number | BigInt,
-      mode: number | BigInt
-    ): number;
-    open(path: string, flags: number | BigInt, mode: number | BigInt): number;
-    creat(path: string, mode: number | BigInt): number;
-    close(fd: number | BigInt): void;
-    close_range(fd: number | BigInt, maxFd: number | BigInt): void;
-    mknodat(dirFd: number | BigInt, path: string, mode: number | BigInt): void;
-    mknod(path: string, mode: number | BigInt): void;
-    mkdirat(dirFd: number | BigInt, path: string, mode: number | BigInt): void;
-    mkdir(path: string, mode: number | BigInt): void;
-    symlinkat(target: string, dirFd: number | BigInt, path: string): void;
+    faccessat2(dirFd: NumberLike, path: string, mode: NumberLike, flags: NumberLike): void;
+    faccessat(dirFd: NumberLike, path: string, mode: NumberLike): void;
+    access(path: string, mode: NumberLike): void;
+    openat(dirFd: NumberLike, path: string, flags: NumberLike, mode: NumberLike): number;
+    open(path: string, flags: NumberLike, mode: NumberLike): number;
+    creat(path: string, mode: NumberLike): number;
+    close(fd: NumberLike): void;
+    close_range(fd: NumberLike, maxFd: NumberLike): void;
+    mknodat(dirFd: NumberLike, path: string, mode: NumberLike): void;
+    mknod(path: string, mode: NumberLike): void;
+    mkdirat(dirFd: NumberLike, path: string, mode: NumberLike): void;
+    mkdir(path: string, mode: NumberLike): void;
+    symlinkat(target: string, dirFd: NumberLike, path: string): void;
     symlink(target: string, path: string): void;
-    readlinkat(dirFd: number | BigInt, path: string): string;
+    readlinkat(dirFd: NumberLike, path: string): string;
     readlink(path: string): string;
-    getdents(fd: number | BigInt, count?: number | BigInt): Dirent[];
+    getdents(fd: NumberLike, count?: NumberLike): Dirent[];
     linkat(
-      oldDirFd: number | BigInt,
+      oldDirFd: NumberLike,
       oldPath: string,
-      newDirFd: number | BigInt,
+      newDirFd: NumberLike,
       newPath: string,
-      flags: number | BigInt
+      flags: NumberLike
     ): void;
     link(oldPath: string, newPath: string): void;
-    unlinkat(dirFd: number | BigInt, path: string, flags: number | BigInt): void;
+    unlinkat(dirFd: NumberLike, path: string, flags: NumberLike): void;
     unlink(path: string): void;
     rmdir(path: string): void;
     renameat2(
-      oldDirFd: number | BigInt,
+      oldDirFd: NumberLike,
       oldPath: string,
-      newDirFd: number | BigInt,
+      newDirFd: NumberLike,
       newPath: string,
-      flags: number | BigInt
+      flags: NumberLike
     ): void;
-    renameat(
-      oldDirFd: number | BigInt,
-      oldPath: string,
-      newDirFd: number | BigInt,
-      newPath: string
-    ): void;
+    renameat(oldDirFd: NumberLike, oldPath: string, newDirFd: NumberLike, newPath: string): void;
     rename(oldPath: string, newPath: string): void;
-    fallocate(
-      fd: number | BigInt,
-      mode: number | BigInt,
-      offset: number | BigInt,
-      len: number | BigInt
-    ): void;
-    lseek(fd: number | BigInt, offset: number | BigInt, whence: number | BigInt): BigInt;
-    read(fd: number | BigInt, count: number | BigInt): Buffer;
-    readv(fd: number | BigInt, iov: Buffer[]): BigInt;
-    pread(fd: number | BigInt, count: number | BigInt, offset: number | BigInt): Buffer;
-    preadv(fd: number | BigInt, iov: Buffer[], offset: number | BigInt): BigInt;
-    write(fd: number | BigInt, buffer: string | Buffer, count?: number | BigInt): BigInt;
-    writev(fd: number | BigInt, iov: Buffer[]): BigInt;
-    pwrite(
-      fd: number | BigInt,
-      buffer: string | Buffer,
-      offset: number | BigInt,
-      count?: number | BigInt
-    ): BigInt;
-    pwritev(fd: number | BigInt, iov: Buffer[], offset: number | BigInt): BigInt;
+    fallocate(fd: NumberLike, mode: NumberLike, offset: NumberLike, len: NumberLike): void;
+    lseek(fd: NumberLike, offset: NumberLike, whence: NumberLike): BigInt;
+    read(fd: NumberLike, count: NumberLike): Buffer;
+    readv(fd: NumberLike, iov: Buffer[]): BigInt;
+    pread(fd: NumberLike, count: NumberLike, offset: NumberLike): Buffer;
+    preadv(fd: NumberLike, iov: Buffer[], offset: NumberLike): BigInt;
+    write(fd: NumberLike, buffer: DataLike, count?: NumberLike): BigInt;
+    writev(fd: NumberLike, iov: Buffer[]): BigInt;
+    pwrite(fd: NumberLike, buffer: DataLike, offset: NumberLike, count?: NumberLike): BigInt;
+    pwritev(fd: NumberLike, iov: Buffer[], offset: NumberLike): BigInt;
     sendfile(
-      outFd: number | BigInt,
-      inFd: number | BigInt,
-      offset: null | number | BigInt,
-      count: number | BigInt
+      outFd: NumberLike,
+      inFd: NumberLike,
+      offset: NumberLike | null,
+      count: NumberLike
     ): BigInt;
-    ftruncate(fd: number | BigInt, length: number | BigInt): void;
-    truncate(path: string, length: number | BigInt): void;
-    fchmodat(dirFd: number | BigInt, path: string, mode: number | BigInt): void;
-    fchmod(fd: number | BigInt, mode: number | BigInt): void;
-    chmod(path: string, mode: number | BigInt): void;
+    ftruncate(fd: NumberLike, length: NumberLike): void;
+    truncate(path: string, length: NumberLike): void;
+    fchmodat(dirFd: NumberLike, path: string, mode: NumberLike): void;
+    fchmod(fd: NumberLike, mode: NumberLike): void;
+    chmod(path: string, mode: NumberLike): void;
     chdir(path: string): void;
     getcwd(): string;
-    fstat(fd: number | BigInt): Stats;
+    fstat(fd: NumberLike): Stats;
     stat(path: string): Stats;
     lstat(path: string): Stats;
-    statx(dirFd: number | BigInt, path: string, flags: number | BigInt): Statx;
-    getxattr(path: string, name: string, size: number | BigInt): Buffer;
-    getxattr(path: string, name: string, size: 0 | 0n): boolean;
-    lgetxattr(path: string, name: string, size: number | BigInt): Buffer;
-    lgetxattr(path: string, name: string, size: 0 | 0n): boolean;
-    fgetxattr(fd: number | BigInt, name: string, size: number | BigInt): Buffer;
-    fgetxattr(fd: number | BigInt, name: string, size: 0 | 0n): boolean;
-    setxattr(path: string, name: string, data: string | Buffer, flags: number | BigInt): void;
-    lsetxattr(path: string, name: string, data: string | Buffer, flags: number | BigInt): void;
-    fsetxattr(
-      fd: number | BigInt,
+    statx(dirFd: NumberLike, path: string, flags: NumberLike): Statx;
+    getxattr(path: string, name: string, size: NumberLike): Buffer;
+    getxattr(path: string, name: string, size: Zero): boolean;
+    lgetxattr(path: string, name: string, size: NumberLike): Buffer;
+    lgetxattr(path: string, name: string, size: Zero): boolean;
+    fgetxattr(fd: NumberLike, name: string, size: NumberLike): Buffer;
+    fgetxattr(fd: NumberLike, name: string, size: Zero): boolean;
+    setxattr(path: string, name: string, data: DataLike, flags: NumberLike): void;
+    setxattr(path: string, name: string, data: DataLike, size: NumberLike, flags: NumberLike): void;
+    lsetxattr(path: string, name: string, data: DataLike, flags: NumberLike): void;
+    lsetxattr(
+      path: string,
       name: string,
-      data: string | Buffer,
-      flags: number | BigInt
+      data: DataLike,
+      size: NumberLike,
+      flags: NumberLike
+    ): void;
+    fsetxattr(fd: NumberLike, name: string, data: DataLike, flags: NumberLike): void;
+    fsetxattr(
+      fd: NumberLike,
+      name: string,
+      data: DataLike,
+      size: NumberLike,
+      flags: NumberLike
     ): void;
     removexattr(path: string, name: string): void;
     lremovexattr(path: string, name: string): void;
-    fremovexattr(fd: number | BigInt, name: string): void;
+    fremovexattr(fd: NumberLike, name: string): void;
     listxattr(path: string): string[];
     llistxattr(path: string): string[];
-    flistxattr(fd: number | BigInt): string[];
-    utimensat(dirFd: number | BigInt, path: string, times: number[], flags: number | BigInt): void;
-    futimesat(dirFd: number | BigInt, path: string, times: number[]): void;
-    utimes(path: string, times: number[]): void;
-    utime(path: string, times: number[]): void;
-    umask(mask: number | BigInt): number;
+    flistxattr(fd: NumberLike): string[];
+    utimensat(dirFd: NumberLike, path: string, times: NumberLike[], flags: NumberLike): void;
+    futimesat(dirFd: NumberLike, path: string, times: NumberLike[]): void;
+    utimes(path: string, times: NumberLike[]): void;
+    utime(path: string, times: NumberLike[]): void;
+    umask(mask: NumberLike): number;
     dumpTo(path: string): void;
     static loadFrom(path: string): FileSystem;
   }
