@@ -2404,16 +2404,15 @@ void FileSystemLoadFrom(const FunctionCallbackInfo<Value>& args) {
     *String::Utf8Value(isolate, args[0].As<String>())
   );
   if (!fs) {
-    if (errno == FS_ENOMEM) {
-      isolate->LowMemoryNotification();
-      fs = fs->LoadFromFile(
-        *String::Utf8Value(isolate, args[0].As<String>())
-      );
-    }
-    if (!fs) {
-      ThrowError(isolate);
-      return;
-    }
+    isolate->ThrowException(
+      Exception::Error(
+        String::NewFromUtf8Literal(
+          isolate,
+          "Dump file invalid or corrupt"
+        )
+      )
+    );
+    return;
   }
   Local<Object> fsObj = FSInstanceTmpl.Get(isolate)->NewInstance(context).ToLocalChecked();
   std::unique_ptr<BackingStore> ab = ArrayBuffer::NewBackingStore(

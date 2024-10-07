@@ -3220,6 +3220,7 @@ int FileSystem::UMask(int mask) {
 /**
  * format:
  *   magic number ("\x7FVFS")
+ *   is64Bit
  *   inodeCount
  *   inodes:
  *     id
@@ -3251,6 +3252,7 @@ int FileSystem::UMask(int mask) {
 bool FileSystem::DumpToFile(const char* filename) {
   struct FSInternal* fs = (struct FSInternal*)data;
   ScopedLock lock(fs->mtx);
+  char is64Bit = (sizeof(fs_size_t) / 4) - 1;
   fd_t fd;
 #ifdef __linux__
   fd = creat(filename, 0644);
@@ -3273,6 +3275,7 @@ bool FileSystem::DumpToFile(const char* filename) {
     goto err2;
 #endif
   if (write(fd, "\x7FVFS", 4) != 4 ||
+      write(fd, &is64Bit, 1) != 1 ||
       write(fd, &fs->inodeCount, sizeof(fs_ino_t)) != sizeof(fs_ino_t))
     goto err2;
   for (fs_ino_t i = 0; i != fs->inodeCount; ++i) {
@@ -3386,10 +3389,12 @@ FileSystem* FileSystem::LoadFromFile(const char* filename) {
   if (fd == INVALID_FD)
     goto err_at_open;
   char magic[4];
+  char is64Bit;
   fs_ino_t inodeCount;
   struct BaseINode** inodes;
   if (read(fd, magic, 4) != 4 ||
       memcmp(magic, "\x7FVFS", 4) != 0 ||
+      read(fd, &is64Bit, 1) != 1 || (is64Bit + 1) * 4 != sizeof(fs_size_t) ||
       read(fd, &inodeCount, sizeof(fs_ino_t)) != sizeof(fs_ino_t))
     goto err_after_open;
   if (!TryAlloc(&inodes, inodeCount))
