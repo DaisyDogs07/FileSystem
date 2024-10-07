@@ -451,7 +451,7 @@ namespace {
     fs_off_t endIdx = index + count;
     for (fs_off_t i = index; i != endIdx; ++i)
       delete dataRanges[i];
-    if (endIdx != dataRangeCount - 1)
+    if (endIdx != dataRangeCount)
       memmove(
         &dataRanges[index],
         &dataRanges[endIdx],
@@ -2453,7 +2453,7 @@ fs_ssize_t FileSystem::SendFile(
     fs_size_t amount;
     fs_size_t amountToRead = count - amountRead;
     fs_size_t currEndIn = off + amountRead;
-    fs_size_t currEndOut = currEndOut;
+    fs_size_t currEndOut = fdOut->seekOff + amountRead;
     if (!itIn.IsInData()) {
       struct HoleRange holeIn = itIn.GetHole();
       fs_off_t holeInEnd = holeIn.offset + holeIn.size;
@@ -2485,7 +2485,6 @@ fs_ssize_t FileSystem::SendFile(
         continue;
       if (amount > amountToRead)
         amount = amountToRead;
-      memset(rangeOut->data + (currEndOut - rangeOut->offset), '\0', amount);
       amountRead += amount;
       continue;
     }
