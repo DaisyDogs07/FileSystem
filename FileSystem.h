@@ -21,7 +21,13 @@
 
 #include "fsdef.h"
 
-class FileSystem {
+#ifdef __linux__
+#define FS_EXPORT __attribute__((__visibility__("default")))
+#else
+#define FS_EXPORT __declspec(dllexport)
+#endif
+
+class FS_EXPORT FileSystem {
  public:
   static FileSystem* New();
   FileSystem() = delete;
