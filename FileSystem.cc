@@ -3215,6 +3215,7 @@ int FileSystem::UMask(int mask) {
 #define write WriteToFile
 #define read ReadFromFile
 #define close CloseHandle
+#define unlink DeleteFileA
 #endif
 
 /**
@@ -3368,6 +3369,7 @@ bool FileSystem::DumpToFile(const char* filename) {
   return true;
  err2:
   close(fd);
+  unlink(filename);
  err1:
   return false;
 }
