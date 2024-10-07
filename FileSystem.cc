@@ -3267,6 +3267,11 @@ bool FileSystem::DumpToFile(const char* filename) {
 #endif
   if (fd == INVALID_FD)
     goto err1;
+#ifdef _WIN32
+  if (SetFilePointer(fd, 0, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER ||
+      !SetEndOfFile(fd))
+    goto err2;
+#endif
   if (write(fd, "\x7FVFS", 4) != 4 ||
       write(fd, &fs->inodeCount, sizeof(fs_ino_t)) != sizeof(fs_ino_t))
     goto err2;
