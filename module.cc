@@ -73,7 +73,7 @@ using namespace v8;
 
 template<typename T>
 bool TryAlloc(T** ptr, fs_size_t length = 1) {
-  T* newPtr = reinterpret_cast<T*>(malloc(sizeof(T) * length));
+  T* newPtr = (T*)malloc(sizeof(T) * length);
   if (!newPtr)
     return false;
   *ptr = newPtr;
@@ -147,20 +147,24 @@ void ThrowError(Isolate* isolate) {
     FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
     NULL,
     errnum,
-    MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), // Default language
+    MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
     (LPSTR)&lpMsgBuf,
     0,
     NULL
   );
-  isolate->ThrowException(
-    Exception::Error(
-      String::NewFromUtf8(
-        isolate,
-        (char*)lpMsgBuf,
-        NewStringType::kInternalized
-      ).ToLocalChecked()
-    )
+  Local<Value> err = Exception::Error(
+    String::NewFromUtf8(
+      isolate,
+      (char*)lpMsgBuf,
+      NewStringType::kInternalized
+    ).ToLocalChecked()
   );
+  err.As<Object>()->Set(
+    isolate->GetCurrentContext(),
+    String::NewFromUtf8Literal(isolate, "errno", NewStringType::kInternalized),
+    Integer::New(isolate, errnum)
+  ).ToChecked();
+  isolate->ThrowException(err);
 #endif
 }
 
