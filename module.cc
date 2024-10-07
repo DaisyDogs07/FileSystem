@@ -72,7 +72,7 @@ using namespace v8;
 }
 
 template<typename T>
-bool TryAlloc(T** ptr, size_t length = 1) {
+bool TryAlloc(T** ptr, fs_size_t length = 1) {
   T* newPtr = reinterpret_cast<T*>(malloc(sizeof(T) * length));
   if (!newPtr)
     return false;
@@ -190,7 +190,7 @@ void FileSystemConstructor(const FunctionCallbackInfo<Value>& args) {
     isolate->LowMemoryNotification();
     fs = FileSystem::New();
     if (!fs)
-      THROWERR(-ENOMEM);
+      THROWERR(-FS_ENOMEM);
   }
   std::unique_ptr<BackingStore> ab = ArrayBuffer::NewBackingStore(
     fs,
@@ -280,7 +280,7 @@ void FileSystemOpenAt(const FunctionCallbackInfo<Value>& args) {
     Val<fs_mode_t>(args[3])
   );
   if (res < 0) {
-    if (res == -ENOMEM) {
+    if (res == -FS_ENOMEM) {
       isolate->LowMemoryNotification();
       res = fs->OpenAt(
         Val<int>(args[0]),
@@ -316,7 +316,7 @@ void FileSystemOpen(const FunctionCallbackInfo<Value>& args) {
     Val<fs_mode_t>(args[2])
   );
   if (res < 0) {
-    if (res == -ENOMEM) {
+    if (res == -FS_ENOMEM) {
       isolate->LowMemoryNotification();
       res = fs->Open(
         *String::Utf8Value(isolate, args[0].As<String>()),
@@ -349,7 +349,7 @@ void FileSystemCreat(const FunctionCallbackInfo<Value>& args) {
     Val<fs_mode_t>(args[1])
   );
   if (res < 0) {
-    if (res == -ENOMEM) {
+    if (res == -FS_ENOMEM) {
       isolate->LowMemoryNotification();
       res = fs->Creat(
         *String::Utf8Value(isolate, args[0].As<String>()),
@@ -415,7 +415,7 @@ void FileSystemMkNodAt(const FunctionCallbackInfo<Value>& args) {
     0
   );
   if (res < 0) {
-    if (res == -ENOMEM) {
+    if (res == -FS_ENOMEM) {
       isolate->LowMemoryNotification();
       res = fs->MkNodAt(
         Val<int>(args[0]),
@@ -444,7 +444,7 @@ void FileSystemMkNod(const FunctionCallbackInfo<Value>& args) {
     0
   );
   if (res < 0) {
-    if (res == -ENOMEM) {
+    if (res == -FS_ENOMEM) {
       isolate->LowMemoryNotification();
       res = fs->MkNod(
         *String::Utf8Value(isolate, args[0].As<String>()),
@@ -473,7 +473,7 @@ void FileSystemMkDirAt(const FunctionCallbackInfo<Value>& args) {
     Val<fs_mode_t>(args[2])
   );
   if (res < 0) {
-    if (res == -ENOMEM) {
+    if (res == -FS_ENOMEM) {
       isolate->LowMemoryNotification();
       res = fs->MkDirAt(
         Val<int>(args[0]),
@@ -500,7 +500,7 @@ void FileSystemMkDir(const FunctionCallbackInfo<Value>& args) {
     Val<fs_mode_t>(args[1])
   );
   if (res < 0) {
-    if (res == -ENOMEM) {
+    if (res == -FS_ENOMEM) {
       isolate->LowMemoryNotification();
       res = fs->MkDir(
         *String::Utf8Value(isolate, args[0].As<String>()),
@@ -528,7 +528,7 @@ void FileSystemSymLinkAt(const FunctionCallbackInfo<Value>& args) {
     *String::Utf8Value(isolate, args[2].As<String>())
   );
   if (res < 0) {
-    if (res == -ENOMEM) {
+    if (res == -FS_ENOMEM) {
       isolate->LowMemoryNotification();
       res = fs->SymLinkAt(
         *String::Utf8Value(isolate, args[0].As<String>()),
@@ -555,7 +555,7 @@ void FileSystemSymLink(const FunctionCallbackInfo<Value>& args) {
     *String::Utf8Value(isolate, args[1].As<String>())
   );
   if (res < 0) {
-    if (res == -ENOMEM) {
+    if (res == -FS_ENOMEM) {
       isolate->LowMemoryNotification();
       if (res < 0)
         THROWERR(res);
@@ -576,7 +576,7 @@ void FileSystemReadLinkAt(const FunctionCallbackInfo<Value>& args) {
   if (!TryAlloc(&buf, FS_PATH_MAX)) {
     isolate->LowMemoryNotification();
     if (!TryAlloc(&buf, FS_PATH_MAX))
-      THROWERR(-ENOMEM);
+      THROWERR(-FS_ENOMEM);
   }
   int res;
   THROWIFERR(
@@ -608,7 +608,7 @@ void FileSystemReadLink(const FunctionCallbackInfo<Value>& args) {
   if (!TryAlloc(&buf, FS_PATH_MAX)) {
     isolate->LowMemoryNotification();
     if (!TryAlloc(&buf, FS_PATH_MAX))
-      THROWERR(-ENOMEM);
+      THROWERR(-FS_ENOMEM);
   }
   int res;
   THROWIFERR(
@@ -646,7 +646,7 @@ void FileSystemGetDents(const FunctionCallbackInfo<Value>& args) {
   if (!TryAlloc(&buf, 1024)) {
     isolate->LowMemoryNotification();
     if (!TryAlloc(&buf, 1024))
-      THROWERR(-ENOMEM);
+      THROWERR(-FS_ENOMEM);
   }
   unsigned int fdNum = Val<unsigned int>(args[0]);
   fs_off_t off = fs->LSeek(fdNum, 0, SEEK_CUR);
@@ -720,7 +720,7 @@ void FileSystemLinkAt(const FunctionCallbackInfo<Value>& args) {
     Val<int>(args[4])
   );
   if (res < 0) {
-    if (res == -ENOMEM) {
+    if (res == -FS_ENOMEM) {
       isolate->LowMemoryNotification();
       res = fs->LinkAt(
         Val<int>(args[0]),
@@ -749,7 +749,7 @@ void FileSystemLink(const FunctionCallbackInfo<Value>& args) {
     *String::Utf8Value(isolate, args[1].As<String>())
   );
   if (res < 0) {
-    if (res == -ENOMEM) {
+    if (res == -FS_ENOMEM) {
       isolate->LowMemoryNotification();
       res = fs->Link(
         *String::Utf8Value(isolate, args[0].As<String>()),
@@ -777,7 +777,7 @@ void FileSystemUnlinkAt(const FunctionCallbackInfo<Value>& args) {
     Val<int>(args[2])
   );
   if (res < 0) {
-    if (res == -ENOMEM) {
+    if (res == -FS_ENOMEM) {
       isolate->LowMemoryNotification();
       res = fs->UnlinkAt(
         Val<int>(args[0]),
@@ -802,7 +802,7 @@ void FileSystemUnlink(const FunctionCallbackInfo<Value>& args) {
     *String::Utf8Value(isolate, args[0].As<String>())
   );
   if (res < 0) {
-    if (res == -ENOMEM) {
+    if (res == -FS_ENOMEM) {
       isolate->LowMemoryNotification();
       res = fs->Unlink(
         *String::Utf8Value(isolate, args[0].As<String>())
@@ -825,7 +825,7 @@ void FileSystemRmDir(const FunctionCallbackInfo<Value>& args) {
     *String::Utf8Value(isolate, args[0].As<String>())
   );
   if (res < 0) {
-    if (res == -ENOMEM) {
+    if (res == -FS_ENOMEM) {
       isolate->LowMemoryNotification();
       res = fs->RmDir(
         *String::Utf8Value(isolate, args[0].As<String>())
@@ -856,7 +856,7 @@ void FileSystemRenameAt2(const FunctionCallbackInfo<Value>& args) {
     Val<unsigned int>(args[4])
   );
   if (res < 0) {
-    if (res == -ENOMEM) {
+    if (res == -FS_ENOMEM) {
       isolate->LowMemoryNotification();
       res = fs->RenameAt2(
         Val<int>(args[0]),
@@ -889,7 +889,7 @@ void FileSystemRenameAt(const FunctionCallbackInfo<Value>& args) {
     *String::Utf8Value(isolate, args[3].As<String>())
   );
   if (res < 0) {
-    if (res == -ENOMEM) {
+    if (res == -FS_ENOMEM) {
       isolate->LowMemoryNotification();
       res = fs->RenameAt(
         Val<int>(args[0]),
@@ -917,7 +917,7 @@ void FileSystemRename(const FunctionCallbackInfo<Value>& args) {
     *String::Utf8Value(isolate, args[1].As<String>())
   );
   if (res < 0) {
-    if (res == -ENOMEM) {
+    if (res == -FS_ENOMEM) {
       isolate->LowMemoryNotification();
       res = fs->Rename(
         *String::Utf8Value(isolate, args[0].As<String>()),
@@ -947,7 +947,7 @@ void FileSystemFAllocate(const FunctionCallbackInfo<Value>& args) {
     Val<fs_off_t>(args[3])
   );
   if (res < 0) {
-    if (res == -ENOMEM) {
+    if (res == -FS_ENOMEM) {
       isolate->LowMemoryNotification();
       res = fs->FAllocate(
         Val<int>(args[0]),
@@ -1007,7 +1007,7 @@ void FileSystemRead(const FunctionCallbackInfo<Value>& args) {
   if (!TryAlloc(&buf, bufLen + 1)) {
     isolate->LowMemoryNotification();
     if (!TryAlloc(&buf, bufLen + 1))
-      THROWERR(-ENOMEM);
+      THROWERR(-FS_ENOMEM);
   }
   fs_ssize_t res = fs->Read(
     fdNum,
@@ -1053,7 +1053,7 @@ void FileSystemReadv(const FunctionCallbackInfo<Value>& args) {
   if (!TryAlloc(&iov, length)) {
     isolate->LowMemoryNotification();
     if (!TryAlloc(&iov, length))
-      THROWERR(-ENOMEM);
+      THROWERR(-FS_ENOMEM);
   }
   for (uint32_t i = 0; i != length; ++i) {
     Local<Value> buf = buffers->Get(
@@ -1100,7 +1100,7 @@ void FileSystemPRead(const FunctionCallbackInfo<Value>& args) {
   if (!TryAlloc(&buf, bufLen + 1)) {
     isolate->LowMemoryNotification();
     if (!TryAlloc(&buf, bufLen + 1))
-      THROWERR(-ENOMEM);
+      THROWERR(-FS_ENOMEM);
   }
   fs_ssize_t res = fs->PRead(
     fdNum,
@@ -1148,7 +1148,7 @@ void FileSystemPReadv(const FunctionCallbackInfo<Value>& args) {
   if (!TryAlloc(&iov, length)) {
     isolate->LowMemoryNotification();
     if (!TryAlloc(&iov, length))
-      THROWERR(-ENOMEM);
+      THROWERR(-FS_ENOMEM);
   }
   for (uint32_t i = 0; i != length; ++i) {
     Local<Value> buf = buffers->Get(
@@ -1196,7 +1196,7 @@ void FileSystemWrite(const FunctionCallbackInfo<Value>& args) {
     if (!TryAlloc(&buf, count)) {
       isolate->LowMemoryNotification();
       if (!TryAlloc(&buf, count))
-        THROWERR(-ENOMEM);
+        THROWERR(-FS_ENOMEM);
     }
     Local<String> str = args[1].As<String>();
     str->WriteUtf8(isolate, buf, count);
@@ -1207,7 +1207,7 @@ void FileSystemWrite(const FunctionCallbackInfo<Value>& args) {
     count
   );
   if (res < 0) {
-    if (res == -ENOMEM) {
+    if (res == -FS_ENOMEM) {
       isolate->LowMemoryNotification();
       res = fs->Write(
         Val<unsigned int>(args[0]),
@@ -1253,7 +1253,7 @@ void FileSystemWritev(const FunctionCallbackInfo<Value>& args) {
   if (!TryAlloc(&iov, length)) {
     isolate->LowMemoryNotification();
     if (!TryAlloc(&iov, length))
-      THROWERR(-ENOMEM);
+      THROWERR(-FS_ENOMEM);
   }
   for (uint32_t i = 0; i != length; ++i) {
     Local<Value> buf = buffers->Get(
@@ -1269,7 +1269,7 @@ void FileSystemWritev(const FunctionCallbackInfo<Value>& args) {
     length
   );
   if (res < 0) {
-    if (res == -ENOMEM) {
+    if (res == -FS_ENOMEM) {
       isolate->LowMemoryNotification();
       res = fs->Writev(
         Val<unsigned int>(args[0]),
@@ -1316,7 +1316,7 @@ void FileSystemPWrite(const FunctionCallbackInfo<Value>& args) {
     if (!TryAlloc(&buf, count)) {
       isolate->LowMemoryNotification();
       if (!TryAlloc(&buf, count))
-        THROWERR(-ENOMEM);
+        THROWERR(-FS_ENOMEM);
     }
     Local<String> str = args[1].As<String>();
     str->WriteUtf8(isolate, buf, count);
@@ -1328,7 +1328,7 @@ void FileSystemPWrite(const FunctionCallbackInfo<Value>& args) {
     Val<fs_off_t>(args[2])
   );
   if (res < 0) {
-    if (res == -ENOMEM) {
+    if (res == -FS_ENOMEM) {
       isolate->LowMemoryNotification();
       res = fs->PWrite(
         Val<unsigned int>(args[0]),
@@ -1376,7 +1376,7 @@ void FileSystemPWritev(const FunctionCallbackInfo<Value>& args) {
   if (!TryAlloc(&iov, length)) {
     isolate->LowMemoryNotification();
     if (!TryAlloc(&iov, length))
-      THROWERR(-ENOMEM);
+      THROWERR(-FS_ENOMEM);
   }
   for (uint32_t i = 0; i != length; ++i) {
     Local<Value> buf = buffers->Get(
@@ -1393,7 +1393,7 @@ void FileSystemPWritev(const FunctionCallbackInfo<Value>& args) {
     Val<fs_off_t>(args[2])
   );
   if (res < 0) {
-    if (res == -ENOMEM) {
+    if (res == -FS_ENOMEM) {
       isolate->LowMemoryNotification();
       res = fs->PWritev(
         Val<unsigned int>(args[0]),
@@ -1431,16 +1431,16 @@ void FileSystemSendFile(const FunctionCallbackInfo<Value>& args) {
   fs_ssize_t res = fs->SendFile(
     Val<unsigned int>(args[0]),
     Val<unsigned int>(args[1]),
-    args[2]->IsNull() ? FS_NULL : &off,
+    args[2]->IsNull() ? NULL : &off,
     Val<fs_size_t>(args[3])
   );
   if (res < 0) {
-    if (res == -ENOMEM) {
+    if (res == -FS_ENOMEM) {
       isolate->LowMemoryNotification();
       res = fs->SendFile(
         Val<unsigned int>(args[0]),
         Val<unsigned int>(args[1]),
-        args[2]->IsNull() ? FS_NULL : &off,
+        args[2]->IsNull() ? NULL : &off,
         Val<fs_size_t>(args[3])
       );
       if (res < 0)
@@ -1549,7 +1549,7 @@ void FileSystemChDir(const FunctionCallbackInfo<Value>& args) {
     *String::Utf8Value(isolate, args[0].As<String>())
   );
   if (res < 0) {
-    if (res == -ENOMEM) {
+    if (res == -FS_ENOMEM) {
       isolate->LowMemoryNotification();
       res = fs->ChDir(
         *String::Utf8Value(isolate, args[0].As<String>())
@@ -1754,13 +1754,13 @@ void FileSystemGetXAttr(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  char* value = FS_NULL;
+  char* value = NULL;
   fs_size_t valSize = Val<fs_size_t>(args[2]);
   if (valSize != 0) {
     if (!TryAlloc(&value, valSize)) {
       isolate->LowMemoryNotification();
       if (!TryAlloc(&value, valSize))
-        THROWERR(-ENOMEM);
+        THROWERR(-FS_ENOMEM);
     }
   }
   int res = fs->GetXAttr(
@@ -1797,13 +1797,13 @@ void FileSystemLGetXAttr(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  char* value = FS_NULL;
+  char* value = NULL;
   fs_size_t valSize = Val<fs_size_t>(args[2]);
   if (valSize != 0) {
     if (!TryAlloc(&value, valSize)) {
       isolate->LowMemoryNotification();
       if (!TryAlloc(&value, valSize))
-        THROWERR(-ENOMEM);
+        THROWERR(-FS_ENOMEM);
     }
   }
   int res = fs->LGetXAttr(
@@ -1840,13 +1840,13 @@ void FileSystemFGetXAttr(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  char* value = FS_NULL;
+  char* value = NULL;
   fs_size_t valSize = Val<fs_size_t>(args[2]);
   if (valSize != 0) {
     if (!TryAlloc(&value, valSize)) {
       isolate->LowMemoryNotification();
       if (!TryAlloc(&value, valSize))
-        THROWERR(-ENOMEM);
+        THROWERR(-FS_ENOMEM);
     }
   }
   int res = fs->FGetXAttr(
@@ -1899,7 +1899,7 @@ void FileSystemSetXAttr(const FunctionCallbackInfo<Value>& args) {
     args.Length() == 4 ? Val<fs_size_t>(args[3]) : Val<fs_size_t>(args[4])
   );
   if (res < 0) {
-    if (res == -ENOMEM) {
+    if (res == -FS_ENOMEM) {
       isolate->LowMemoryNotification();
       res = fs->SetXAttr(
         *String::Utf8Value(isolate, args[0].As<String>()),
@@ -1944,7 +1944,7 @@ void FileSystemLSetXAttr(const FunctionCallbackInfo<Value>& args) {
     args.Length() == 4 ? Val<fs_size_t>(args[3]) : Val<fs_size_t>(args[4])
   );
   if (res < 0) {
-    if (res == -ENOMEM) {
+    if (res == -FS_ENOMEM) {
       isolate->LowMemoryNotification();
       res = fs->LSetXAttr(
         *String::Utf8Value(isolate, args[0].As<String>()),
@@ -1989,7 +1989,7 @@ void FileSystemFSetXAttr(const FunctionCallbackInfo<Value>& args) {
     args.Length() == 4 ? Val<fs_size_t>(args[3]) : Val<fs_size_t>(args[4])
   );
   if (res < 0) {
-    if (res == -ENOMEM) {
+    if (res == -FS_ENOMEM) {
       isolate->LowMemoryNotification();
       res = fs->FSetXAttr(
         Val<int>(args[0]),
@@ -2070,14 +2070,14 @@ void FileSystemListXAttr(const FunctionCallbackInfo<Value>& args) {
   );
   String::Utf8Value utf8Val = String::Utf8Value(isolate, args[0].As<String>());
   char* val = *utf8Val;
-  fs_ssize_t res = fs->ListXAttr(val, FS_NULL, 0);
+  fs_ssize_t res = fs->ListXAttr(val, NULL, 0);
   if (res < 0)
     THROWERR(res);
   char* list;
   if (!TryAlloc(&list, res)) {
     isolate->LowMemoryNotification();
     if (!TryAlloc(&list, res))
-      THROWERR(-ENOMEM);
+      THROWERR(-FS_ENOMEM);
   }
   res = fs->ListXAttr(
     val,
@@ -2118,14 +2118,14 @@ void FileSystemLListXAttr(const FunctionCallbackInfo<Value>& args) {
   );
   String::Utf8Value utf8Val = String::Utf8Value(isolate, args[0].As<String>());
   char* val = *utf8Val;
-  fs_ssize_t res = fs->LListXAttr(val, FS_NULL, 0);
+  fs_ssize_t res = fs->LListXAttr(val, NULL, 0);
   if (res < 0)
     THROWERR(res);
   char* list;
   if (!TryAlloc(&list, res)) {
     isolate->LowMemoryNotification();
     if (!TryAlloc(&list, res))
-      THROWERR(-ENOMEM);
+      THROWERR(-FS_ENOMEM);
   }
   res = fs->LListXAttr(
     val,
@@ -2165,14 +2165,14 @@ void FileSystemFListXAttr(const FunctionCallbackInfo<Value>& args) {
     self->GetInternalField(0).As<External>()->Value()
   );
   int val = Val<int>(args[0]);
-  fs_ssize_t res = fs->FListXAttr(val, FS_NULL, 0);
+  fs_ssize_t res = fs->FListXAttr(val, NULL, 0);
   if (res < 0)
     THROWERR(res);
   char* list;
   if (!TryAlloc(&list, res)) {
     isolate->LowMemoryNotification();
     if (!TryAlloc(&list, res))
-      THROWERR(-ENOMEM);
+      THROWERR(-FS_ENOMEM);
   }
   res = fs->FListXAttr(
     val,
@@ -2247,7 +2247,7 @@ void FileSystemUTimeNsAt(const FunctionCallbackInfo<Value>& args) {
     fs->UTimeNsAt(
       Val<int>(args[0]),
       *String::Utf8Value(isolate, args[1].As<String>()),
-      args[2]->IsNull() ? FS_NULL : times,
+      args[2]->IsNull() ? NULL : times,
       Val<int>(args[3])
     )
   );
@@ -2287,7 +2287,7 @@ void FileSystemFUTimesAt(const FunctionCallbackInfo<Value>& args) {
     fs->FUTimesAt(
       Val<unsigned int>(args[0]),
       *String::Utf8Value(isolate, args[1].As<String>()),
-      args[2]->IsNull() ? FS_NULL : times
+      args[2]->IsNull() ? NULL : times
     )
   );
 }
@@ -2324,7 +2324,7 @@ void FileSystemUTimes(const FunctionCallbackInfo<Value>& args) {
   THROWIFERR(
     fs->UTimes(
       *String::Utf8Value(isolate, args[0].As<String>()),
-      args[1]->IsNull() ? FS_NULL : times
+      args[1]->IsNull() ? NULL : times
     )
   );
 }
@@ -2357,7 +2357,7 @@ void FileSystemUTime(const FunctionCallbackInfo<Value>& args) {
   THROWIFERR(
     fs->UTime(
       *String::Utf8Value(isolate, args[0].As<String>()),
-      args[1]->IsNull() ? FS_NULL : &times
+      args[1]->IsNull() ? NULL : &times
     )
   );
 }
@@ -2400,7 +2400,7 @@ void FileSystemLoadFrom(const FunctionCallbackInfo<Value>& args) {
     *String::Utf8Value(isolate, args[0].As<String>())
   );
   if (!fs) {
-    if (errno == ENOMEM) {
+    if (errno == FS_ENOMEM) {
       isolate->LowMemoryNotification();
       fs = fs->LoadFromFile(
         *String::Utf8Value(isolate, args[0].As<String>())
@@ -2528,7 +2528,7 @@ void DefineConstants(Isolate* isolate, Local<FunctionTemplate> func) {
 #undef DefineFlag
 }
 
-template<typename T, size_t N>
+template<typename T, fs_size_t N>
 void DefineFunction(
   Isolate* isolate,
   Local<T> obj,

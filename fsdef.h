@@ -112,8 +112,6 @@
 #define FS_EPERM 1
 #define FS_ERANGE 34
 
-#define FS_NULL 0
-
 #define FS_S_ISREG(mode) ((mode & FS_S_IFMT) == FS_S_IFREG)
 #define FS_S_ISDIR(mode) ((mode & FS_S_IFMT) == FS_S_IFDIR)
 #define FS_S_ISLNK(mode) ((mode & FS_S_IFMT) == FS_S_IFLNK)
