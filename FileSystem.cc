@@ -89,9 +89,12 @@ namespace {
 #else
     FILETIME ft;
     GetSystemTimeAsFileTime(&ft);
-    DWORD time = ((ft.dwHighDateTime << 32) | ft.dwLowDateTime) - 116444736000000000;
-    fts->tv_sec = time / 10000000;
-    fts->tv_nsec = (time % 10000000) * 100;
+    LARGE_INTEGER li;
+    li.HighPart = ft.dwHighDateTime;
+    li.LowPart = ft.dwLowDateTime;
+    li.QuadPart -= 116444736000000000;
+    fts->tv_sec = li.QuadPart / 10000000;
+    fts->tv_nsec = (li.QuadPart % 10000000) * 100;
 #endif
   }
 
