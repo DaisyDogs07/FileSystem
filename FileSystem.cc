@@ -16,16 +16,16 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #include "FileSystem.h"
-#include <fcntl.h>
 #include <new>
-#include <stdlib.h>
-#include <string.h>
 
 #ifdef __linux__
+#include <fcntl.h>
 #include <pthread.h>
+#include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 #else
-#include <windows.h>
+#include <Windows.h>
 #endif
 
 #undef FS_O_TMPFILE
