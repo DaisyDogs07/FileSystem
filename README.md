@@ -1,7 +1,5 @@
-## The Linux File System in C/C++
+## The Linux File System in C/C++ for Linux/Windows
 
 ```
 npm i @daisydogs07/filesystem
 ```
-
-Sadly this is only available in Linux

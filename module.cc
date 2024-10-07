@@ -3,30 +3,12 @@
 #include "node_buffer.h"
 #include <type_traits>
 
+#ifdef _WIN32
+#include <Windows.h>
+#endif
+
 using namespace node;
 using namespace v8;
-
-namespace {
-  template<typename T>
-  bool TryAlloc(T** ptr, size_t length = 1) {
-    T* newPtr = reinterpret_cast<T*>(malloc(sizeof(T) * length));
-    if (!newPtr)
-      return false;
-    *ptr = newPtr;
-    return true;
-  }
-  template<typename T>
-  T Val(Local<Value> x) {
-    if (x->IsBigInt()) {
-      if constexpr (std::is_signed<T>::value)
-        return x.As<BigInt>()->Int64Value();
-      return x.As<BigInt>()->Uint64Value();
-    }
-    return x.As<Number>()->Value();
-  }
-  Persistent<FunctionTemplate> FSConstructorTmpl;
-  Persistent<ObjectTemplate> FSInstanceTmpl;
-}
 
 #define IsBuffer(x) Buffer::HasInstance(x)
 #define IsNumberLike(x) \
@@ -55,7 +37,7 @@ namespace {
     Local<Value> err = Exception::Error( \
       String::NewFromUtf8( \
         isolate, \
-        strerror(errnum), \
+        GetErrorString(errnum), \
         NewStringType::kInternalized \
       ).ToLocalChecked() \
     ); \
@@ -88,6 +70,102 @@ namespace {
     return; \
   } \
 }
+
+template<typename T>
+bool TryAlloc(T** ptr, size_t length = 1) {
+  T* newPtr = reinterpret_cast<T*>(malloc(sizeof(T) * length));
+  if (!newPtr)
+    return false;
+  *ptr = newPtr;
+  return true;
+}
+template<typename T>
+T Val(Local<Value> x) {
+  if (x->IsBigInt()) {
+    if constexpr (std::is_signed<T>::value)
+      return x.As<BigInt>()->Int64Value();
+    return x.As<BigInt>()->Uint64Value();
+  }
+  return x.As<Number>()->Value();
+}
+
+const char* GetErrorString(int err) {
+  switch (err) {
+    case FS_EPERM:
+      return "Operation not permitted";
+    case FS_ENOENT:
+      return "No such file or directory";
+    case FS_EBADF:
+      return "Bad file descriptor";
+    case FS_ENOMEM:
+      return "Cannot allocate memory";
+    case FS_EACCES:
+      return "Permission denied";
+    case FS_EBUSY:
+      return "Device or resource busy";
+    case FS_EEXIST:
+      return "File exists";
+    case FS_ENODEV:
+      return "No such device";
+    case FS_ENOTDIR:
+      return "Not a directory";
+    case FS_EISDIR:
+      return "Is a directory";
+    case FS_EINVAL:
+      return "Invalid argument";
+    case FS_EFBIG:
+      return "File too large";
+    case FS_ERANGE:
+      return "Numerical result out of range";
+    case FS_EOPNOTSUPP:
+      return "Operation not supported";
+    case FS_ELOOP:
+      return "Too many levels of symbolic links";
+    case FS_ENAMETOOLONG:
+      return "File name too long";
+    case FS_ENOTEMPTY:
+      return "Directory not empty";
+    case FS_ENODATA:
+      return "No data available";
+    case FS_EOVERFLOW:
+      return "Value too large for defined data type";
+  }
+#ifdef __linux__
+  __builtin_unreachable();
+#else
+  __assume(0);
+#endif
+}
+
+void ThrowError(Isolate* isolate) {
+#ifdef __linux__
+  THROWERR(-errno);
+#else
+  DWORD errnum = GetLastError();
+  LPVOID lpMsgBuf;
+  DWORD msgSize = FormatMessageA(
+    FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+    NULL,
+    errnum,
+    MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), // Default language
+    (LPSTR)&lpMsgBuf,
+    0,
+    NULL
+  );
+  isolate->ThrowException(
+    Exception::Error(
+      String::NewFromUtf8(
+        isolate,
+        (char*)lpMsgBuf,
+        NewStringType::kInternalized
+      ).ToLocalChecked()
+    )
+  );
+#endif
+}
+
+Persistent<FunctionTemplate> FSConstructorTmpl;
+Persistent<ObjectTemplate> FSInstanceTmpl;
 
 void FileSystemCleanup(void* data, size_t, void*) {
   delete reinterpret_cast<FileSystem*>(data);
@@ -199,7 +277,7 @@ void FileSystemOpenAt(const FunctionCallbackInfo<Value>& args) {
     Val<int>(args[0]),
     *String::Utf8Value(isolate, args[1].As<String>()),
     Val<int>(args[2]),
-    Val<mode_t>(args[3])
+    Val<fs_mode_t>(args[3])
   );
   if (res < 0) {
     if (res == -ENOMEM) {
@@ -208,7 +286,7 @@ void FileSystemOpenAt(const FunctionCallbackInfo<Value>& args) {
         Val<int>(args[0]),
         *String::Utf8Value(isolate, args[1].As<String>()),
         Val<int>(args[2]),
-        Val<mode_t>(args[3])
+        Val<fs_mode_t>(args[3])
       );
       if (res < 0)
         THROWERR(res);
@@ -235,7 +313,7 @@ void FileSystemOpen(const FunctionCallbackInfo<Value>& args) {
   int res = fs->Open(
     *String::Utf8Value(isolate, args[0].As<String>()),
     Val<int>(args[1]),
-    Val<mode_t>(args[2])
+    Val<fs_mode_t>(args[2])
   );
   if (res < 0) {
     if (res == -ENOMEM) {
@@ -243,7 +321,7 @@ void FileSystemOpen(const FunctionCallbackInfo<Value>& args) {
       res = fs->Open(
         *String::Utf8Value(isolate, args[0].As<String>()),
         Val<int>(args[1]),
-        Val<mode_t>(args[2])
+        Val<fs_mode_t>(args[2])
       );
       if (res < 0)
         THROWERR(res);
@@ -268,14 +346,14 @@ void FileSystemCreat(const FunctionCallbackInfo<Value>& args) {
   );
   int res = fs->Creat(
     *String::Utf8Value(isolate, args[0].As<String>()),
-    Val<mode_t>(args[1])
+    Val<fs_mode_t>(args[1])
   );
   if (res < 0) {
     if (res == -ENOMEM) {
       isolate->LowMemoryNotification();
       res = fs->Creat(
         *String::Utf8Value(isolate, args[0].As<String>()),
-        Val<mode_t>(args[1])
+        Val<fs_mode_t>(args[1])
       );
       if (res < 0)
         THROWERR(res);
@@ -333,7 +411,7 @@ void FileSystemMkNodAt(const FunctionCallbackInfo<Value>& args) {
   int res = fs->MkNodAt(
     Val<int>(args[0]),
     *String::Utf8Value(isolate, args[1].As<String>()),
-    Val<mode_t>(args[2]),
+    Val<fs_mode_t>(args[2]),
     0
   );
   if (res < 0) {
@@ -342,7 +420,7 @@ void FileSystemMkNodAt(const FunctionCallbackInfo<Value>& args) {
       res = fs->MkNodAt(
         Val<int>(args[0]),
         *String::Utf8Value(isolate, args[1].As<String>()),
-        Val<mode_t>(args[2]),
+        Val<fs_mode_t>(args[2]),
         0
       );
       if (res < 0)
@@ -362,7 +440,7 @@ void FileSystemMkNod(const FunctionCallbackInfo<Value>& args) {
   );
   int res = fs->MkNod(
     *String::Utf8Value(isolate, args[0].As<String>()),
-    Val<mode_t>(args[1]),
+    Val<fs_mode_t>(args[1]),
     0
   );
   if (res < 0) {
@@ -370,7 +448,7 @@ void FileSystemMkNod(const FunctionCallbackInfo<Value>& args) {
       isolate->LowMemoryNotification();
       res = fs->MkNod(
         *String::Utf8Value(isolate, args[0].As<String>()),
-        Val<mode_t>(args[1]),
+        Val<fs_mode_t>(args[1]),
         0
       );
       if (res < 0)
@@ -392,7 +470,7 @@ void FileSystemMkDirAt(const FunctionCallbackInfo<Value>& args) {
   int res = fs->MkDirAt(
     Val<int>(args[0]),
     *String::Utf8Value(isolate, args[1].As<String>()),
-    Val<mode_t>(args[2])
+    Val<fs_mode_t>(args[2])
   );
   if (res < 0) {
     if (res == -ENOMEM) {
@@ -400,7 +478,7 @@ void FileSystemMkDirAt(const FunctionCallbackInfo<Value>& args) {
       res = fs->MkDirAt(
         Val<int>(args[0]),
         *String::Utf8Value(isolate, args[1].As<String>()),
-        Val<mode_t>(args[2])
+        Val<fs_mode_t>(args[2])
       );
       if (res < 0)
         THROWERR(res);
@@ -419,14 +497,14 @@ void FileSystemMkDir(const FunctionCallbackInfo<Value>& args) {
   );
   int res = fs->MkDir(
     *String::Utf8Value(isolate, args[0].As<String>()),
-    Val<mode_t>(args[1])
+    Val<fs_mode_t>(args[1])
   );
   if (res < 0) {
     if (res == -ENOMEM) {
       isolate->LowMemoryNotification();
       res = fs->MkDir(
         *String::Utf8Value(isolate, args[0].As<String>()),
-        Val<mode_t>(args[1])
+        Val<fs_mode_t>(args[1])
       );
       if (res < 0)
         THROWERR(res);
@@ -495,9 +573,9 @@ void FileSystemReadLinkAt(const FunctionCallbackInfo<Value>& args) {
     self->GetInternalField(0).As<External>()->Value()
   );
   char* buf;
-  if (!TryAlloc(&buf, PATH_MAX)) {
+  if (!TryAlloc(&buf, FS_PATH_MAX)) {
     isolate->LowMemoryNotification();
-    if (!TryAlloc(&buf, PATH_MAX))
+    if (!TryAlloc(&buf, FS_PATH_MAX))
       THROWERR(-ENOMEM);
   }
   int res;
@@ -506,7 +584,7 @@ void FileSystemReadLinkAt(const FunctionCallbackInfo<Value>& args) {
       Val<int>(args[0]),
       *String::Utf8Value(isolate, args[1].As<String>()),
       buf,
-      PATH_MAX
+      FS_PATH_MAX
     )
   );
   buf = reinterpret_cast<char*>(
@@ -527,9 +605,9 @@ void FileSystemReadLink(const FunctionCallbackInfo<Value>& args) {
     self->GetInternalField(0).As<External>()->Value()
   );
   char* buf;
-  if (!TryAlloc(&buf, PATH_MAX)) {
+  if (!TryAlloc(&buf, FS_PATH_MAX)) {
     isolate->LowMemoryNotification();
-    if (!TryAlloc(&buf, PATH_MAX))
+    if (!TryAlloc(&buf, FS_PATH_MAX))
       THROWERR(-ENOMEM);
   }
   int res;
@@ -537,7 +615,7 @@ void FileSystemReadLink(const FunctionCallbackInfo<Value>& args) {
     res = fs->ReadLink(
       *String::Utf8Value(isolate, args[0].As<String>()),
       buf,
-      PATH_MAX
+      FS_PATH_MAX
     )
   );
   buf = reinterpret_cast<char*>(
@@ -560,9 +638,9 @@ void FileSystemGetDents(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  size_t count = -1;
+  fs_size_t count = -1;
   if (args.Length() == 2)
-    count = Val<size_t>(args[1]);
+    count = Val<fs_size_t>(args[1]);
   Local<Array> dentArr = Array::New(isolate);
   char* buf;
   if (!TryAlloc(&buf, 1024)) {
@@ -571,21 +649,21 @@ void FileSystemGetDents(const FunctionCallbackInfo<Value>& args) {
       THROWERR(-ENOMEM);
   }
   unsigned int fdNum = Val<unsigned int>(args[0]);
-  off_t off = fs->LSeek(fdNum, 0, SEEK_CUR);
-  size_t i = 0;
+  fs_off_t off = fs->LSeek(fdNum, 0, SEEK_CUR);
+  fs_size_t i = 0;
   while (i < count) {
     int nread;
     THROWIFERR(
       nread = fs->GetDents(
         fdNum,
-        (struct linux_dirent*)buf,
+        (struct fs_dirent*)buf,
         1024
       )
     );
     if (nread == 0)
       break;
     for (int j = 0; i < count && j != nread; ++i) {
-      struct linux_dirent* dent = (struct linux_dirent*)(buf + j);
+      struct fs_dirent* dent = (struct fs_dirent*)(buf + j);
       Local<Object> dentObj = Object::New(isolate);
       dentObj->Set(
         context,
@@ -865,8 +943,8 @@ void FileSystemFAllocate(const FunctionCallbackInfo<Value>& args) {
   int res = fs->FAllocate(
     Val<int>(args[0]),
     Val<int>(args[1]),
-    Val<off_t>(args[2]),
-    Val<off_t>(args[3])
+    Val<fs_off_t>(args[2]),
+    Val<fs_off_t>(args[3])
   );
   if (res < 0) {
     if (res == -ENOMEM) {
@@ -874,8 +952,8 @@ void FileSystemFAllocate(const FunctionCallbackInfo<Value>& args) {
       res = fs->FAllocate(
         Val<int>(args[0]),
         Val<int>(args[1]),
-        Val<off_t>(args[2]),
-        Val<off_t>(args[3])
+        Val<fs_off_t>(args[2]),
+        Val<fs_off_t>(args[3])
       );
       if (res < 0)
         THROWERR(res);
@@ -893,11 +971,11 @@ void FileSystemLSeek(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  off_t res;
+  fs_off_t res;
   THROWIFERR(
     res = fs->LSeek(
       Val<unsigned int>(args[0]),
-      Val<off_t>(args[1]),
+      Val<fs_off_t>(args[1]),
       Val<unsigned int>(args[2])
     )
   );
@@ -914,16 +992,16 @@ void FileSystemRead(const FunctionCallbackInfo<Value>& args) {
     self->GetInternalField(0).As<External>()->Value()
   );
   unsigned int fdNum = Val<unsigned int>(args[0]);
-  struct stat s;
-  off_t off;
+  struct fs_stat s;
+  fs_off_t off;
   THROWIFERR(fs->FStat(fdNum, &s));
   THROWIFERR(off = fs->LSeek(fdNum, 0, SEEK_CUR));
-  size_t bufLen = std::min(
+  fs_size_t bufLen = std::min(
     std::min(
-      Val<size_t>(args[1]),
-      (size_t)(s.st_size - off)
+      Val<fs_size_t>(args[1]),
+      (fs_size_t)(s.st_size - off)
     ),
-    (size_t)0x7ffff000
+    (fs_size_t)0x7ffff000
   );
   char* buf;
   if (!TryAlloc(&buf, bufLen + 1)) {
@@ -931,7 +1009,7 @@ void FileSystemRead(const FunctionCallbackInfo<Value>& args) {
     if (!TryAlloc(&buf, bufLen + 1))
       THROWERR(-ENOMEM);
   }
-  ssize_t res = fs->Read(
+  fs_ssize_t res = fs->Read(
     fdNum,
     buf,
     bufLen
@@ -971,7 +1049,7 @@ void FileSystemReadv(const FunctionCallbackInfo<Value>& args) {
     ).ToLocalChecked();
     ASSERT(IsBuffer(buf));
   }
-  struct iovec* iov;
+  struct fs_iovec* iov;
   if (!TryAlloc(&iov, length)) {
     isolate->LowMemoryNotification();
     if (!TryAlloc(&iov, length))
@@ -985,7 +1063,7 @@ void FileSystemReadv(const FunctionCallbackInfo<Value>& args) {
     iov[i].iov_base = Buffer::Data(buf);
     iov[i].iov_len = Buffer::Length(buf);
   }
-  ssize_t res = fs->Readv(
+  fs_ssize_t res = fs->Readv(
     Val<unsigned int>(args[0]),
     iov,
     length
@@ -1007,16 +1085,16 @@ void FileSystemPRead(const FunctionCallbackInfo<Value>& args) {
     self->GetInternalField(0).As<External>()->Value()
   );
   unsigned int fdNum = Val<unsigned int>(args[0]);
-  struct stat s;
-  off_t off;
+  struct fs_stat s;
+  fs_off_t off;
   THROWIFERR(fs->FStat(fdNum, &s));
   THROWIFERR(off = fs->LSeek(fdNum, 0, SEEK_CUR));
-  size_t bufLen = std::min(
+  fs_size_t bufLen = std::min(
     std::min(
-      Val<size_t>(args[1]),
-      (size_t)(s.st_size - off)
+      Val<fs_size_t>(args[1]),
+      (fs_size_t)(s.st_size - off)
     ),
-    (size_t)0x7ffff000
+    (fs_size_t)0x7ffff000
   );
   char* buf;
   if (!TryAlloc(&buf, bufLen + 1)) {
@@ -1024,11 +1102,11 @@ void FileSystemPRead(const FunctionCallbackInfo<Value>& args) {
     if (!TryAlloc(&buf, bufLen + 1))
       THROWERR(-ENOMEM);
   }
-  ssize_t res = fs->PRead(
+  fs_ssize_t res = fs->PRead(
     fdNum,
     buf,
     bufLen,
-    Val<off_t>(args[2])
+    Val<fs_off_t>(args[2])
   );
   if (res < 0) {
     delete buf;
@@ -1066,7 +1144,7 @@ void FileSystemPReadv(const FunctionCallbackInfo<Value>& args) {
     ).ToLocalChecked();
     ASSERT(IsBuffer(buf));
   }
-  struct iovec* iov;
+  struct fs_iovec* iov;
   if (!TryAlloc(&iov, length)) {
     isolate->LowMemoryNotification();
     if (!TryAlloc(&iov, length))
@@ -1080,11 +1158,11 @@ void FileSystemPReadv(const FunctionCallbackInfo<Value>& args) {
     iov[i].iov_base = Buffer::Data(buf);
     iov[i].iov_len = Buffer::Length(buf);
   }
-  ssize_t res = fs->PReadv(
+  fs_ssize_t res = fs->PReadv(
     Val<unsigned int>(args[0]),
     iov,
     length,
-    Val<off_t>(args[2])
+    Val<fs_off_t>(args[2])
   );
   delete iov;
   if (res < 0)
@@ -1104,12 +1182,12 @@ void FileSystemWrite(const FunctionCallbackInfo<Value>& args) {
     self->GetInternalField(0).As<External>()->Value()
   );
   bool isString = args[1]->IsString();
-  size_t strLen = isString
+  fs_size_t strLen = isString
     ? args[1].As<String>()->Utf8Length(isolate)
     : Buffer::Length(args[1]);
-  size_t count;
+  fs_size_t count;
   if (args.Length() == 3) {
-    count = Val<size_t>(args[2]);
+    count = Val<fs_size_t>(args[2]);
     if (count > strLen)
       count = strLen;
   } else count = strLen;
@@ -1123,7 +1201,7 @@ void FileSystemWrite(const FunctionCallbackInfo<Value>& args) {
     Local<String> str = args[1].As<String>();
     str->WriteUtf8(isolate, buf, count);
   } else buf = Buffer::Data(args[1]);
-  ssize_t res = fs->Write(
+  fs_ssize_t res = fs->Write(
     Val<unsigned int>(args[0]),
     buf,
     count
@@ -1171,7 +1249,7 @@ void FileSystemWritev(const FunctionCallbackInfo<Value>& args) {
     ).ToLocalChecked();
     ASSERT(IsBuffer(buf));
   }
-  struct iovec* iov;
+  struct fs_iovec* iov;
   if (!TryAlloc(&iov, length)) {
     isolate->LowMemoryNotification();
     if (!TryAlloc(&iov, length))
@@ -1185,7 +1263,7 @@ void FileSystemWritev(const FunctionCallbackInfo<Value>& args) {
     iov[i].iov_base = Buffer::Data(buf);
     iov[i].iov_len = Buffer::Length(buf);
   }
-  ssize_t res = fs->Writev(
+  fs_ssize_t res = fs->Writev(
     Val<unsigned int>(args[0]),
     iov,
     length
@@ -1224,12 +1302,12 @@ void FileSystemPWrite(const FunctionCallbackInfo<Value>& args) {
     self->GetInternalField(0).As<External>()->Value()
   );
   bool isString = args[1]->IsString();
-  size_t strLen = isString
+  fs_size_t strLen = isString
     ? args[1].As<String>()->Utf8Length(isolate)
     : Buffer::Length(args[1]);
-  size_t count;
+  fs_size_t count;
   if (args.Length() == 4) {
-    count = Val<size_t>(args[3]);
+    count = Val<fs_size_t>(args[3]);
     if (count > strLen)
       count = strLen;
   } else count = strLen;
@@ -1243,11 +1321,11 @@ void FileSystemPWrite(const FunctionCallbackInfo<Value>& args) {
     Local<String> str = args[1].As<String>();
     str->WriteUtf8(isolate, buf, count);
   } else buf = Buffer::Data(args[1]);
-  ssize_t res = fs->PWrite(
+  fs_ssize_t res = fs->PWrite(
     Val<unsigned int>(args[0]),
     buf,
     count,
-    Val<off_t>(args[2])
+    Val<fs_off_t>(args[2])
   );
   if (res < 0) {
     if (res == -ENOMEM) {
@@ -1256,7 +1334,7 @@ void FileSystemPWrite(const FunctionCallbackInfo<Value>& args) {
         Val<unsigned int>(args[0]),
         buf,
         count,
-        Val<off_t>(args[2])
+        Val<fs_off_t>(args[2])
       );
       if (res < 0) {
         if (isString)
@@ -1294,7 +1372,7 @@ void FileSystemPWritev(const FunctionCallbackInfo<Value>& args) {
     ).ToLocalChecked();
     ASSERT(IsBuffer(buf));
   }
-  struct iovec* iov;
+  struct fs_iovec* iov;
   if (!TryAlloc(&iov, length)) {
     isolate->LowMemoryNotification();
     if (!TryAlloc(&iov, length))
@@ -1308,11 +1386,11 @@ void FileSystemPWritev(const FunctionCallbackInfo<Value>& args) {
     iov[i].iov_base = Buffer::Data(buf);
     iov[i].iov_len = Buffer::Length(buf);
   }
-  ssize_t res = fs->PWritev(
+  fs_ssize_t res = fs->PWritev(
     Val<unsigned int>(args[0]),
     iov,
     length,
-    Val<off_t>(args[2])
+    Val<fs_off_t>(args[2])
   );
   if (res < 0) {
     if (res == -ENOMEM) {
@@ -1321,7 +1399,7 @@ void FileSystemPWritev(const FunctionCallbackInfo<Value>& args) {
         Val<unsigned int>(args[0]),
         iov,
         length,
-        Val<off_t>(args[2])
+        Val<fs_off_t>(args[2])
       );
       if (res < 0) {
         delete iov;
@@ -1347,14 +1425,14 @@ void FileSystemSendFile(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  off_t off;
+  fs_off_t off;
   if (!args[2]->IsNull())
-    off = Val<off_t>(args[2]);
-  ssize_t res = fs->SendFile(
+    off = Val<fs_off_t>(args[2]);
+  fs_ssize_t res = fs->SendFile(
     Val<unsigned int>(args[0]),
     Val<unsigned int>(args[1]),
-    args[2]->IsNull() ? NULL : &off,
-    Val<size_t>(args[3])
+    args[2]->IsNull() ? FS_NULL : &off,
+    Val<fs_size_t>(args[3])
   );
   if (res < 0) {
     if (res == -ENOMEM) {
@@ -1362,8 +1440,8 @@ void FileSystemSendFile(const FunctionCallbackInfo<Value>& args) {
       res = fs->SendFile(
         Val<unsigned int>(args[0]),
         Val<unsigned int>(args[1]),
-        args[2]->IsNull() ? NULL : &off,
-        Val<size_t>(args[3])
+        args[2]->IsNull() ? FS_NULL : &off,
+        Val<fs_size_t>(args[3])
       );
       if (res < 0)
         THROWERR(res);
@@ -1384,7 +1462,7 @@ void FileSystemFTruncate(const FunctionCallbackInfo<Value>& args) {
   THROWIFERR(
     fs->FTruncate(
       Val<unsigned int>(args[0]),
-      Val<off_t>(args[1])
+      Val<fs_off_t>(args[1])
     )
   );
 }
@@ -1401,7 +1479,7 @@ void FileSystemTruncate(const FunctionCallbackInfo<Value>& args) {
   THROWIFERR(
     fs->Truncate(
       *String::Utf8Value(isolate, args[0].As<String>()),
-      Val<off_t>(args[1])
+      Val<fs_off_t>(args[1])
     )
   );
 }
@@ -1420,7 +1498,7 @@ void FileSystemFChModAt(const FunctionCallbackInfo<Value>& args) {
     fs->FChModAt(
       Val<int>(args[0]),
       *String::Utf8Value(isolate, args[1].As<String>()),
-      Val<mode_t>(args[2])
+      Val<fs_mode_t>(args[2])
     )
   );
 }
@@ -1437,7 +1515,7 @@ void FileSystemFChMod(const FunctionCallbackInfo<Value>& args) {
   THROWIFERR(
     fs->FChMod(
       Val<unsigned int>(args[0]),
-      Val<mode_t>(args[1])
+      Val<fs_mode_t>(args[1])
     )
   );
 }
@@ -1454,7 +1532,7 @@ void FileSystemChMod(const FunctionCallbackInfo<Value>& args) {
   THROWIFERR(
     fs->ChMod(
       *String::Utf8Value(isolate, args[0].As<String>()),
-      Val<mode_t>(args[1])
+      Val<fs_mode_t>(args[1])
     )
   );
 }
@@ -1489,14 +1567,14 @@ void FileSystemGetCwd(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  char buf[PATH_MAX];
-  THROWIFERR(fs->GetCwd(buf, PATH_MAX));
+  char buf[FS_PATH_MAX];
+  THROWIFERR(fs->GetCwd(buf, FS_PATH_MAX));
   args.GetReturnValue().Set(
     String::NewFromUtf8(isolate, buf, NewStringType::kInternalized).ToLocalChecked()
   );
 }
 
-void SetTimeProp(Isolate* isolate, Local<Object> obj, const char* prop, time_t sec, long nsec) {
+void SetTimeProp(Isolate* isolate, Local<Object> obj, const char* prop, fs_time_t sec, long nsec) {
   Local<Context> context = isolate->GetCurrentContext();
   Local<Object> tim = Object::New(isolate);
   tim->Set(
@@ -1517,7 +1595,7 @@ void SetTimeProp(Isolate* isolate, Local<Object> obj, const char* prop, time_t s
   ).Check();
 }
 
-Local<Object> StatToObj(Isolate* isolate, struct stat s) {
+Local<Object> StatToObj(Isolate* isolate, struct fs_stat s) {
   Local<Context> context = isolate->GetCurrentContext();
   Local<Object> statObj = Object::New(isolate);
   statObj->Set(
@@ -1556,7 +1634,7 @@ void FileSystemFStat(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  struct stat s;
+  struct fs_stat s;
   THROWIFERR(
     fs->FStat(
       Val<unsigned int>(args[0]),
@@ -1576,7 +1654,7 @@ void FileSystemStat(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  struct stat s;
+  struct fs_stat s;
   THROWIFERR(
     fs->Stat(
       *String::Utf8Value(isolate, args[0].As<String>()),
@@ -1596,7 +1674,7 @@ void FileSystemLStat(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  struct stat s;
+  struct fs_stat s;
   THROWIFERR(
     fs->LStat(
       *String::Utf8Value(isolate, args[0].As<String>()),
@@ -1608,7 +1686,7 @@ void FileSystemLStat(const FunctionCallbackInfo<Value>& args) {
   );
 }
 
-Local<Object> StatxToObj(Isolate* isolate, struct statx s) {
+Local<Object> StatxToObj(Isolate* isolate, struct fs_statx s) {
   Local<Context> context = isolate->GetCurrentContext();
   Local<Object> statxObj = Object::New(isolate);
   statxObj->Set(
@@ -1651,7 +1729,7 @@ void FileSystemStatx(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  struct statx s;
+  struct fs_statx s;
   THROWIFERR(
     fs->Statx(
       Val<int>(args[0]),
@@ -1676,8 +1754,8 @@ void FileSystemGetXAttr(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  char* value = NULL;
-  size_t valSize = Val<size_t>(args[2]);
+  char* value = FS_NULL;
+  fs_size_t valSize = Val<fs_size_t>(args[2]);
   if (valSize != 0) {
     if (!TryAlloc(&value, valSize)) {
       isolate->LowMemoryNotification();
@@ -1719,8 +1797,8 @@ void FileSystemLGetXAttr(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  char* value = NULL;
-  size_t valSize = Val<size_t>(args[2]);
+  char* value = FS_NULL;
+  fs_size_t valSize = Val<fs_size_t>(args[2]);
   if (valSize != 0) {
     if (!TryAlloc(&value, valSize)) {
       isolate->LowMemoryNotification();
@@ -1762,8 +1840,8 @@ void FileSystemFGetXAttr(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  char* value = NULL;
-  size_t valSize = Val<size_t>(args[2]);
+  char* value = FS_NULL;
+  fs_size_t valSize = Val<fs_size_t>(args[2]);
   if (valSize != 0) {
     if (!TryAlloc(&value, valSize)) {
       isolate->LowMemoryNotification();
@@ -1814,11 +1892,11 @@ void FileSystemSetXAttr(const FunctionCallbackInfo<Value>& args) {
     *String::Utf8Value(isolate, args[1].As<String>()),
     isString ? *String::Utf8Value(isolate, args[2].As<String>()) : Buffer::Data(args[2]),
     args.Length() == 5
-      ? Val<size_t>(args[3])
+      ? Val<fs_size_t>(args[3])
       : isString
         ? args[2].As<String>()->Utf8Length(isolate)
         : Buffer::Length(args[2]),
-    args.Length() == 4 ? Val<size_t>(args[3]) : Val<size_t>(args[4])
+    args.Length() == 4 ? Val<fs_size_t>(args[3]) : Val<fs_size_t>(args[4])
   );
   if (res < 0) {
     if (res == -ENOMEM) {
@@ -1828,11 +1906,11 @@ void FileSystemSetXAttr(const FunctionCallbackInfo<Value>& args) {
         *String::Utf8Value(isolate, args[1].As<String>()),
         isString ? *String::Utf8Value(isolate, args[2].As<String>()) : Buffer::Data(args[2]),
         args.Length() == 5
-          ? Val<size_t>(args[3])
+          ? Val<fs_size_t>(args[3])
           : isString
             ? args[2].As<String>()->Utf8Length(isolate)
             : Buffer::Length(args[2]),
-        args.Length() == 4 ? Val<size_t>(args[3]) : Val<size_t>(args[4])
+        args.Length() == 4 ? Val<fs_size_t>(args[3]) : Val<fs_size_t>(args[4])
       );
       if (res < 0)
         THROWERR(res);
@@ -1859,11 +1937,11 @@ void FileSystemLSetXAttr(const FunctionCallbackInfo<Value>& args) {
     *String::Utf8Value(isolate, args[1].As<String>()),
     isString ? *String::Utf8Value(isolate, args[2].As<String>()) : Buffer::Data(args[2]),
     args.Length() == 5
-      ? Val<size_t>(args[3])
+      ? Val<fs_size_t>(args[3])
       : isString
         ? args[2].As<String>()->Utf8Length(isolate)
         : Buffer::Length(args[2]),
-    args.Length() == 4 ? Val<size_t>(args[3]) : Val<size_t>(args[4])
+    args.Length() == 4 ? Val<fs_size_t>(args[3]) : Val<fs_size_t>(args[4])
   );
   if (res < 0) {
     if (res == -ENOMEM) {
@@ -1873,11 +1951,11 @@ void FileSystemLSetXAttr(const FunctionCallbackInfo<Value>& args) {
         *String::Utf8Value(isolate, args[1].As<String>()),
         isString ? *String::Utf8Value(isolate, args[2].As<String>()) : Buffer::Data(args[2]),
         args.Length() == 5
-          ? Val<size_t>(args[3])
+          ? Val<fs_size_t>(args[3])
           : isString
             ? args[2].As<String>()->Utf8Length(isolate)
             : Buffer::Length(args[2]),
-        args.Length() == 4 ? Val<size_t>(args[3]) : Val<size_t>(args[4])
+        args.Length() == 4 ? Val<fs_size_t>(args[3]) : Val<fs_size_t>(args[4])
       );
       if (res < 0)
         THROWERR(res);
@@ -1904,11 +1982,11 @@ void FileSystemFSetXAttr(const FunctionCallbackInfo<Value>& args) {
     *String::Utf8Value(isolate, args[1].As<String>()),
     isString ? *String::Utf8Value(isolate, args[2].As<String>()) : Buffer::Data(args[2]),
     args.Length() == 5
-      ? Val<size_t>(args[3])
+      ? Val<fs_size_t>(args[3])
       : isString
         ? args[2].As<String>()->Utf8Length(isolate)
         : Buffer::Length(args[2]),
-    args.Length() == 4 ? Val<size_t>(args[3]) : Val<size_t>(args[4])
+    args.Length() == 4 ? Val<fs_size_t>(args[3]) : Val<fs_size_t>(args[4])
   );
   if (res < 0) {
     if (res == -ENOMEM) {
@@ -1918,11 +1996,11 @@ void FileSystemFSetXAttr(const FunctionCallbackInfo<Value>& args) {
         *String::Utf8Value(isolate, args[1].As<String>()),
         isString ? *String::Utf8Value(isolate, args[2].As<String>()) : Buffer::Data(args[2]),
         args.Length() == 5
-          ? Val<size_t>(args[3])
+          ? Val<fs_size_t>(args[3])
           : isString
             ? args[2].As<String>()->Utf8Length(isolate)
             : Buffer::Length(args[2]),
-        args.Length() == 4 ? Val<size_t>(args[3]) : Val<size_t>(args[4])
+        args.Length() == 4 ? Val<fs_size_t>(args[3]) : Val<fs_size_t>(args[4])
       );
       if (res < 0)
         THROWERR(res);
@@ -1992,7 +2070,7 @@ void FileSystemListXAttr(const FunctionCallbackInfo<Value>& args) {
   );
   String::Utf8Value utf8Val = String::Utf8Value(isolate, args[0].As<String>());
   char* val = *utf8Val;
-  ssize_t res = fs->ListXAttr(val, NULL, 0);
+  fs_ssize_t res = fs->ListXAttr(val, FS_NULL, 0);
   if (res < 0)
     THROWERR(res);
   char* list;
@@ -2011,9 +2089,9 @@ void FileSystemListXAttr(const FunctionCallbackInfo<Value>& args) {
     THROWERR(res);
   }
   Local<Array> listArr = Array::New(isolate);
-  size_t i = 0;
+  fs_size_t i = 0;
   while (i != res) {
-    size_t entryLen = strlen(&list[i]);
+    fs_size_t entryLen = strlen(&list[i]);
     listArr->Set(
       context,
       listArr->Length(),
@@ -2040,7 +2118,7 @@ void FileSystemLListXAttr(const FunctionCallbackInfo<Value>& args) {
   );
   String::Utf8Value utf8Val = String::Utf8Value(isolate, args[0].As<String>());
   char* val = *utf8Val;
-  ssize_t res = fs->LListXAttr(val, NULL, 0);
+  fs_ssize_t res = fs->LListXAttr(val, FS_NULL, 0);
   if (res < 0)
     THROWERR(res);
   char* list;
@@ -2059,9 +2137,9 @@ void FileSystemLListXAttr(const FunctionCallbackInfo<Value>& args) {
     THROWERR(res);
   }
   Local<Array> listArr = Array::New(isolate);
-  size_t i = 0;
+  fs_size_t i = 0;
   while (i != res) {
-    size_t entryLen = strlen(&list[i]);
+    fs_size_t entryLen = strlen(&list[i]);
     listArr->Set(
       context,
       listArr->Length(),
@@ -2087,7 +2165,7 @@ void FileSystemFListXAttr(const FunctionCallbackInfo<Value>& args) {
     self->GetInternalField(0).As<External>()->Value()
   );
   int val = Val<int>(args[0]);
-  ssize_t res = fs->FListXAttr(val, NULL, 0);
+  fs_ssize_t res = fs->FListXAttr(val, FS_NULL, 0);
   if (res < 0)
     THROWERR(res);
   char* list;
@@ -2106,9 +2184,9 @@ void FileSystemFListXAttr(const FunctionCallbackInfo<Value>& args) {
     THROWERR(res);
   }
   Local<Array> listArr = Array::New(isolate);
-  size_t i = 0;
+  fs_size_t i = 0;
   while (i != res) {
-    size_t entryLen = strlen(&list[i]);
+    fs_size_t entryLen = strlen(&list[i]);
     listArr->Set(
       context,
       listArr->Length(),
@@ -2136,7 +2214,7 @@ void FileSystemUTimeNsAt(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  struct timespec times[2];
+  struct fs_timespec times[2];
   if (!args[2]->IsNull()) {
     Local<Value> atime = args[2].As<Array>()->Get(
       context,
@@ -2148,28 +2226,28 @@ void FileSystemUTimeNsAt(const FunctionCallbackInfo<Value>& args) {
     ).ToLocalChecked();
     ASSERT(IsNumberLike(atime));
     ASSERT(IsNumberLike(mtime));
-    time_t atimeVal = Val<time_t>(atime);
-    time_t mtimeVal = Val<time_t>(atime);
+    fs_time_t atimeVal = Val<fs_time_t>(atime);
+    fs_time_t mtimeVal = Val<fs_time_t>(atime);
     if (atimeVal != -1) {
       times[0].tv_sec = atimeVal / 1000.0;
       times[0].tv_nsec = atimeVal * 1000000.0;
     } else {
       times[0].tv_sec = 0;
-      times[0].tv_nsec = UTIME_OMIT;
+      times[0].tv_nsec = FS_UTIME_OMIT;
     }
     if (mtimeVal != -1) {
       times[1].tv_sec = mtimeVal / 1000.0;
       times[1].tv_nsec = mtimeVal * 1000000.0;
     } else {
       times[1].tv_sec = 0;
-      times[1].tv_nsec = UTIME_OMIT;
+      times[1].tv_nsec = FS_UTIME_OMIT;
     }
   }
   THROWIFERR(
     fs->UTimeNsAt(
       Val<int>(args[0]),
       *String::Utf8Value(isolate, args[1].As<String>()),
-      args[2]->IsNull() ? NULL : times,
+      args[2]->IsNull() ? FS_NULL : times,
       Val<int>(args[3])
     )
   );
@@ -2186,7 +2264,7 @@ void FileSystemFUTimesAt(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  struct timeval times[2];
+  struct fs_timeval times[2];
   if (!args[2]->IsNull()) {
     Local<Value> atime = args[2].As<Array>()->Get(
       context,
@@ -2198,8 +2276,8 @@ void FileSystemFUTimesAt(const FunctionCallbackInfo<Value>& args) {
     ).ToLocalChecked();
     ASSERT(IsNumberLike(atime));
     ASSERT(IsNumberLike(mtime));
-    double atimeVal = Val<time_t>(atime);
-    double mtimeVal = Val<time_t>(mtime);
+    double atimeVal = Val<fs_time_t>(atime);
+    double mtimeVal = Val<fs_time_t>(mtime);
     times[0].tv_sec = atimeVal / 1000.0;
     times[0].tv_usec = atimeVal * 1000.0;
     times[1].tv_sec = mtimeVal / 1000.0;
@@ -2209,7 +2287,7 @@ void FileSystemFUTimesAt(const FunctionCallbackInfo<Value>& args) {
     fs->FUTimesAt(
       Val<unsigned int>(args[0]),
       *String::Utf8Value(isolate, args[1].As<String>()),
-      args[2]->IsNull() ? NULL : times
+      args[2]->IsNull() ? FS_NULL : times
     )
   );
 }
@@ -2224,7 +2302,7 @@ void FileSystemUTimes(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  struct timeval times[2];
+  struct fs_timeval times[2];
   if (!args[1]->IsNull()) {
     Local<Value> atime = args[1].As<Array>()->Get(
       context,
@@ -2236,8 +2314,8 @@ void FileSystemUTimes(const FunctionCallbackInfo<Value>& args) {
     ).ToLocalChecked();
     ASSERT(IsNumberLike(atime));
     ASSERT(IsNumberLike(mtime));
-    double atimeVal = Val<time_t>(atime);
-    double mtimeVal = Val<time_t>(mtime);
+    double atimeVal = Val<fs_time_t>(atime);
+    double mtimeVal = Val<fs_time_t>(mtime);
     times[0].tv_sec = atimeVal / 1000.0;
     times[0].tv_usec = atimeVal * 1000.0;
     times[1].tv_sec = mtimeVal / 1000.0;
@@ -2246,7 +2324,7 @@ void FileSystemUTimes(const FunctionCallbackInfo<Value>& args) {
   THROWIFERR(
     fs->UTimes(
       *String::Utf8Value(isolate, args[0].As<String>()),
-      args[1]->IsNull() ? NULL : times
+      args[1]->IsNull() ? FS_NULL : times
     )
   );
 }
@@ -2261,7 +2339,7 @@ void FileSystemUTime(const FunctionCallbackInfo<Value>& args) {
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
-  struct utimbuf times;
+  struct fs_utimbuf times;
   if (!args[1]->IsNull()) {
     Local<Value> atime = args[1].As<Array>()->Get(
       context,
@@ -2273,13 +2351,13 @@ void FileSystemUTime(const FunctionCallbackInfo<Value>& args) {
     ).ToLocalChecked();
     ASSERT(IsNumberLike(atime));
     ASSERT(IsNumberLike(mtime));
-    times.actime = Val<time_t>(atime) / 1000.0;
-    times.modtime = Val<time_t>(mtime) / 1000.0;
+    times.actime = Val<fs_time_t>(atime) / 1000.0;
+    times.modtime = Val<fs_time_t>(mtime) / 1000.0;
   }
   THROWIFERR(
     fs->UTime(
       *String::Utf8Value(isolate, args[0].As<String>()),
-      args[1]->IsNull() ? NULL : &times
+      args[1]->IsNull() ? FS_NULL : &times
     )
   );
 }
@@ -2310,7 +2388,7 @@ void FileSystemDumpTo(const FunctionCallbackInfo<Value>& args) {
     self->GetInternalField(0).As<External>()->Value()
   );
   if (!fs->DumpToFile(*String::Utf8Value(isolate, args[0].As<String>())))
-    THROWERR(-errno);
+    ThrowError(isolate);
 }
 
 void FileSystemLoadFrom(const FunctionCallbackInfo<Value>& args) {
@@ -2328,8 +2406,10 @@ void FileSystemLoadFrom(const FunctionCallbackInfo<Value>& args) {
         *String::Utf8Value(isolate, args[0].As<String>())
       );
     }
-    if (!fs)
-      THROWERR(-errno);
+    if (!fs) {
+      ThrowError(isolate);
+      return;
+    }
   }
   Local<Object> fsObj = FSInstanceTmpl.Get(isolate)->NewInstance(context).ToLocalChecked();
   std::unique_ptr<BackingStore> ab = ArrayBuffer::NewBackingStore(
@@ -2350,7 +2430,7 @@ void DefineConstants(Isolate* isolate, Local<FunctionTemplate> func) {
   do { \
     func->Set( \
       String::NewFromUtf8Literal(isolate, #v, NewStringType::kInternalized), \
-      Integer::New(isolate, v) \
+      Integer::New(isolate, FS_##v) \
     ); \
   } while (0)
   DefineFlag(AT_EMPTY_PATH);
@@ -2358,9 +2438,9 @@ void DefineConstants(Isolate* isolate, Local<FunctionTemplate> func) {
   DefineFlag(AT_REMOVEDIR);
   DefineFlag(AT_SYMLINK_FOLLOW);
   DefineFlag(AT_SYMLINK_NOFOLLOW);
+  DefineFlag(DT_REG);
   DefineFlag(DT_DIR);
   DefineFlag(DT_LNK);
-  DefineFlag(DT_REG);
   DefineFlag(FALLOC_FL_COLLAPSE_RANGE);
   DefineFlag(FALLOC_FL_INSERT_RANGE);
   DefineFlag(FALLOC_FL_KEEP_SIZE);
@@ -2391,10 +2471,7 @@ void DefineConstants(Isolate* isolate, Local<FunctionTemplate> func) {
   DefineFlag(SEEK_END);
   DefineFlag(SEEK_HOLE);
   DefineFlag(SEEK_SET);
-  DefineFlag(STATX_ALL);
   DefineFlag(STATX_ATIME);
-  DefineFlag(STATX_BASIC_STATS);
-  DefineFlag(STATX_BLOCKS);
   DefineFlag(STATX_BTIME);
   DefineFlag(STATX_CTIME);
   DefineFlag(STATX_INO);
@@ -2403,25 +2480,28 @@ void DefineConstants(Isolate* isolate, Local<FunctionTemplate> func) {
   DefineFlag(STATX_NLINK);
   DefineFlag(STATX_SIZE);
   DefineFlag(STATX_TYPE);
+  DefineFlag(STATX_BASIC_STATS);
+  DefineFlag(STATX_ALL);
   DefineFlag(S_IFDIR);
   DefineFlag(S_IFLNK);
   DefineFlag(S_IFMT);
   DefineFlag(S_IFREG);
+  DefineFlag(S_IRUSR);
   DefineFlag(S_IRGRP);
   DefineFlag(S_IROTH);
-  DefineFlag(S_IRUSR);
-  DefineFlag(S_IRWXG);
-  DefineFlag(S_IRWXO);
-  DefineFlag(S_IRWXU);
+  DefineFlag(S_IWUSR);
   DefineFlag(S_IWGRP);
   DefineFlag(S_IWOTH);
-  DefineFlag(S_IWUSR);
+  DefineFlag(S_IXUSR);
   DefineFlag(S_IXGRP);
   DefineFlag(S_IXOTH);
-  DefineFlag(S_IXUSR);
+  DefineFlag(S_IRWXU);
+  DefineFlag(S_IRWXG);
+  DefineFlag(S_IRWXO);
   DefineFlag(UTIME_NOW);
   DefineFlag(UTIME_OMIT);
   DefineFlag(XATTR_CREATE);
+  DefineFlag(XATTR_LIST_MAX);
   DefineFlag(XATTR_NAME_MAX);
   DefineFlag(XATTR_REPLACE);
   DefineFlag(XATTR_SIZE_MAX);
