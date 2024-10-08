@@ -9,7 +9,8 @@ jobs:
   build-windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/setup-node@v4.0.4
+      - name: Ssetup Node.js
+        uses: actions/setup-node@v4.0.4
         with:
           node-version: 20
 
@@ -34,7 +35,8 @@ jobs:
   build-linux:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/setup-node@v4.0.4
+      - name: Ssetup Node.js
+        uses: actions/setup-node@v4.0.4
         with:
           node-version: 20
 
@@ -58,7 +60,8 @@ jobs:
     needs: [build-windows, build-linux]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/setup-node@v4.0.4
+      - name: Ssetup Node.js
+        uses: actions/setup-node@v4.0.4
         with:
           node-version: 20
 
@@ -142,4 +145,3 @@ jobs:
         uses: JS-DevTools/npm-publish@v3.1.1
         with:
           token: ${{ secrets.NPM_TOKEN }}
-          tag: ${{ env.VERSION }}
