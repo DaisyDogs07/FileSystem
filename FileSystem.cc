@@ -15,6 +15,10 @@
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+#if !(defined(__linux__) || defined(_WIN32))
+#error FileSystem is only available on Linux and Windows
+#else
+
 #include "FileSystem.h"
 #include <new>
 
@@ -3672,3 +3676,5 @@ FileSystem* FileSystem::LoadFromFile(const char* filename) {
  err_at_open:
   return NULL;
 }
+
+#endif

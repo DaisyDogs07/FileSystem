@@ -17,6 +17,10 @@
 
 #pragma once
 
+#if !(defined(__linux__) || defined(_WIN32))
+#error FileSystem is only available on Linux and Windows
+#else
+
 #define FS_AT_EMPTY_PATH 0x1000
 #define FS_AT_FDCWD -100
 #define FS_AT_REMOVEDIR 0x200
@@ -175,3 +179,5 @@ struct fs_utimbuf {
   fs_time_t actime;
   fs_time_t modtime;
 };
+
+#endif

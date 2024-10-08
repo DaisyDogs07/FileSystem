@@ -17,6 +17,10 @@
 
 #pragma once
 
+#if !(defined(__linux__) || defined(_WIN32))
+#error FileSystem is only available on Linux and Windows
+#else
+
 #include "fsdef.h"
 
 #ifdef __linux__
@@ -111,3 +115,5 @@ class FS_EXPORT FileSystem {
  private:
   void* data;
 };
+
+#endif
