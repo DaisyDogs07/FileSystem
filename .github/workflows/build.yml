@@ -147,6 +147,7 @@ jobs:
           asset_content_type: application/zip
 
       - name: Delete Zip Files
+        if: env.release_exists == 'false'
         run: rm -f FileSystem-*.zip
 
       - name: Publish to NPM
