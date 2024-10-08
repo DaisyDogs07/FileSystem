@@ -9,6 +9,10 @@ jobs:
   build-windows:
     runs-on: windows-latest
     steps:
+      - uses: actions/setup-node@v4.0.4
+        with:
+          node-version: 20
+
       - name: Checkout Code
         uses: actions/checkout@v4.2.1
 
@@ -30,6 +34,10 @@ jobs:
   build-linux:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/setup-node@v4.0.4
+        with:
+          node-version: 20
+
       - name: Checkout Code
         uses: actions/checkout@v4.2.1
 
@@ -50,6 +58,10 @@ jobs:
     needs: [build-windows, build-linux]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/setup-node@v4.0.4
+        with:
+          node-version: 20
+
       - name: Checkout Code
         uses: actions/checkout@v4.2.1
 
@@ -124,3 +136,10 @@ jobs:
           asset_path: FileSystem-linux.zip
           asset_name: FileSystem-linux.zip
           asset_content_type: application/zip
+
+      - name: Publish to NPM
+        if: env.release_exists == 'false'
+        uses: JS-DevTools/npm-publish@v3.1.1
+        with:
+          token: ${{ secrets.NPM_TOKEN }}
+          tag: ${{ env.VERSION }}
