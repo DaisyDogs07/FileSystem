@@ -137,37 +137,6 @@ const char* GetErrorString(int err) {
 #endif
 }
 
-void ThrowError(Isolate* isolate) {
-#ifdef __linux__
-  THROWERR(-errno);
-#else
-  DWORD errnum = GetLastError();
-  LPVOID lpMsgBuf;
-  DWORD msgSize = FormatMessageA(
-    FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-    NULL,
-    errnum,
-    MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-    (LPSTR)&lpMsgBuf,
-    0,
-    NULL
-  );
-  Local<Value> err = Exception::Error(
-    String::NewFromUtf8(
-      isolate,
-      (char*)lpMsgBuf,
-      NewStringType::kInternalized
-    ).ToLocalChecked()
-  );
-  err.As<Object>()->Set(
-    isolate->GetCurrentContext(),
-    String::NewFromUtf8Literal(isolate, "errno", NewStringType::kInternalized),
-    Integer::New(isolate, errnum)
-  ).ToChecked();
-  isolate->ThrowException(err);
-#endif
-}
-
 Persistent<FunctionTemplate> FSConstructorTmpl;
 Persistent<ObjectTemplate> FSInstanceTmpl;
 
@@ -2392,7 +2361,14 @@ void FileSystemDumpTo(const FunctionCallbackInfo<Value>& args) {
     self->GetInternalField(0).As<External>()->Value()
   );
   if (!fs->DumpToFile(*String::Utf8Value(isolate, args[0].As<String>())))
-    ThrowError(isolate);
+    isolate->ThrowException(
+      Exception::Error(
+        String::NewFromUtf8Literal(
+          isolate,
+          "Failed to dump"
+        )
+      )
+    );
 }
 
 void FileSystemLoadFrom(const FunctionCallbackInfo<Value>& args) {
@@ -2408,7 +2384,7 @@ void FileSystemLoadFrom(const FunctionCallbackInfo<Value>& args) {
       Exception::Error(
         String::NewFromUtf8Literal(
           isolate,
-          "Dump file invalid or corrupt"
+          "Dump invalid or corrupt"
         )
       )
     );

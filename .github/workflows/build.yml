@@ -32,7 +32,9 @@ jobs:
         run: cl -O2 -LD FileSystem.cc
 
       - name: Zip Files
-        run: powershell Compress-Archive -Path FileSystem.dll,FileSystem.lib -DestinationPath FileSystem-windows.zip
+        run: |
+          move .\build\Release\module.node .\FileSystem.node
+          powershell Compress-Archive -Path FileSystem.dll,FileSystem.lib,FileSystem.node -DestinationPath FileSystem-windows.zip
 
       - name: Upload Library
         uses: actions/upload-artifact@v4.4.1
@@ -58,7 +60,9 @@ jobs:
         run: g++ -O3 -fPIC -shared -o FileSystem.so FileSystem.cc
 
       - name: Zip Files
-        run: zip FileSystem-linux.zip FileSystem.so
+        run: |
+          mv ./build/Release/module.node ./FileSystem.node
+          zip FileSystem-linux.zip FileSystem.so FileSystem.node
 
       - name: Upload Library
         uses: actions/upload-artifact@v4.4.1
