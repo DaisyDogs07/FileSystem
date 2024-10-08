@@ -2557,6 +2557,8 @@ int FileSystem::FChModAt(int dirFd, const char* path, fs_mode_t mode) {
     struct Fd* fd;
     if (!(fd = GetFd(fs, dirFd)))
       return -FS_EBADF;
+    if (!FS_S_ISDIR(fd->inode->mode))
+      return -FS_ENOTDIR;
     fs->cwd.inode = (struct DirectoryINode*)fd->inode;
   }
   struct BaseINode* inode;
@@ -2620,15 +2622,6 @@ int FileSystem::GetCwd(char* buf, fs_size_t size) {
   }
   return cwdLen;
 }
-int FileSystem::FStat(unsigned int fdNum, struct fs_stat* buf) {
-  struct FSInternal* fs = (struct FSInternal*)data;
-  ScopedLock lock(fs->mtx);
-  struct Fd* fd;
-  if (!(fd = GetFd(fs, fdNum)))
-    return -FS_EBADF;
-  fd->inode->FillStat(buf);
-  return 0;
-}
 int FileSystem::Stat(const char* path, struct fs_stat* buf) {
   struct FSInternal* fs = (struct FSInternal*)data;
   ScopedLock lock(fs->mtx);
@@ -2637,6 +2630,15 @@ int FileSystem::Stat(const char* path, struct fs_stat* buf) {
   if (res != 0)
     return res;
   inode->FillStat(buf);
+  return 0;
+}
+int FileSystem::FStat(unsigned int fdNum, struct fs_stat* buf) {
+  struct FSInternal* fs = (struct FSInternal*)data;
+  ScopedLock lock(fs->mtx);
+  struct Fd* fd;
+  if (!(fd = GetFd(fs, fdNum)))
+    return -FS_EBADF;
+  fd->inode->FillStat(buf);
   return 0;
 }
 int FileSystem::LStat(const char* path, struct fs_stat* buf) {
@@ -2660,6 +2662,8 @@ int FileSystem::Statx(int dirFd, const char* path, int flags, int mask, struct f
     struct Fd* fd;
     if (!(fd = GetFd(fs, dirFd)))
       return -FS_EBADF;
+    if (!FS_S_ISDIR(fd->inode->mode))
+      return -FS_ENOTDIR;
     fs->cwd.inode = (struct DirectoryINode*)fd->inode;
   }
   struct BaseINode* inode;
@@ -3130,6 +3134,8 @@ int FileSystem::UTimeNsAt(int dirFd, const char* path, const struct fs_timespec*
     struct Fd* fd;
     if (!(fd = GetFd(fs, dirFd)))
       return -FS_EBADF;
+    if (!FS_S_ISDIR(fd->inode->mode))
+      return -FS_ENOTDIR;
     fs->cwd.inode = (struct DirectoryINode*)fd->inode;
   }
   struct BaseINode* inode;
@@ -3154,7 +3160,7 @@ int FileSystem::UTimeNsAt(int dirFd, const char* path, const struct fs_timespec*
   inode->ctime = ts;
   return 0;
 }
-int FileSystem::FUTimesAt(unsigned int fdNum, const char* path, const struct fs_timeval* times) {
+int FileSystem::FUTimesAt(unsigned int dirFd, const char* path, const struct fs_timeval* times) {
   if (times && (
         (times[0].tv_usec < 0 || times[0].tv_usec >= 1000000) ||
         (times[1].tv_usec < 0 || times[1].tv_usec >= 1000000)
@@ -3163,10 +3169,12 @@ int FileSystem::FUTimesAt(unsigned int fdNum, const char* path, const struct fs_
   struct FSInternal* fs = (struct FSInternal*)data;
   ScopedLock lock(fs->mtx);
   struct DirectoryINode* origCwd = fs->cwd.inode;
-  if (fdNum != FS_AT_FDCWD) {
+  if (dirFd != FS_AT_FDCWD) {
     struct Fd* fd;
-    if (!(fd = GetFd(fs, fdNum)))
+    if (!(fd = GetFd(fs, dirFd)))
       return -FS_EBADF;
+    if (!FS_S_ISDIR(fd->inode->mode))
+      return -FS_ENOTDIR;
     fs->cwd.inode = (struct DirectoryINode*)fd->inode;
   }
   struct BaseINode* inode;

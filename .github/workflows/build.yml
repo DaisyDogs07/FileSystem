@@ -9,6 +9,7 @@ on:
       - '*.h'
       - module.gyp
       - package.json
+      - .github/workflows/build.yml
 
 jobs:
   build-windows:
@@ -34,7 +35,7 @@ jobs:
       - name: Zip Files
         run: |
           move .\build\Release\module.node .\FileSystem.node
-          powershell Compress-Archive -Path FileSystem.dll,FileSystem.lib,FileSystem.node -DestinationPath FileSystem-windows.zip
+          powershell Compress-Archive -Path FileSystem.dll,FileSystem.lib,FileSystem.node,FileSystem.h,fsdef.h -DestinationPath FileSystem-windows.zip
 
       - name: Upload Library
         uses: actions/upload-artifact@v4.4.1
@@ -62,7 +63,7 @@ jobs:
       - name: Zip Files
         run: |
           mv ./build/Release/module.node ./FileSystem.node
-          zip FileSystem-linux.zip FileSystem.so FileSystem.node
+          zip FileSystem-linux.zip FileSystem.so FileSystem.node FileSystem.h fsdef.h
 
       - name: Upload Library
         uses: actions/upload-artifact@v4.4.1

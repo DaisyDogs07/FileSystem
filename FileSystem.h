@@ -101,7 +101,7 @@ class FS_EXPORT FileSystem {
   fs_ssize_t LListXAttr(const char* path, char* list, fs_size_t size);
   fs_ssize_t FListXAttr(int fdNum, char* list, fs_size_t size);
   int UTimeNsAt(int dirFd, const char* path, const struct fs_timespec* times, int flags);
-  int FUTimesAt(unsigned int fdNum, const char* path, const struct fs_timeval* times);
+  int FUTimesAt(unsigned int dirFd, const char* path, const struct fs_timeval* times);
   int UTimes(const char* path, const struct fs_timeval* times);
   int UTime(const char* path, const struct fs_utimbuf* times);
   int UMask(int mask);
