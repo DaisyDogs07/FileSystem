@@ -1,0 +1,126 @@
+name: Build and Release
+
+on:
+  push:
+    branches:
+      master
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4.2.1
+
+      - name: Setup Visual Studio Environment
+        uses: egor-tensin/vs-shell@v2.1
+
+      - name: Compile Library
+        run: cl -O2 -LD FileSystem.cc
+
+      - name: Zip Files
+        run: powershell Compress-Archive -Path FileSystem.dll,FileSystem.lib -DestinationPath FileSystem-windows.zip
+
+      - name: Upload Library
+        uses: actions/upload-artifact@v4.4.1
+        with:
+          name: FileSystem-windows.zip
+          path: FileSystem-windows.zip
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4.2.1
+
+      - name: Compile Library
+        run: g++ -O3 -fPIC -shared -o FileSystem.so FileSystem.cc
+
+      - name: Zip Files
+        run: zip FileSystem-linux.zip FileSystem.so
+
+      - name: Upload Library
+        uses: actions/upload-artifact@v4.4.1
+        with:
+          name: FileSystem-linux.zip
+          path: FileSystem-linux.zip
+
+  release:
+    permissions: write-all
+    needs: [build-windows, build-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4.2.1
+
+      - name: Get Version
+        run: |
+          VERSION=$(jq -r '.version' package.json)
+          echo "Version: $VERSION"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+      - name: Download Windows Library
+        uses: actions/download-artifact@v4.1.8
+        with:
+          name: FileSystem-windows.zip
+
+      - name: Download Linux Library
+        uses: actions/download-artifact@v4.1.8
+        with:
+          name: FileSystem-linux.zip
+
+      - name: Check if Release Exists
+        run: |
+          response=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" https://api.github.com/repos/${{ github.repository }}/releases/tags/${{ env.VERSION }})
+          echo "Response: $response"
+          if [[ $response == *"Not Found"* ]]; then
+            echo "release_exists=false" >> $GITHUB_ENV
+          else
+            echo "release_exists=true" >> $GITHUB_ENV
+            release_id=$(echo $response | jq -r '.id')
+            upload_url=$(echo $response | jq -r '.upload_url')
+            echo "RELEASE_ID=$release_id" >> $GITHUB_ENV
+            echo "UPLOAD_URL=$upload_url" >> $GITHUB_ENV
+          fi
+        shell: bash
+
+      - name: Remove Library Assets
+        if: env.release_exists == 'true'
+        run: |
+          assets_url=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" https://api.github.com/repos/${{ github.repository }}/releases/${{ env.RELEASE_ID }} | jq -r '.assets_url')
+          assets=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" $assets_url)
+          for asset_id in $(echo $assets | jq -r '.[].id'); do
+            echo "Deleting asset with ID: $asset_id"
+            curl -s -X DELETE -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" https://api.github.com/repos/${{ github.repository }}/releases/assets/$asset_id
+          done
+
+      - name: Create Release
+        id: create_release
+        if: env.release_exists == 'false'
+        uses: actions/create-release@v1.1.4
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ env.VERSION }}
+          release_name: ${{ env.VERSION }}
+          body: "Automated Release of Library Builds"
+
+      - name: Upload Windows Library
+        uses: actions/upload-release-asset@v1.0.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ env.UPLOAD_URL || steps.create_release.outputs.upload_url }}
+          asset_path: FileSystem-windows.zip
+          asset_name: FileSystem-windows.zip
+          asset_content_type: application/zip
+
+      - name: Upload Linux Library
+        uses: actions/upload-release-asset@v1.0.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ env.UPLOAD_URL || steps.create_release.outputs.upload_url }}
+          asset_path: FileSystem-linux.zip
+          asset_name: FileSystem-linux.zip
+          asset_content_type: application/zip
