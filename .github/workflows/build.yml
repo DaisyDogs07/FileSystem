@@ -3,7 +3,12 @@ name: Build and Release
 on:
   push:
     branches:
-      master
+      - master
+    paths:
+      - *.cc
+      - *.h
+      - module.gyp
+      - package.json
 
 jobs:
   build-windows:
