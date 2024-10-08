@@ -17,6 +17,9 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4.2.1
 
+      - name: Compile Node.js Module
+        run: npm i
+
       - name: Setup Visual Studio Environment
         uses: egor-tensin/vs-shell@v2.1
 
@@ -42,6 +45,9 @@ jobs:
 
       - name: Checkout Code
         uses: actions/checkout@v4.2.1
+
+      - name: Compile Node.js Module
+        run: npm i
 
       - name: Compile Library
         run: g++ -O3 -fPIC -shared -o FileSystem.so FileSystem.cc
@@ -139,6 +145,9 @@ jobs:
           asset_path: FileSystem-linux.zip
           asset_name: FileSystem-linux.zip
           asset_content_type: application/zip
+
+      - name: Delete Zip Files
+        run: rm -f FileSystem-*.zip
 
       - name: Publish to NPM
         if: env.release_exists == 'false'
