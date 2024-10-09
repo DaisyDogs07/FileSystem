@@ -128,13 +128,6 @@ T Val(Local<Value> x) {
   return x.As<Number>()->Value();
 }
 
-uint64_t StrLen(const char* str) {
-  uint64_t len = 0;
-  while (*str++ != '\0')
-    ++len;
-  return len;
-}
-
 const char* GetErrorString(int err) {
   switch (err) {
     case FS_EPERM:
@@ -2077,6 +2070,36 @@ void FileSystemFRemoveXAttr(const FunctionCallbackInfo<Value>& args) {
     )
   );
 }
+
+const char* GetNextEntry(const char* list, uint64_t listLen) {
+  const uint8_t* s = (const uint8_t*)list;
+  uint64_t i = 0;
+  while (listLen - i >= sizeof(uint64_t)) {
+    const uint64_t chunk = *(const uint64_t*)(s + i);
+    if (((chunk - 0x0101010101010101) & ~chunk) & 0x8080808080808080)
+      break;
+    i += sizeof(uint64_t);
+  }
+  while (listLen - i >= sizeof(uint32_t)) {
+    const uint32_t chunk = *(const uint32_t*)(s + i);
+    if (((chunk - 0x01010101) & ~chunk) & 0x80808080)
+      break;
+    i += sizeof(uint32_t);
+  }
+  while (listLen - i >= sizeof(uint16_t)) {
+    const uint16_t chunk = *(const uint16_t*)(s + i);
+    if (((chunk - 0x0101) & ~chunk) & 0x8080)
+      break;
+    i += sizeof(uint16_t);
+  }
+  while (listLen - i > sizeof(uint8_t)) {
+    if (*(const uint8_t*)(s + i) == 0)
+      return (const char*)&s[i + 1];
+    i += sizeof(uint8_t);
+  }
+  return NULL;
+}
+
 void FileSystemListXAttr(const FunctionCallbackInfo<Value>& args) {
   Isolate* isolate = args.GetIsolate();
   Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
@@ -2092,6 +2115,10 @@ void FileSystemListXAttr(const FunctionCallbackInfo<Value>& args) {
   fs_ssize_t res = fs->ListXAttr(val, NULL, 0);
   if (res < 0)
     THROWERR(res);
+  if (res == 0) {
+    args.GetReturnValue().Set(Array::New(isolate));
+    return;
+  }
   char* list;
   if (!Alloc(&list, res)) {
     isolate->LowMemoryNotification();
@@ -2108,21 +2135,21 @@ void FileSystemListXAttr(const FunctionCallbackInfo<Value>& args) {
     THROWERR(res);
   }
   Local<Array> listArr = Array::New(isolate);
-  fs_size_t i = 0;
-  while (i != res) {
-    fs_size_t entryLen = StrLen(&list[i]);
+  fs_size_t len = res;
+  const char* entry = list;
+  while (true) {
     listArr->Set(
       context,
       listArr->Length(),
-      String::NewFromUtf8(
-        isolate,
-        &list[i],
-        NewStringType::kNormal,
-        entryLen
-      ).ToLocalChecked()
+      String::NewFromUtf8(isolate, entry).ToLocalChecked()
     ).Check();
-    i += entryLen + 1;
+    const char* prevEntry = entry;
+    entry = GetNextEntry(entry, len);
+    if (!entry)
+      break;
+    len -= entry - prevEntry;
   }
+  Delete(list);
   args.GetReturnValue().Set(listArr);
 }
 void FileSystemLListXAttr(const FunctionCallbackInfo<Value>& args) {
@@ -2140,6 +2167,10 @@ void FileSystemLListXAttr(const FunctionCallbackInfo<Value>& args) {
   fs_ssize_t res = fs->LListXAttr(val, NULL, 0);
   if (res < 0)
     THROWERR(res);
+  if (res == 0) {
+    args.GetReturnValue().Set(Array::New(isolate));
+    return;
+  }
   char* list;
   if (!Alloc(&list, res)) {
     isolate->LowMemoryNotification();
@@ -2156,21 +2187,21 @@ void FileSystemLListXAttr(const FunctionCallbackInfo<Value>& args) {
     THROWERR(res);
   }
   Local<Array> listArr = Array::New(isolate);
-  fs_size_t i = 0;
-  while (i != res) {
-    fs_size_t entryLen = StrLen(&list[i]);
+  fs_size_t len = res;
+  const char* entry = list;
+  while (true) {
     listArr->Set(
       context,
       listArr->Length(),
-      String::NewFromUtf8(
-        isolate,
-        &list[i],
-        NewStringType::kNormal,
-        entryLen
-      ).ToLocalChecked()
+      String::NewFromUtf8(isolate, entry).ToLocalChecked()
     ).Check();
-    i += entryLen + 1;
+    const char* prevEntry = entry;
+    entry = GetNextEntry(entry, len);
+    if (!entry)
+      break;
+    len -= entry - prevEntry;
   }
+  Delete(list);
   args.GetReturnValue().Set(listArr);
 }
 void FileSystemFListXAttr(const FunctionCallbackInfo<Value>& args) {
@@ -2187,6 +2218,10 @@ void FileSystemFListXAttr(const FunctionCallbackInfo<Value>& args) {
   fs_ssize_t res = fs->FListXAttr(val, NULL, 0);
   if (res < 0)
     THROWERR(res);
+  if (res == 0) {
+    args.GetReturnValue().Set(Array::New(isolate));
+    return;
+  }
   char* list;
   if (!Alloc(&list, res)) {
     isolate->LowMemoryNotification();
@@ -2203,21 +2238,21 @@ void FileSystemFListXAttr(const FunctionCallbackInfo<Value>& args) {
     THROWERR(res);
   }
   Local<Array> listArr = Array::New(isolate);
-  fs_size_t i = 0;
-  while (i != res) {
-    fs_size_t entryLen = StrLen(&list[i]);
+  fs_size_t len = res;
+  const char* entry = list;
+  while (true) {
     listArr->Set(
       context,
       listArr->Length(),
-      String::NewFromUtf8(
-        isolate,
-        &list[i],
-        NewStringType::kNormal,
-        entryLen
-      ).ToLocalChecked()
+      String::NewFromUtf8(isolate, entry).ToLocalChecked()
     ).Check();
-    i += entryLen + 1;
+    const char* prevEntry = entry;
+    entry = GetNextEntry(entry, len);
+    if (!entry)
+      break;
+    len -= entry - prevEntry;
   }
+  Delete(list);
   args.GetReturnValue().Set(listArr);
 }
 void FileSystemUTimeNsAt(const FunctionCallbackInfo<Value>& args) {
