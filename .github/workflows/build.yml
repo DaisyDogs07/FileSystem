@@ -7,7 +7,7 @@ on:
     paths:
       - '*.cc'
       - '*.h'
-      - module.gyp
+      - binding.gyp
       - .github/workflows/build.yml
 
 jobs:
@@ -22,19 +22,14 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4.2.1
 
-      - name: Compile Node.js Module
-        run: npm i
-
       - name: Setup Visual Studio Environment
         uses: egor-tensin/vs-shell@v2.1
 
-      - name: Compile Library
-        run: cl -O2 -LD FileSystem.cc
-
-      - name: Zip Files
+      - name: Compile and Zip
         run: |
-          move .\build\Release\module.node .\FileSystem.node
-          powershell Compress-Archive -Path FileSystem.dll,FileSystem.lib,FileSystem.node,FileSystem.h,fsdef.h -DestinationPath FileSystem-windows.zip
+          cl -O2 /Oi- /std:c++17 /LD FileSystem.cc
+          npm i
+          powershell Compress-Archive -Path FileSystem.dll,FileSystem.lib,FileSystem.h,fsdef.h -DestinationPath FileSystem-windows.zip
 
       - name: Upload Library
         uses: actions/upload-artifact@v4.4.1
@@ -53,16 +48,11 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4.2.1
 
-      - name: Compile Node.js Module
-        run: npm i
-
-      - name: Compile Library
-        run: g++ -O3 -fPIC -shared -o FileSystem.so FileSystem.cc
-
-      - name: Zip Files
+      - name: Compile and Zip
         run: |
-          mv ./build/Release/module.node ./FileSystem.node
-          zip FileSystem-linux.zip FileSystem.so FileSystem.node FileSystem.h fsdef.h
+          g++ -O3 -fno-builtin -fPIC -shared -o FileSystem.so FileSystem.cc
+          npm i
+          zip FileSystem-linux.zip FileSystem.so FileSystem.h fsdef.h
 
       - name: Upload Library
         uses: actions/upload-artifact@v4.4.1
@@ -155,9 +145,12 @@ jobs:
           asset_name: FileSystem-linux.zip
           asset_content_type: application/zip
 
-      - name: Delete Zip Files
+      - name: Setup NPM Release
         if: env.release_exists == 'false'
-        run: rm -f FileSystem-*.zip
+        run: |
+          unzip -o FileSystem-linux.zip
+          unzip -o FileSystem-windows.zip
+          rm FileSystem-*.zip
 
       - name: Publish to NPM
         if: env.release_exists == 'false'

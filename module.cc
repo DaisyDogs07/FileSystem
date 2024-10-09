@@ -128,6 +128,13 @@ T Val(Local<Value> x) {
   return x.As<Number>()->Value();
 }
 
+uint64_t StrLen(const char* str) {
+  uint64_t len = 0;
+  while (*str++ != '\0')
+    ++len;
+  return len;
+}
+
 const char* GetErrorString(int err) {
   switch (err) {
     case FS_EPERM:
@@ -2103,7 +2110,7 @@ void FileSystemListXAttr(const FunctionCallbackInfo<Value>& args) {
   Local<Array> listArr = Array::New(isolate);
   fs_size_t i = 0;
   while (i != res) {
-    fs_size_t entryLen = strlen(&list[i]);
+    fs_size_t entryLen = StrLen(&list[i]);
     listArr->Set(
       context,
       listArr->Length(),
@@ -2151,7 +2158,7 @@ void FileSystemLListXAttr(const FunctionCallbackInfo<Value>& args) {
   Local<Array> listArr = Array::New(isolate);
   fs_size_t i = 0;
   while (i != res) {
-    fs_size_t entryLen = strlen(&list[i]);
+    fs_size_t entryLen = StrLen(&list[i]);
     listArr->Set(
       context,
       listArr->Length(),
@@ -2198,7 +2205,7 @@ void FileSystemFListXAttr(const FunctionCallbackInfo<Value>& args) {
   Local<Array> listArr = Array::New(isolate);
   fs_size_t i = 0;
   while (i != res) {
-    fs_size_t entryLen = strlen(&list[i]);
+    fs_size_t entryLen = StrLen(&list[i]);
     listArr->Set(
       context,
       listArr->Length(),

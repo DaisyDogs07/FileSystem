@@ -7,7 +7,7 @@ on:
     paths:
       - '*.cc'
       - '*.h'
-      - module.gyp
+      - binding.gyp
       - .github/workflows/build.yml
       - .github/workflows/validate_pull.yml
 
@@ -23,14 +23,13 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4.2.1
 
-      - name: Compile Node.js Module
-        run: npm i
-
       - name: Setup Visual Studio Environment
         uses: egor-tensin/vs-shell@v2.1
 
       - name: Compile
-        run: cl -O2 -LD FileSystem.cc
+        run: |
+          cl -O2 /Oi- /std:c++17 /LD FileSystem.cc
+          npm i
 
   build-linux:
     runs-on: ubuntu-latest
@@ -43,8 +42,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4.2.1
 
-      - name: Compile Node.js Module
-        run: npm i
-
       - name: Compile
-        run: g++ -O3 -fPIC -shared -o FileSystem.so FileSystem.cc
+        run: |
+          g++ -O3 -fno-builtin -fPIC -shared -o FileSystem.so FileSystem.cc
+          npm i
