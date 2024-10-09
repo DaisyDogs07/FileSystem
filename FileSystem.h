@@ -17,8 +17,12 @@
 
 #pragma once
 
+#include <stdint.h>
+
 #if !(defined(__linux__) || defined(_WIN32))
 #error FileSystem is only available on Linux and Windows
+#elif INTPTR_MAX == INT32_MAX
+#error FileSystem is not available on 32-bit platforms
 #else
 
 #include "fsdef.h"

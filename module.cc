@@ -15,8 +15,12 @@
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+#include <stdint.h>
+
 #if !(defined(__linux__) || defined(_WIN32))
 #error FileSystem is only available on Linux and Windows
+#elif INTPTR_MAX == INT32_MAX
+#error FileSystem is not available on 32-bit platforms
 #else
 
 #include "FileSystem.h"
@@ -93,12 +97,26 @@ using namespace v8;
 }
 
 template<typename T>
-bool TryAlloc(T** ptr, fs_size_t length = 1) {
-  T* newPtr = (T*)malloc(sizeof(T) * length);
+bool Alloc(T** ptr, fs_size_t length = 1) {
+  T* newPtr;
+#ifdef __linux__
+  newPtr = (T*)malloc(sizeof(T) * length);
+#else
+  newPtr = (T*)VirtualAlloc(NULL, sizeof(T) * length, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+#endif
   if (!newPtr)
     return false;
   *ptr = newPtr;
   return true;
+}
+template<typename T>
+void Delete(T* ptr) {
+  ptr->~T();
+#ifdef __linux__
+  free((void*)ptr);
+#else
+  VirtualFree((void*)ptr, 0, MEM_RELEASE);
+#endif
 }
 template<typename T>
 T Val(Local<Value> x) {
@@ -162,7 +180,7 @@ Persistent<FunctionTemplate> FSConstructorTmpl;
 Persistent<ObjectTemplate> FSInstanceTmpl;
 
 void FileSystemCleanup(void* data, size_t, void*) {
-  delete reinterpret_cast<FileSystem*>(data);
+  Delete(reinterpret_cast<FileSystem*>(data));
 }
 
 void FileSystemConstructor(const FunctionCallbackInfo<Value>& args) {
@@ -567,9 +585,9 @@ void FileSystemReadLinkAt(const FunctionCallbackInfo<Value>& args) {
     self->GetInternalField(0).As<External>()->Value()
   );
   char* buf;
-  if (!TryAlloc(&buf, FS_PATH_MAX)) {
+  if (!Alloc(&buf, FS_PATH_MAX)) {
     isolate->LowMemoryNotification();
-    if (!TryAlloc(&buf, FS_PATH_MAX))
+    if (!Alloc(&buf, FS_PATH_MAX))
       THROWERR(-FS_ENOMEM);
   }
   int res;
@@ -587,7 +605,7 @@ void FileSystemReadLinkAt(const FunctionCallbackInfo<Value>& args) {
   args.GetReturnValue().Set(
     String::NewFromUtf8(isolate, buf, NewStringType::kInternalized, res).ToLocalChecked()
   );
-  delete buf;
+  Delete(buf);
 }
 void FileSystemReadLink(const FunctionCallbackInfo<Value>& args) {
   Isolate* isolate = args.GetIsolate();
@@ -599,9 +617,9 @@ void FileSystemReadLink(const FunctionCallbackInfo<Value>& args) {
     self->GetInternalField(0).As<External>()->Value()
   );
   char* buf;
-  if (!TryAlloc(&buf, FS_PATH_MAX)) {
+  if (!Alloc(&buf, FS_PATH_MAX)) {
     isolate->LowMemoryNotification();
-    if (!TryAlloc(&buf, FS_PATH_MAX))
+    if (!Alloc(&buf, FS_PATH_MAX))
       THROWERR(-FS_ENOMEM);
   }
   int res;
@@ -618,7 +636,7 @@ void FileSystemReadLink(const FunctionCallbackInfo<Value>& args) {
   args.GetReturnValue().Set(
     String::NewFromUtf8(isolate, buf, NewStringType::kInternalized, res).ToLocalChecked()
   );
-  delete buf;
+  Delete(buf);
 }
 void FileSystemGetDents(const FunctionCallbackInfo<Value>& args) {
   Isolate* isolate = args.GetIsolate();
@@ -637,9 +655,9 @@ void FileSystemGetDents(const FunctionCallbackInfo<Value>& args) {
     count = Val<fs_size_t>(args[1]);
   Local<Array> dentArr = Array::New(isolate);
   char* buf;
-  if (!TryAlloc(&buf, 1024)) {
+  if (!Alloc(&buf, 1024)) {
     isolate->LowMemoryNotification();
-    if (!TryAlloc(&buf, 1024))
+    if (!Alloc(&buf, 1024))
       THROWERR(-FS_ENOMEM);
   }
   unsigned int fdNum = Val<unsigned int>(args[0]);
@@ -689,7 +707,7 @@ void FileSystemGetDents(const FunctionCallbackInfo<Value>& args) {
     }
   }
   dentArr->SetIntegrityLevel(context, IntegrityLevel::kFrozen);
-  delete buf;
+  Delete(buf);
   fs->LSeek(fdNum, off, SEEK_SET);
   args.GetReturnValue().Set(dentArr);
 }
@@ -998,9 +1016,9 @@ void FileSystemRead(const FunctionCallbackInfo<Value>& args) {
     (fs_size_t)0x7ffff000
   );
   char* buf;
-  if (!TryAlloc(&buf, bufLen + 1)) {
+  if (!Alloc(&buf, bufLen + 1)) {
     isolate->LowMemoryNotification();
-    if (!TryAlloc(&buf, bufLen + 1))
+    if (!Alloc(&buf, bufLen + 1))
       THROWERR(-FS_ENOMEM);
   }
   fs_ssize_t res = fs->Read(
@@ -1009,7 +1027,7 @@ void FileSystemRead(const FunctionCallbackInfo<Value>& args) {
     bufLen
   );
   if (res < 0) {
-    delete buf;
+    Delete(buf);
     THROWERR(res);
   }
   buf = reinterpret_cast<char*>(
@@ -1044,9 +1062,9 @@ void FileSystemReadv(const FunctionCallbackInfo<Value>& args) {
     ASSERT(IsBuffer(buf));
   }
   struct fs_iovec* iov;
-  if (!TryAlloc(&iov, length)) {
+  if (!Alloc(&iov, length)) {
     isolate->LowMemoryNotification();
-    if (!TryAlloc(&iov, length))
+    if (!Alloc(&iov, length))
       THROWERR(-FS_ENOMEM);
   }
   for (uint32_t i = 0; i != length; ++i) {
@@ -1062,7 +1080,7 @@ void FileSystemReadv(const FunctionCallbackInfo<Value>& args) {
     iov,
     length
   );
-  delete iov;
+  Delete(iov);
   if (res < 0)
     THROWERR(res);
   args.GetReturnValue().Set(BigInt::New(isolate, res));
@@ -1091,9 +1109,9 @@ void FileSystemPRead(const FunctionCallbackInfo<Value>& args) {
     (fs_size_t)0x7ffff000
   );
   char* buf;
-  if (!TryAlloc(&buf, bufLen + 1)) {
+  if (!Alloc(&buf, bufLen + 1)) {
     isolate->LowMemoryNotification();
-    if (!TryAlloc(&buf, bufLen + 1))
+    if (!Alloc(&buf, bufLen + 1))
       THROWERR(-FS_ENOMEM);
   }
   fs_ssize_t res = fs->PRead(
@@ -1103,7 +1121,7 @@ void FileSystemPRead(const FunctionCallbackInfo<Value>& args) {
     Val<fs_off_t>(args[2])
   );
   if (res < 0) {
-    delete buf;
+    Delete(buf);
     THROWERR(res);
   }
   buf = reinterpret_cast<char*>(
@@ -1139,9 +1157,9 @@ void FileSystemPReadv(const FunctionCallbackInfo<Value>& args) {
     ASSERT(IsBuffer(buf));
   }
   struct fs_iovec* iov;
-  if (!TryAlloc(&iov, length)) {
+  if (!Alloc(&iov, length)) {
     isolate->LowMemoryNotification();
-    if (!TryAlloc(&iov, length))
+    if (!Alloc(&iov, length))
       THROWERR(-FS_ENOMEM);
   }
   for (uint32_t i = 0; i != length; ++i) {
@@ -1158,7 +1176,7 @@ void FileSystemPReadv(const FunctionCallbackInfo<Value>& args) {
     length,
     Val<fs_off_t>(args[2])
   );
-  delete iov;
+  Delete(iov);
   if (res < 0)
     THROWERR(res);
   args.GetReturnValue().Set(BigInt::New(isolate, res));
@@ -1187,9 +1205,9 @@ void FileSystemWrite(const FunctionCallbackInfo<Value>& args) {
   } else count = strLen;
   char* buf;
   if (isString) {
-    if (!TryAlloc(&buf, count)) {
+    if (!Alloc(&buf, count)) {
       isolate->LowMemoryNotification();
-      if (!TryAlloc(&buf, count))
+      if (!Alloc(&buf, count))
         THROWERR(-FS_ENOMEM);
     }
     Local<String> str = args[1].As<String>();
@@ -1210,17 +1228,17 @@ void FileSystemWrite(const FunctionCallbackInfo<Value>& args) {
       );
       if (res < 0) {
         if (isString)
-          delete buf;
+          Delete(buf);
         THROWERR(res);
       }
     } else {
       if (isString)
-        delete buf;
+        Delete(buf);
       THROWERR(res);
     }
   }
   if (isString)
-    delete buf;
+    Delete(buf);
   args.GetReturnValue().Set(BigInt::New(isolate, res));
 }
 void FileSystemWritev(const FunctionCallbackInfo<Value>& args) {
@@ -1244,9 +1262,9 @@ void FileSystemWritev(const FunctionCallbackInfo<Value>& args) {
     ASSERT(IsBuffer(buf));
   }
   struct fs_iovec* iov;
-  if (!TryAlloc(&iov, length)) {
+  if (!Alloc(&iov, length)) {
     isolate->LowMemoryNotification();
-    if (!TryAlloc(&iov, length))
+    if (!Alloc(&iov, length))
       THROWERR(-FS_ENOMEM);
   }
   for (uint32_t i = 0; i != length; ++i) {
@@ -1271,15 +1289,15 @@ void FileSystemWritev(const FunctionCallbackInfo<Value>& args) {
         length
       );
       if (res < 0) {
-        delete iov;
+        Delete(iov);
         THROWERR(res);
       }
     } else {
-      delete iov;
+      Delete(iov);
       THROWERR(res);
     }
   }
-  delete iov;
+  Delete(iov);
   args.GetReturnValue().Set(BigInt::New(isolate, res));
 }
 void FileSystemPWrite(const FunctionCallbackInfo<Value>& args) {
@@ -1307,9 +1325,9 @@ void FileSystemPWrite(const FunctionCallbackInfo<Value>& args) {
   } else count = strLen;
   char* buf;
   if (isString) {
-    if (!TryAlloc(&buf, count)) {
+    if (!Alloc(&buf, count)) {
       isolate->LowMemoryNotification();
-      if (!TryAlloc(&buf, count))
+      if (!Alloc(&buf, count))
         THROWERR(-FS_ENOMEM);
     }
     Local<String> str = args[1].As<String>();
@@ -1332,17 +1350,17 @@ void FileSystemPWrite(const FunctionCallbackInfo<Value>& args) {
       );
       if (res < 0) {
         if (isString)
-          delete buf;
+          Delete(buf);
         THROWERR(res);
       }
     } else {
       if (isString)
-        delete buf;
+        Delete(buf);
       THROWERR(res);
     }
   }
   if (isString)
-    delete buf;
+    Delete(buf);
   args.GetReturnValue().Set(BigInt::New(isolate, res));
 }
 void FileSystemPWritev(const FunctionCallbackInfo<Value>& args) {
@@ -1367,9 +1385,9 @@ void FileSystemPWritev(const FunctionCallbackInfo<Value>& args) {
     ASSERT(IsBuffer(buf));
   }
   struct fs_iovec* iov;
-  if (!TryAlloc(&iov, length)) {
+  if (!Alloc(&iov, length)) {
     isolate->LowMemoryNotification();
-    if (!TryAlloc(&iov, length))
+    if (!Alloc(&iov, length))
       THROWERR(-FS_ENOMEM);
   }
   for (uint32_t i = 0; i != length; ++i) {
@@ -1396,15 +1414,15 @@ void FileSystemPWritev(const FunctionCallbackInfo<Value>& args) {
         Val<fs_off_t>(args[2])
       );
       if (res < 0) {
-        delete iov;
+        Delete(iov);
         THROWERR(res);
       }
     } else {
-      delete iov;
+      Delete(iov);
       THROWERR(res);
     }
   }
-  delete iov;
+  Delete(iov);
   args.GetReturnValue().Set(BigInt::New(isolate, res));
 }
 void FileSystemSendFile(const FunctionCallbackInfo<Value>& args) {
@@ -1751,9 +1769,9 @@ void FileSystemGetXAttr(const FunctionCallbackInfo<Value>& args) {
   char* value = NULL;
   fs_size_t valSize = Val<fs_size_t>(args[2]);
   if (valSize != 0) {
-    if (!TryAlloc(&value, valSize)) {
+    if (!Alloc(&value, valSize)) {
       isolate->LowMemoryNotification();
-      if (!TryAlloc(&value, valSize))
+      if (!Alloc(&value, valSize))
         THROWERR(-FS_ENOMEM);
     }
   }
@@ -1769,7 +1787,7 @@ void FileSystemGetXAttr(const FunctionCallbackInfo<Value>& args) {
         args.GetReturnValue().Set(False(isolate));
         return;
       }
-    } else delete value;
+    } else Delete(value);
     THROWERR(res);
   }
   if (valSize == 0) {
@@ -1794,9 +1812,9 @@ void FileSystemLGetXAttr(const FunctionCallbackInfo<Value>& args) {
   char* value = NULL;
   fs_size_t valSize = Val<fs_size_t>(args[2]);
   if (valSize != 0) {
-    if (!TryAlloc(&value, valSize)) {
+    if (!Alloc(&value, valSize)) {
       isolate->LowMemoryNotification();
-      if (!TryAlloc(&value, valSize))
+      if (!Alloc(&value, valSize))
         THROWERR(-FS_ENOMEM);
     }
   }
@@ -1812,7 +1830,7 @@ void FileSystemLGetXAttr(const FunctionCallbackInfo<Value>& args) {
         args.GetReturnValue().Set(False(isolate));
         return;
       }
-    } else delete value;
+    } else Delete(value);
     THROWERR(res);
   }
   if (valSize == 0) {
@@ -1837,9 +1855,9 @@ void FileSystemFGetXAttr(const FunctionCallbackInfo<Value>& args) {
   char* value = NULL;
   fs_size_t valSize = Val<fs_size_t>(args[2]);
   if (valSize != 0) {
-    if (!TryAlloc(&value, valSize)) {
+    if (!Alloc(&value, valSize)) {
       isolate->LowMemoryNotification();
-      if (!TryAlloc(&value, valSize))
+      if (!Alloc(&value, valSize))
         THROWERR(-FS_ENOMEM);
     }
   }
@@ -1855,7 +1873,7 @@ void FileSystemFGetXAttr(const FunctionCallbackInfo<Value>& args) {
         args.GetReturnValue().Set(False(isolate));
         return;
       }
-    } else delete value;
+    } else Delete(value);
     THROWERR(res);
   }
   if (valSize == 0) {
@@ -2068,9 +2086,9 @@ void FileSystemListXAttr(const FunctionCallbackInfo<Value>& args) {
   if (res < 0)
     THROWERR(res);
   char* list;
-  if (!TryAlloc(&list, res)) {
+  if (!Alloc(&list, res)) {
     isolate->LowMemoryNotification();
-    if (!TryAlloc(&list, res))
+    if (!Alloc(&list, res))
       THROWERR(-FS_ENOMEM);
   }
   res = fs->ListXAttr(
@@ -2079,7 +2097,7 @@ void FileSystemListXAttr(const FunctionCallbackInfo<Value>& args) {
     res
   );
   if (res < 0) {
-    delete list;
+    Delete(list);
     THROWERR(res);
   }
   Local<Array> listArr = Array::New(isolate);
@@ -2116,9 +2134,9 @@ void FileSystemLListXAttr(const FunctionCallbackInfo<Value>& args) {
   if (res < 0)
     THROWERR(res);
   char* list;
-  if (!TryAlloc(&list, res)) {
+  if (!Alloc(&list, res)) {
     isolate->LowMemoryNotification();
-    if (!TryAlloc(&list, res))
+    if (!Alloc(&list, res))
       THROWERR(-FS_ENOMEM);
   }
   res = fs->LListXAttr(
@@ -2127,7 +2145,7 @@ void FileSystemLListXAttr(const FunctionCallbackInfo<Value>& args) {
     res
   );
   if (res < 0) {
-    delete list;
+    Delete(list);
     THROWERR(res);
   }
   Local<Array> listArr = Array::New(isolate);
@@ -2163,9 +2181,9 @@ void FileSystemFListXAttr(const FunctionCallbackInfo<Value>& args) {
   if (res < 0)
     THROWERR(res);
   char* list;
-  if (!TryAlloc(&list, res)) {
+  if (!Alloc(&list, res)) {
     isolate->LowMemoryNotification();
-    if (!TryAlloc(&list, res))
+    if (!Alloc(&list, res))
       THROWERR(-FS_ENOMEM);
   }
   res = fs->FListXAttr(
@@ -2174,7 +2192,7 @@ void FileSystemFListXAttr(const FunctionCallbackInfo<Value>& args) {
     res
   );
   if (res < 0) {
-    delete list;
+    Delete(list);
     THROWERR(res);
   }
   Local<Array> listArr = Array::New(isolate);

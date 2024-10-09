@@ -17,8 +17,12 @@
 
 #pragma once
 
+#include <stdint.h>
+
 #if !(defined(__linux__) || defined(_WIN32))
 #error FileSystem is only available on Linux and Windows
+#elif INTPTR_MAX == INT32_MAX
+#error FileSystem is not available on 32-bit platforms
 #else
 
 #define FS_AT_EMPTY_PATH 0x1000
@@ -122,18 +126,24 @@
 
 #define FS_IFTODT(mode) ((mode & FS_S_IFMT) >> 12)
 
-typedef unsigned long fs_dev_t;
-typedef unsigned long fs_ino_t;
+#ifdef __linux__
+#define FS_LONG long
+#else
+#define FS_LONG long long
+#endif
+
+typedef unsigned FS_LONG fs_dev_t;
+typedef unsigned FS_LONG fs_ino_t;
 typedef unsigned int fs_mode_t;
-typedef unsigned long fs_nlink_t;
-typedef long fs_off_t;
-typedef unsigned long fs_size_t;
-typedef long fs_ssize_t;
-typedef long fs_time_t;
+typedef unsigned FS_LONG fs_nlink_t;
+typedef FS_LONG fs_off_t;
+typedef unsigned FS_LONG fs_size_t;
+typedef FS_LONG fs_ssize_t;
+typedef FS_LONG fs_time_t;
 
 struct fs_dirent {
-  unsigned long d_ino;
-  unsigned long d_off;
+  unsigned FS_LONG d_ino;
+  unsigned FS_LONG d_off;
   unsigned short d_reclen;
   char d_name[];
 };
@@ -145,7 +155,7 @@ struct fs_iovec {
 
 struct fs_timespec {
   fs_time_t tv_sec;
-  long tv_nsec;
+  FS_LONG tv_nsec;
 };
 
 struct fs_stat {
@@ -172,12 +182,14 @@ struct fs_statx {
 
 struct fs_timeval {
   fs_time_t tv_sec;
-  long tv_usec;
+  FS_LONG tv_usec;
 };
 
 struct fs_utimbuf {
   fs_time_t actime;
   fs_time_t modtime;
 };
+
+#undef FS_LONG
 
 #endif

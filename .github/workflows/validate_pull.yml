@@ -8,7 +8,8 @@ on:
       - '*.cc'
       - '*.h'
       - module.gyp
-      - package.json
+      - .github/workflows/build.yml
+      - .github/workflows/validate_pull.yml
 
 jobs:
   build-windows:
