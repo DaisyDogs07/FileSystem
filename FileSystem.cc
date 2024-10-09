@@ -179,12 +179,11 @@ namespace {
     return 0;
   }
   char* StrDup(const char* str) {
-    uint64_t len = StrLen(str);
+    uint64_t len = StrLen(str) + 1;
     char* newStr;
     if (!Alloc(&newStr, len))
       return NULL;
     MemCpy(newStr, str, len);
-    newStr[len] = '\0';
     return newStr;
   }
 
@@ -1642,8 +1641,7 @@ int FileSystem::GetDents(unsigned int fdNum, struct fs_dirent* dirp, unsigned in
     dent->d_ino = d.inode->id;
     dent->d_off = fd->seekOff + 1;
     dent->d_reclen = reclen;
-    MemCpy(dent->d_name, d.name, nameLen);
-    dent->d_name[nameLen] = '\0';
+    MemCpy(dent->d_name, d.name, nameLen + 1);
     dirpData[reclen - 1] = FS_IFTODT(d.inode->mode);
     dirpData += reclen;
     nread += reclen;
@@ -2797,10 +2795,8 @@ int FileSystem::GetCwd(char* buf, fs_size_t size) {
   fs_size_t cwdLen = StrLen(fs->cwd.path);
   if (size <= cwdLen)
     return -FS_ERANGE;
-  if (buf) {
-    MemCpy(buf, fs->cwd.path, cwdLen);
-    buf[cwdLen] = '\0';
-  }
+  if (buf)
+    MemCpy(buf, fs->cwd.path, cwdLen + 1);
   return cwdLen;
 }
 int FileSystem::Stat(const char* path, struct fs_stat* buf) {
@@ -3458,7 +3454,7 @@ bool FileSystem::DumpToFile(const char* filename) {
       !SetEndOfFile(fd))
     goto err2;
 #endif
-  if (write(fd, "\x7FVFS", 4) != 4 ||
+  if (write(fd, (void*)"\x7FVFS", 4) != 4 ||
       write(fd, &is64Bit, 1) != 1 ||
       write(fd, &fs->inodeCount, sizeof(fs_ino_t)) != sizeof(fs_ino_t))
     goto err2;

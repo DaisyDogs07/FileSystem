@@ -1,6 +1,8 @@
 {
   "name": "@daisydogs07/filesystem",
-  "version": "5.2.0",
+  "version": "5.2.1",
+  "os": ["linux", "win32"],
+  "cpu": ["x64"],
   "main": "./build/Release/module.node",
   "types": "module.d.ts",
   "author": "DaisyDogs07",

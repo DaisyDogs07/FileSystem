@@ -28,7 +28,6 @@ jobs:
       - name: Compile and Zip
         run: |
           cl -O2 /Oi- /std:c++17 /LD FileSystem.cc
-          npm i
           powershell Compress-Archive -Path FileSystem.dll,FileSystem.lib,FileSystem.h,fsdef.h -DestinationPath FileSystem-windows.zip
 
       - name: Upload Library
@@ -51,7 +50,6 @@ jobs:
       - name: Compile and Zip
         run: |
           g++ -O3 -fno-builtin -fPIC -shared -o FileSystem.so FileSystem.cc
-          npm i
           zip FileSystem-linux.zip FileSystem.so FileSystem.h fsdef.h
 
       - name: Upload Library
