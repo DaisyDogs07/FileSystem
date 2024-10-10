@@ -3611,11 +3611,11 @@ FileSystem* FileSystem::LoadFromFile(const char* filename) {
         goto err_after_inode_init;
       for (fs_size_t j = 0; j != attribCount; ++j) {
         struct Attribute* attr;
-        if (!Alloc(&attr))
-          goto err_after_attribs_init;
         char name[FS_XATTR_NAME_MAX];
         fs_size_t nameLen = 0;
         fs_size_t size;
+        if (!Alloc(&attr))
+          goto err_after_attribs_init;
         do {
           if (read(fd, &name[nameLen], 1) != 1)
             goto err_after_attrib_init;
