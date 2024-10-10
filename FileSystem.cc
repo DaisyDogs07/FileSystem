@@ -30,7 +30,7 @@
 #include <fcntl.h>
 #include <pthread.h>
 #include <stdlib.h>
-#include <stdring.h>
+#include <string.h>
 #include <unistd.h>
 #else
 #include <Windows.h>
