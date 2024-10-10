@@ -25,10 +25,14 @@ jobs:
       - name: Setup Visual Studio Environment
         uses: egor-tensin/vs-shell@v2.1
 
-      - name: Compile and Zip
-        run: |
-          cl -O2 /Oi- /std:c++17 /LD FileSystem.cc
-          powershell Compress-Archive -Path FileSystem.dll,FileSystem.lib,FileSystem.h,fsdef.h -DestinationPath FileSystem-windows.zip
+      - name: Compile Library
+        run: cl /O2 /Oi- /std:c++17 /LD FileSystem.cc
+
+      - name: Test Node.js Module
+        run: npm i
+
+      - name: Zip Library
+        run: powershell Compress-Archive -Path FileSystem.dll,FileSystem.lib,FileSystem.h,fsdef.h -DestinationPath FileSystem-windows.zip
 
       - name: Upload Library
         uses: actions/upload-artifact@v4.4.1
@@ -47,10 +51,14 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4.2.1
 
-      - name: Compile and Zip
-        run: |
-          g++ -O3 -fno-builtin -fPIC -shared -o FileSystem.so FileSystem.cc
-          zip FileSystem-linux.zip FileSystem.so FileSystem.h fsdef.h
+      - name: Compile Library
+        run: g++ -O3 -fno-builtin -fPIC -shared -o FileSystem.so FileSystem.cc
+
+      - name: Test Node.js Module
+        run: npm i
+
+      - name: Zip Library
+        run: zip FileSystem-linux.zip FileSystem.so FileSystem.h fsdef.h
 
       - name: Upload Library
         uses: actions/upload-artifact@v4.4.1
@@ -102,7 +110,7 @@ jobs:
           fi
         shell: bash
 
-      - name: Remove Library Assets
+      - name: Remove Library Assets from Existing Release
         if: env.release_exists == 'true'
         run: |
           assets_url=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" https://api.github.com/repos/${{ github.repository }}/releases/${{ env.RELEASE_ID }} | jq -r '.assets_url')

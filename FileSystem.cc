@@ -324,25 +324,27 @@ namespace {
   };
 
   struct Attribute {
-    const char* name;
+    ~Attribute() {
+      if (name)
+        Delete(name);
+      if (data)
+        Delete(data);
+    }
+    const char* name = NULL;
     fs_size_t size;
-    char* data;
+    char* data = NULL;
   };
 
   struct Attributes {
     ~Attributes() {
       if (list) {
-        for (fs_size_t i = 0; i != count; ++i) {
-          struct Attribute attrib = list[i];
-          Delete(attrib.name);
-          if (attrib.size != 0)
-            Delete(attrib.data);
-        }
+        for (fs_size_t i = 0; i != count; ++i)
+          Delete(list[i]);
         Delete(list);
       }
     }
     fs_size_t count = 0;
-    struct Attribute* list = NULL;
+    struct Attribute** list = NULL;
   };
 
   struct BaseINode {
@@ -2864,12 +2866,12 @@ int FileSystem::GetXAttr(const char* path, const char* name, void* value, fs_siz
   if (res != 0)
     return res;
   for (fs_size_t i = 0; i != inode->attribs.count; ++i) {
-    struct Attribute* attrib = &inode->attribs.list[i];
+    struct Attribute* attrib = inode->attribs.list[i];
     if (StrCmp(name, attrib->name) == 0) {
       if (size != 0) {
         if (size < attrib->size)
           return -FS_ERANGE;
-        if (attrib->size != 0)
+        if (attrib->data)
           MemCpy(value, attrib->data, attrib->size);
       }
       return 0;
@@ -2887,12 +2889,12 @@ int FileSystem::LGetXAttr(const char* path, const char* name, void* value, fs_si
   if (res != 0)
     return res;
   for (fs_size_t i = 0; i != inode->attribs.count; ++i) {
-    struct Attribute* attrib = &inode->attribs.list[i];
+    struct Attribute* attrib = inode->attribs.list[i];
     if (StrCmp(name, attrib->name) == 0) {
       if (size != 0) {
         if (size < attrib->size)
           return -FS_ERANGE;
-        if (attrib->size != 0)
+        if (attrib->data)
           MemCpy(value, attrib->data, attrib->size);
       }
       return 0;
@@ -2910,12 +2912,12 @@ int FileSystem::FGetXAttr(int fdNum, const char* name, void* value, fs_size_t si
     return -FS_EBADF;
   struct BaseINode* inode = fd->inode;
   for (fs_size_t i = 0; i != inode->attribs.count; ++i) {
-    struct Attribute* attrib = &inode->attribs.list[i];
+    struct Attribute* attrib = inode->attribs.list[i];
     if (StrCmp(name, attrib->name) == 0) {
       if (size != 0) {
         if (size < attrib->size)
           return -FS_ERANGE;
-        if (attrib->size != 0)
+        if (attrib->data)
           MemCpy(value, attrib->data, attrib->size);
       }
       return 0;
@@ -2940,7 +2942,7 @@ int FileSystem::SetXAttr(
     return res;
   struct Attributes* attribs = &inode->attribs;
   for (fs_size_t i = 0; i != attribs->count; ++i) {
-    struct Attribute* attrib = &attribs->list[i];
+    struct Attribute* attrib = attribs->list[i];
     if (StrCmp(name, attrib->name) == 0) {
       if (flags & FS_XATTR_CREATE)
         return -FS_EEXIST;
@@ -2955,7 +2957,7 @@ int FileSystem::SetXAttr(
         }
         MemCpy(data, value, size);
       }
-      attribs->list[i] = {
+      *attrib = {
         kname,
         size,
         data
@@ -2965,28 +2967,26 @@ int FileSystem::SetXAttr(
   }
   if (flags & FS_XATTR_REPLACE)
     return -FS_ENODATA;
-  const char* kname;
-  if (!(kname = StrDup(name)))
+  struct Attribute* attrib;
+  if (!Alloc<true>(&attrib))
     return -FS_ENOMEM;
-  char* data = NULL;
+  attrib->size = size;
+  if (!(attrib->name = StrDup(name))) {
+    Delete(attrib);
+    return -FS_ENOMEM;
+  }
   if (size != 0) {
-    if (!Alloc(&data, size)) {
-      Delete(kname);
+    if (!Alloc(&attrib->data, size)) {
+      Delete(attrib);
       return -FS_ENOMEM;
     }
-    MemCpy(data, value, size);
+    MemCpy(attrib->data, value, size);
   }
   if (!Realloc(&attribs->list, attribs->count, attribs->count + 1)) {
-    Delete(kname);
-    if (size != 0)
-      Delete(data);
+    Delete(attrib);
     return -FS_ENOMEM;
   }
-  attribs->list[attribs->count] = {
-    kname,
-    size,
-    data
-  };
+  attribs->list[attribs->count] = attrib;
   ++attribs->count;
   return 0;
 }
@@ -3007,7 +3007,7 @@ int FileSystem::LSetXAttr(
     return res;
   struct Attributes* attribs = &inode->attribs;
   for (fs_size_t i = 0; i != attribs->count; ++i) {
-    struct Attribute* attrib = &attribs->list[i];
+    struct Attribute* attrib = attribs->list[i];
     if (StrCmp(name, attrib->name) == 0) {
       if (flags & FS_XATTR_CREATE)
         return -FS_EEXIST;
@@ -3022,7 +3022,7 @@ int FileSystem::LSetXAttr(
         }
         MemCpy(data, value, size);
       }
-      attribs->list[i] = {
+      *attrib = {
         kname,
         size,
         data
@@ -3032,28 +3032,26 @@ int FileSystem::LSetXAttr(
   }
   if (flags & FS_XATTR_REPLACE)
     return -FS_ENODATA;
-  const char* kname;
-  if (!(kname = StrDup(name)))
+  struct Attribute* attrib;
+  if (!Alloc<true>(&attrib))
     return -FS_ENOMEM;
-  char* data = NULL;
+  attrib->size = size;
+  if (!(attrib->name = StrDup(name))) {
+    Delete(attrib);
+    return -FS_ENOMEM;
+  }
   if (size != 0) {
-    if (!Alloc(&data, size)) {
-      Delete(kname);
+    if (!Alloc(&attrib->data, size)) {
+      Delete(attrib);
       return -FS_ENOMEM;
     }
-    MemCpy(data, value, size);
+    MemCpy(attrib->data, value, size);
   }
   if (!Realloc(&attribs->list, attribs->count, attribs->count + 1)) {
-    Delete(kname);
-    if (size != 0)
-      Delete(data);
+    Delete(attrib);
     return -FS_ENOMEM;
   }
-  attribs->list[attribs->count] = {
-    kname,
-    size,
-    data
-  };
+  attribs->list[attribs->count] = attrib;
   ++attribs->count;
   return 0;
 }
@@ -3068,7 +3066,7 @@ int FileSystem::FSetXAttr(int fdNum, const char* name, void* value, fs_size_t si
   struct BaseINode* inode = fd->inode;
   struct Attributes* attribs = &inode->attribs;
   for (fs_size_t i = 0; i != attribs->count; ++i) {
-    struct Attribute* attrib = &attribs->list[i];
+    struct Attribute* attrib = attribs->list[i];
     if (StrCmp(name, attrib->name) == 0) {
       if (flags & FS_XATTR_CREATE)
         return -FS_EEXIST;
@@ -3083,7 +3081,7 @@ int FileSystem::FSetXAttr(int fdNum, const char* name, void* value, fs_size_t si
         }
         MemCpy(data, value, size);
       }
-      attribs->list[i] = {
+      *attrib = {
         kname,
         size,
         data
@@ -3093,28 +3091,26 @@ int FileSystem::FSetXAttr(int fdNum, const char* name, void* value, fs_size_t si
   }
   if (flags & FS_XATTR_REPLACE)
     return -FS_ENODATA;
-  const char* kname;
-  if (!(kname = StrDup(name)))
+  struct Attribute* attrib;
+  if (!Alloc<true>(&attrib))
     return -FS_ENOMEM;
-  char* data = NULL;
+  attrib->size = size;
+  if (!(attrib->name = StrDup(name))) {
+    Delete(attrib);
+    return -FS_ENOMEM;
+  }
   if (size != 0) {
-    if (!Alloc(&data, size)) {
-      Delete(kname);
+    if (!Alloc(&attrib->data, size)) {
+      Delete(attrib);
       return -FS_ENOMEM;
     }
-    MemCpy(data, value, size);
+    MemCpy(attrib->data, value, size);
   }
   if (!Realloc(&attribs->list, attribs->count, attribs->count + 1)) {
-    Delete(kname);
-    if (size != 0)
-      Delete(data);
+    Delete(attrib);
     return -FS_ENOMEM;
   }
-  attribs->list[attribs->count] = {
-    kname,
-    size,
-    data
-  };
+  attribs->list[attribs->count] = attrib;
   ++attribs->count;
   return 0;
 }
@@ -3129,16 +3125,15 @@ int FileSystem::RemoveXAttr(const char* path, const char* name) {
     return res;
   struct Attributes* attribs = &inode->attribs;
   for (fs_size_t i = 0; i != attribs->count; ++i) {
-    struct Attribute* attrib = &attribs->list[i];
+    struct Attribute* attrib = attribs->list[i];
     if (StrCmp(name, attrib->name) == 0) {
+      Delete(attrib);
       if (attribs->count == 1) {
         Delete(attribs->list);
         attribs->list = NULL;
         attribs->count = 0;
         return 0;
       }
-      if (attrib->size != 0)
-        Delete(attrib->data);
       if (i != attribs->count - 1)
         MemMove(
           &attribs->list[i],
@@ -3163,16 +3158,15 @@ int FileSystem::LRemoveXAttr(const char* path, const char* name) {
     return res;
   struct Attributes* attribs = &inode->attribs;
   for (fs_size_t i = 0; i != attribs->count; ++i) {
-    struct Attribute* attrib = &attribs->list[i];
+    struct Attribute* attrib = attribs->list[i];
     if (StrCmp(name, attrib->name) == 0) {
+      Delete(attrib);
       if (attribs->count == 1) {
         Delete(attribs->list);
         attribs->list = NULL;
         attribs->count = 0;
         return 0;
       }
-      if (attrib->size != 0)
-        Delete(attrib->data);
       if (i != attribs->count - 1)
         MemMove(
           &attribs->list[i],
@@ -3197,16 +3191,15 @@ int FileSystem::FRemoveXAttr(int fdNum, const char* name) {
   struct BaseINode* inode = fd->inode;
   struct Attributes* attribs = &inode->attribs;
   for (fs_size_t i = 0; i != attribs->count; ++i) {
-    struct Attribute* attrib = &attribs->list[i];
+    struct Attribute* attrib = attribs->list[i];
     if (StrCmp(name, attrib->name) == 0) {
+      Delete(attrib);
       if (attribs->count == 1) {
         Delete(attribs->list);
         attribs->list = NULL;
         attribs->count = 0;
         return 0;
       }
-      if (attrib->size != 0)
-        Delete(attrib->data);
       if (i != attribs->count - 1)
         MemMove(
           &attribs->list[i],
@@ -3229,7 +3222,7 @@ fs_ssize_t FileSystem::ListXAttr(const char* path, char* list, fs_size_t size) {
     return res;
   fs_size_t listLen = 0;
   for (fs_size_t i = 0; i != inode->attribs.count; ++i) {
-    struct Attribute* attrib = &inode->attribs.list[i];
+    struct Attribute* attrib = inode->attribs.list[i];
     listLen += StrLen(attrib->name) + 1;
     if ((size != 0 && listLen > size) || listLen > FS_XATTR_LIST_MAX)
       return -FS_ERANGE;
@@ -3238,7 +3231,7 @@ fs_ssize_t FileSystem::ListXAttr(const char* path, char* list, fs_size_t size) {
     return listLen;
   fs_size_t i = 0;
   for (fs_size_t j = 0; j != inode->attribs.count; ++j) {
-    struct Attribute* attrib = &inode->attribs.list[j];
+    struct Attribute* attrib = inode->attribs.list[j];
     fs_size_t nameLen = StrLen(attrib->name) + 1;
     MemCpy(&list[i], attrib->name, nameLen);
     i += nameLen;
@@ -3254,7 +3247,7 @@ fs_ssize_t FileSystem::LListXAttr(const char* path, char* list, fs_size_t size) 
     return res;
   fs_size_t listLen = 0;
   for (fs_size_t i = 0; i != inode->attribs.count; ++i) {
-    struct Attribute* attrib = &inode->attribs.list[i];
+    struct Attribute* attrib = inode->attribs.list[i];
     listLen += StrLen(attrib->name) + 1;
     if (listLen > size || listLen > FS_XATTR_LIST_MAX)
       return -FS_ERANGE;
@@ -3263,7 +3256,7 @@ fs_ssize_t FileSystem::LListXAttr(const char* path, char* list, fs_size_t size) 
     return listLen;
   fs_size_t i = 0;
   for (fs_size_t j = 0; j != inode->attribs.count; ++j) {
-    struct Attribute* attrib = &inode->attribs.list[j];
+    struct Attribute* attrib = inode->attribs.list[j];
     fs_size_t nameLen = StrLen(attrib->name) + 1;
     MemCpy(&list[i], attrib->name, nameLen);
     i += nameLen;
@@ -3279,7 +3272,7 @@ fs_ssize_t FileSystem::FListXAttr(int fdNum, char* list, fs_size_t size) {
   struct BaseINode* inode = fd->inode;
   fs_size_t listLen = 0;
   for (fs_size_t i = 0; i != inode->attribs.count; ++i) {
-    struct Attribute* attrib = &inode->attribs.list[i];
+    struct Attribute* attrib = inode->attribs.list[i];
     listLen += StrLen(attrib->name) + 1;
     if (listLen > size || listLen > FS_XATTR_LIST_MAX)
       return -FS_ERANGE;
@@ -3288,7 +3281,7 @@ fs_ssize_t FileSystem::FListXAttr(int fdNum, char* list, fs_size_t size) {
     return listLen;
   fs_size_t i = 0;
   for (fs_size_t j = 0; j != inode->attribs.count; ++j) {
-    struct Attribute* attrib = &inode->attribs.list[j];
+    struct Attribute* attrib = inode->attribs.list[j];
     fs_size_t nameLen = StrLen(attrib->name) + 1;
     MemCpy(&list[i], attrib->name, nameLen);
     i += nameLen;
@@ -3486,7 +3479,7 @@ bool FileSystem::DumpToFile(const char* filename) {
       goto err2;
     if (inode->attribs.count != 0)
       for (fs_size_t j = 0; j != inode->attribs.count; ++j) {
-        struct Attribute* attrib = &inode->attribs.list[j];
+        struct Attribute* attrib = inode->attribs.list[j];
         fs_size_t nameLen = StrLen(attrib->name) + 1;
         if (write(fd, (void*)attrib->name, nameLen) != nameLen ||
             write(fd, &attrib->size, sizeof(fs_size_t)) != sizeof(fs_size_t) ||
@@ -3617,39 +3610,35 @@ FileSystem* FileSystem::LoadFromFile(const char* filename) {
       if (!Alloc(&inode->attribs.list, attribCount))
         goto err_after_inode_init;
       for (fs_size_t j = 0; j != attribCount; ++j) {
-        struct Attribute attr = {};
+        struct Attribute* attr;
+        if (!Alloc(&attr))
+          goto err_after_attribs_init;
         char name[FS_XATTR_NAME_MAX];
         fs_size_t nameLen = 0;
         fs_size_t size;
         do {
           if (read(fd, &name[nameLen], 1) != 1)
-            goto err_after_attribs_init;
+            goto err_after_attrib_init;
         } while (name[nameLen++] != '\0');
-        if (!(attr.name = StrDup(name)))
-          goto err_after_attribs_init;
+        if (!(attr->name = StrDup(name)))
+          goto err_after_attrib_init;
         if (read(fd, &size, sizeof(fs_size_t)) != sizeof(fs_size_t))
-          goto err_after_attrib_name;
+          goto err_after_attrib_init;
+        attr->size = size;
         if (size != 0) {
-          attr.size = size;
-          if (!Alloc(&attr.data, size))
-            goto err_after_attrib_name;
-          if (read(fd, attr.data, size) != size)
-            goto err_after_attrib_data_init;
+          if (!Alloc(&attr->data, size))
+            goto err_after_attrib_init;
+          if (read(fd, attr->data, size) != size)
+            goto err_after_attrib_init;
         }
         inode->attribs.list[j] = attr;
         goto success_attrib;
 
-       err_after_attrib_data_init:
-        Delete<false>(attr.data);
-       err_after_attrib_name:
-        Delete<false>(attr.name);
+       err_after_attrib_init:
+        Delete(attr);
        err_after_attribs_init:
-        for (fs_size_t k = 0; k != j; ++k) {
-          struct Attribute* attrib = &inode->attribs.list[k];
-          Delete<false>(attrib->name);
-          if (attrib->size != 0)
-            Delete<false>(attrib->data);
-        }
+        for (fs_size_t k = 0; k != j; ++k)
+          Delete(inode->attribs.list[k]);
         Delete<false>(inode->attribs.list);
         goto err_after_inode_init;
        success_attrib: {}

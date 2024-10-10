@@ -97,13 +97,8 @@ using namespace v8;
 }
 
 template<typename T>
-bool Alloc(T** ptr, fs_size_t length = 1) {
-  T* newPtr;
-#ifdef __linux__
-  newPtr = (T*)malloc(sizeof(T) * length);
-#else
-  newPtr = (T*)VirtualAlloc(NULL, sizeof(T) * length, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-#endif
+bool Alloc(T** ptr, size_t length = 1) {
+  T* newPtr = (T*)malloc(sizeof(T) * length);
   if (!newPtr)
     return false;
   *ptr = newPtr;
@@ -112,11 +107,7 @@ bool Alloc(T** ptr, fs_size_t length = 1) {
 template<typename T>
 void Delete(T* ptr) {
   ptr->~T();
-#ifdef __linux__
   free((void*)ptr);
-#else
-  VirtualFree((void*)ptr, 0, MEM_RELEASE);
-#endif
 }
 template<typename T>
 T Val(Local<Value> x) {
@@ -168,12 +159,9 @@ const char* GetErrorString(int err) {
       return "No data available";
     case FS_EOVERFLOW:
       return "Value too large for defined data type";
+    default:
+      return "Unknown Error";
   }
-#ifdef __linux__
-  __builtin_unreachable();
-#else
-  __assume(0);
-#endif
 }
 
 Persistent<FunctionTemplate> FSConstructorTmpl;
@@ -1008,12 +996,12 @@ void FileSystemRead(const FunctionCallbackInfo<Value>& args) {
   fs_off_t off;
   THROWIFERR(fs->FStat(fdNum, &s));
   THROWIFERR(off = fs->LSeek(fdNum, 0, SEEK_CUR));
-  fs_size_t bufLen = std::min(
+  size_t bufLen = std::min(
     std::min(
-      Val<fs_size_t>(args[1]),
-      (fs_size_t)(s.st_size - off)
+      Val<size_t>(args[1]),
+      (size_t)(s.st_size - off)
     ),
-    (fs_size_t)0x7ffff000
+    (size_t)0x7ffff000
   );
   char* buf;
   if (!Alloc(&buf, bufLen + 1)) {
@@ -1101,12 +1089,12 @@ void FileSystemPRead(const FunctionCallbackInfo<Value>& args) {
   fs_off_t off;
   THROWIFERR(fs->FStat(fdNum, &s));
   THROWIFERR(off = fs->LSeek(fdNum, 0, SEEK_CUR));
-  fs_size_t bufLen = std::min(
+  size_t bufLen = std::min(
     std::min(
-      Val<fs_size_t>(args[1]),
-      (fs_size_t)(s.st_size - off)
+      Val<size_t>(args[1]),
+      (size_t)(s.st_size - off)
     ),
-    (fs_size_t)0x7ffff000
+    (size_t)0x7ffff000
   );
   char* buf;
   if (!Alloc(&buf, bufLen + 1)) {
@@ -1194,12 +1182,12 @@ void FileSystemWrite(const FunctionCallbackInfo<Value>& args) {
     self->GetInternalField(0).As<External>()->Value()
   );
   bool isString = args[1]->IsString();
-  fs_size_t strLen = isString
+  size_t strLen = isString
     ? args[1].As<String>()->Utf8Length(isolate)
     : Buffer::Length(args[1]);
-  fs_size_t count;
+  size_t count;
   if (args.Length() == 3) {
-    count = Val<fs_size_t>(args[2]);
+    count = Val<size_t>(args[2]);
     if (count > strLen)
       count = strLen;
   } else count = strLen;
@@ -1314,12 +1302,12 @@ void FileSystemPWrite(const FunctionCallbackInfo<Value>& args) {
     self->GetInternalField(0).As<External>()->Value()
   );
   bool isString = args[1]->IsString();
-  fs_size_t strLen = isString
+  size_t strLen = isString
     ? args[1].As<String>()->Utf8Length(isolate)
     : Buffer::Length(args[1]);
-  fs_size_t count;
+  size_t count;
   if (args.Length() == 4) {
-    count = Val<fs_size_t>(args[3]);
+    count = Val<size_t>(args[3]);
     if (count > strLen)
       count = strLen;
   } else count = strLen;
@@ -1767,7 +1755,7 @@ void FileSystemGetXAttr(const FunctionCallbackInfo<Value>& args) {
     self->GetInternalField(0).As<External>()->Value()
   );
   char* value = NULL;
-  fs_size_t valSize = Val<fs_size_t>(args[2]);
+  size_t valSize = Val<size_t>(args[2]);
   if (valSize != 0) {
     if (!Alloc(&value, valSize)) {
       isolate->LowMemoryNotification();
@@ -1782,21 +1770,20 @@ void FileSystemGetXAttr(const FunctionCallbackInfo<Value>& args) {
     valSize
   );
   if (res != 0) {
-    if (valSize == 0) {
-      if (res == -ENODATA) {
-        args.GetReturnValue().Set(False(isolate));
-        return;
-      }
-    } else Delete(value);
+    if (valSize != 0)
+      Delete(value);
+    if (res == -FS_ENODATA) {
+      args.GetReturnValue().Set(False(isolate));
+      return;
+    }
     THROWERR(res);
   }
   if (valSize == 0) {
     args.GetReturnValue().Set(True(isolate));
     return;
   }
-  args.GetReturnValue().Set(
-    Buffer::New(isolate, value, valSize).ToLocalChecked()
-  );
+  Local<Object> buf = Buffer::New(isolate, value, valSize).ToLocalChecked();
+  args.GetReturnValue().Set(buf);
 }
 void FileSystemLGetXAttr(const FunctionCallbackInfo<Value>& args) {
   Isolate* isolate = args.GetIsolate();
@@ -1810,7 +1797,7 @@ void FileSystemLGetXAttr(const FunctionCallbackInfo<Value>& args) {
     self->GetInternalField(0).As<External>()->Value()
   );
   char* value = NULL;
-  fs_size_t valSize = Val<fs_size_t>(args[2]);
+  size_t valSize = Val<size_t>(args[2]);
   if (valSize != 0) {
     if (!Alloc(&value, valSize)) {
       isolate->LowMemoryNotification();
@@ -1825,12 +1812,12 @@ void FileSystemLGetXAttr(const FunctionCallbackInfo<Value>& args) {
     valSize
   );
   if (res != 0) {
-    if (valSize == 0) {
-      if (res == -ENODATA) {
-        args.GetReturnValue().Set(False(isolate));
-        return;
-      }
-    } else Delete(value);
+    if (valSize != 0)
+      Delete(value);
+    if (res == -FS_ENODATA) {
+      args.GetReturnValue().Set(False(isolate));
+      return;
+    }
     THROWERR(res);
   }
   if (valSize == 0) {
@@ -1853,7 +1840,7 @@ void FileSystemFGetXAttr(const FunctionCallbackInfo<Value>& args) {
     self->GetInternalField(0).As<External>()->Value()
   );
   char* value = NULL;
-  fs_size_t valSize = Val<fs_size_t>(args[2]);
+  size_t valSize = Val<size_t>(args[2]);
   if (valSize != 0) {
     if (!Alloc(&value, valSize)) {
       isolate->LowMemoryNotification();
@@ -1868,12 +1855,12 @@ void FileSystemFGetXAttr(const FunctionCallbackInfo<Value>& args) {
     valSize
   );
   if (res != 0) {
-    if (valSize == 0) {
-      if (res == -ENODATA) {
-        args.GetReturnValue().Set(False(isolate));
-        return;
-      }
-    } else Delete(value);
+    if (valSize != 0)
+      Delete(value);
+    if (res == -FS_ENODATA) {
+      args.GetReturnValue().Set(False(isolate));
+      return;
+    }
     THROWERR(res);
   }
   if (valSize == 0) {
@@ -2112,7 +2099,7 @@ void FileSystemListXAttr(const FunctionCallbackInfo<Value>& args) {
   );
   String::Utf8Value utf8Val = String::Utf8Value(isolate, args[0].As<String>());
   char* val = *utf8Val;
-  fs_ssize_t res = fs->ListXAttr(val, NULL, 0);
+  ssize_t res = fs->ListXAttr(val, NULL, 0);
   if (res < 0)
     THROWERR(res);
   if (res == 0) {
@@ -2164,7 +2151,7 @@ void FileSystemLListXAttr(const FunctionCallbackInfo<Value>& args) {
   );
   String::Utf8Value utf8Val = String::Utf8Value(isolate, args[0].As<String>());
   char* val = *utf8Val;
-  fs_ssize_t res = fs->LListXAttr(val, NULL, 0);
+  ssize_t res = fs->LListXAttr(val, NULL, 0);
   if (res < 0)
     THROWERR(res);
   if (res == 0) {
@@ -2215,7 +2202,7 @@ void FileSystemFListXAttr(const FunctionCallbackInfo<Value>& args) {
     self->GetInternalField(0).As<External>()->Value()
   );
   int val = Val<int>(args[0]);
-  fs_ssize_t res = fs->FListXAttr(val, NULL, 0);
+  ssize_t res = fs->FListXAttr(val, NULL, 0);
   if (res < 0)
     THROWERR(res);
   if (res == 0) {
