@@ -944,6 +944,7 @@ namespace {
     if (fs->fdCount - 1 == 0) {
       Delete(fs->fds);
       fs->fds = NULL;
+      fs->fdCount = 0;
       return;
     }
     Realloc(fs->fds, fs->fdCount, fs->fdCount - 1);
