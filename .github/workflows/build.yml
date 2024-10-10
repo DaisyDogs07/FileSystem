@@ -26,13 +26,13 @@ jobs:
         uses: egor-tensin/vs-shell@v2.1
 
       - name: Compile Library
-        run: cl /O2 /Oi- /std:c++17 /LD FileSystem.cc
+        run: cl /O2 /Oi- /std:c++17 /LD /Zi FileSystem.cc
 
       - name: Test Node.js Module
         run: npm i
 
       - name: Zip Library
-        run: powershell Compress-Archive -Path FileSystem.dll,FileSystem.lib,FileSystem.h,fsdef.h -DestinationPath FileSystem-windows.zip
+        run: powershell Compress-Archive -Path FileSystem.dll,FileSystem.lib,FileSystem.pdb,FileSystem.h,fsdef.h -DestinationPath FileSystem-windows.zip
 
       - name: Upload Library
         uses: actions/upload-artifact@v4.4.1
@@ -52,7 +52,7 @@ jobs:
         uses: actions/checkout@v4.2.1
 
       - name: Compile Library
-        run: g++ -O3 -fno-builtin -fPIC -shared -o FileSystem.so FileSystem.cc
+        run: g++ -O3 -g -fno-builtin -fPIC -shared -o FileSystem.so FileSystem.cc
 
       - name: Test Node.js Module
         run: npm i

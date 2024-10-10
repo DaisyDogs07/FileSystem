@@ -55,7 +55,7 @@ namespace {
   void* MemCpy(void* dest, const void* src, uint64_t len) {
     uint8_t* d = (uint8_t*)dest;
     const uint8_t* s = (const uint8_t*)src;
-    uint32_t i = 0;
+    uint64_t i = 0;
     while (len - i >= sizeof(uint64_t)) {
       *(uint64_t*)(d + i) = *(uint64_t*)(s + i);
       i += sizeof(uint64_t);
@@ -212,7 +212,7 @@ namespace {
     free((void*)ptr);
   }
   template<typename T>
-  bool Realloc(T** ptr, fs_size_t ptrLen, fs_size_t length) {
+  bool Realloc(T** ptr, size_t ptrLen, size_t length) {
     T* newPtr;
     if (!Alloc(&newPtr, sizeof(T) * length))
       return length < ptrLen;
