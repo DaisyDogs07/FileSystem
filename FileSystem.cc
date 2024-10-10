@@ -50,7 +50,7 @@
 
 namespace {
   template<bool I = false, typename T>
-  bool Alloc(T** ptr, fs_size_t length = 1);
+  bool Alloc(T** ptr, size_t length = 1);
 
   void* MemCpy(void* dest, const void* src, uint64_t len) {
     uint8_t* d = (uint8_t*)dest;
@@ -195,17 +195,12 @@ namespace {
   }
 
   template<bool I, typename T>
-  bool Alloc(T** ptr, fs_size_t length) {
-    T* newPtr;
-#ifdef __linux__
-    newPtr = (T*)malloc(sizeof(T) * length);
-#else
-    newPtr = (T*)VirtualAlloc(NULL, sizeof(T) * length, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-#endif
+  bool Alloc(T** ptr, size_t length) {
+    T* newPtr = (T*)malloc(sizeof(T) * length);
     if (!newPtr)
       return false;
     if constexpr (I)
-      for (fs_size_t i = 0; i != length; ++i)
+      for (size_t i = 0; i != length; ++i)
         new (&newPtr[i]) T;
     *ptr = newPtr;
     return true;
@@ -214,11 +209,7 @@ namespace {
   void Delete(T* ptr) {
     if constexpr (D)
       ptr->~T();
-#ifdef __linux__
     free((void*)ptr);
-#else
-    VirtualFree((void*)ptr, 0, MEM_RELEASE);
-#endif
   }
   template<typename T>
   bool Realloc(T** ptr, fs_size_t ptrLen, fs_size_t length) {

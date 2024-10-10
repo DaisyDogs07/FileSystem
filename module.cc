@@ -109,6 +109,14 @@ void Delete(T* ptr) {
   ptr->~T();
   free((void*)ptr);
 }
+
+template<typename R, typename T1, typename T2>
+R Min(T1 a, T2 b) {
+  if (a < b)
+    return a;
+  return b;
+}
+
 template<typename T>
 T Val(Local<Value> x) {
   if (x->IsBigInt()) {
@@ -996,12 +1004,12 @@ void FileSystemRead(const FunctionCallbackInfo<Value>& args) {
   fs_off_t off;
   THROWIFERR(fs->FStat(fdNum, &s));
   THROWIFERR(off = fs->LSeek(fdNum, 0, SEEK_CUR));
-  size_t bufLen = std::min(
-    std::min(
-      Val<size_t>(args[1]),
-      (size_t)(s.st_size - off)
+  fs_size_t bufLen = Min<fs_size_t>(
+    Min<fs_size_t>(
+      Val<fs_size_t>(args[1]),
+      (fs_size_t)(s.st_size - off)
     ),
-    (size_t)0x7ffff000
+    (fs_size_t)0x7ffff000
   );
   char* buf;
   if (!Alloc(&buf, bufLen + 1)) {
@@ -1041,7 +1049,7 @@ void FileSystemReadv(const FunctionCallbackInfo<Value>& args) {
     self->GetInternalField(0).As<External>()->Value()
   );
   Local<Array> buffers = args[1].As<Array>();
-  uint32_t length = std::min(buffers->Length(), (uint32_t)1024);
+  uint32_t length = Min<uint32_t>(buffers->Length(), (uint32_t)1024);
   for (uint32_t i = 0; i != length; ++i) {
     Local<Value> buf = buffers->Get(
       context,
@@ -1089,12 +1097,12 @@ void FileSystemPRead(const FunctionCallbackInfo<Value>& args) {
   fs_off_t off;
   THROWIFERR(fs->FStat(fdNum, &s));
   THROWIFERR(off = fs->LSeek(fdNum, 0, SEEK_CUR));
-  size_t bufLen = std::min(
-    std::min(
-      Val<size_t>(args[1]),
-      (size_t)(s.st_size - off)
+  fs_size_t bufLen = Min<fs_size_t>(
+    Min<fs_size_t>(
+      Val<fs_size_t>(args[1]),
+      (fs_size_t)(s.st_size - off)
     ),
-    (size_t)0x7ffff000
+    (fs_size_t)0x7ffff000
   );
   char* buf;
   if (!Alloc(&buf, bufLen + 1)) {
@@ -1136,7 +1144,7 @@ void FileSystemPReadv(const FunctionCallbackInfo<Value>& args) {
     self->GetInternalField(0).As<External>()->Value()
   );
   Local<Array> buffers = args[1].As<Array>();
-  uint32_t length = std::min(buffers->Length(), (uint32_t)1024);
+  uint32_t length = Min<uint32_t>(buffers->Length(), (uint32_t)1024);
   for (uint32_t i = 0; i != length; ++i) {
     Local<Value> buf = buffers->Get(
       context,
@@ -1182,12 +1190,12 @@ void FileSystemWrite(const FunctionCallbackInfo<Value>& args) {
     self->GetInternalField(0).As<External>()->Value()
   );
   bool isString = args[1]->IsString();
-  size_t strLen = isString
+  fs_size_t strLen = isString
     ? args[1].As<String>()->Utf8Length(isolate)
     : Buffer::Length(args[1]);
-  size_t count;
+  fs_size_t count;
   if (args.Length() == 3) {
-    count = Val<size_t>(args[2]);
+    count = Val<fs_size_t>(args[2]);
     if (count > strLen)
       count = strLen;
   } else count = strLen;
@@ -1241,7 +1249,7 @@ void FileSystemWritev(const FunctionCallbackInfo<Value>& args) {
     self->GetInternalField(0).As<External>()->Value()
   );
   Local<Array> buffers = args[1].As<Array>();
-  uint32_t length = std::min(buffers->Length(), (uint32_t)1024);
+  uint32_t length = Min<uint32_t>(buffers->Length(), (uint32_t)1024);
   for (uint32_t i = 0; i != length; ++i) {
     Local<Value> buf = buffers->Get(
       context,
@@ -1302,12 +1310,12 @@ void FileSystemPWrite(const FunctionCallbackInfo<Value>& args) {
     self->GetInternalField(0).As<External>()->Value()
   );
   bool isString = args[1]->IsString();
-  size_t strLen = isString
+  fs_size_t strLen = isString
     ? args[1].As<String>()->Utf8Length(isolate)
     : Buffer::Length(args[1]);
-  size_t count;
+  fs_size_t count;
   if (args.Length() == 4) {
-    count = Val<size_t>(args[3]);
+    count = Val<fs_size_t>(args[3]);
     if (count > strLen)
       count = strLen;
   } else count = strLen;
@@ -1364,7 +1372,7 @@ void FileSystemPWritev(const FunctionCallbackInfo<Value>& args) {
     self->GetInternalField(0).As<External>()->Value()
   );
   Local<Array> buffers = args[1].As<Array>();
-  uint32_t length = std::min(buffers->Length(), (uint32_t)1024);
+  uint32_t length = Min<uint32_t>(buffers->Length(), (uint32_t)1024);
   for (uint32_t i = 0; i != length; ++i) {
     Local<Value> buf = buffers->Get(
       context,
@@ -1755,7 +1763,7 @@ void FileSystemGetXAttr(const FunctionCallbackInfo<Value>& args) {
     self->GetInternalField(0).As<External>()->Value()
   );
   char* value = NULL;
-  size_t valSize = Val<size_t>(args[2]);
+  fs_size_t valSize = Val<fs_size_t>(args[2]);
   if (valSize != 0) {
     if (!Alloc(&value, valSize)) {
       isolate->LowMemoryNotification();
@@ -1797,7 +1805,7 @@ void FileSystemLGetXAttr(const FunctionCallbackInfo<Value>& args) {
     self->GetInternalField(0).As<External>()->Value()
   );
   char* value = NULL;
-  size_t valSize = Val<size_t>(args[2]);
+  fs_size_t valSize = Val<fs_size_t>(args[2]);
   if (valSize != 0) {
     if (!Alloc(&value, valSize)) {
       isolate->LowMemoryNotification();
@@ -1840,7 +1848,7 @@ void FileSystemFGetXAttr(const FunctionCallbackInfo<Value>& args) {
     self->GetInternalField(0).As<External>()->Value()
   );
   char* value = NULL;
-  size_t valSize = Val<size_t>(args[2]);
+  fs_size_t valSize = Val<fs_size_t>(args[2]);
   if (valSize != 0) {
     if (!Alloc(&value, valSize)) {
       isolate->LowMemoryNotification();
@@ -2099,7 +2107,7 @@ void FileSystemListXAttr(const FunctionCallbackInfo<Value>& args) {
   );
   String::Utf8Value utf8Val = String::Utf8Value(isolate, args[0].As<String>());
   char* val = *utf8Val;
-  ssize_t res = fs->ListXAttr(val, NULL, 0);
+  fs_ssize_t res = fs->ListXAttr(val, NULL, 0);
   if (res < 0)
     THROWERR(res);
   if (res == 0) {
@@ -2151,7 +2159,7 @@ void FileSystemLListXAttr(const FunctionCallbackInfo<Value>& args) {
   );
   String::Utf8Value utf8Val = String::Utf8Value(isolate, args[0].As<String>());
   char* val = *utf8Val;
-  ssize_t res = fs->LListXAttr(val, NULL, 0);
+  fs_ssize_t res = fs->LListXAttr(val, NULL, 0);
   if (res < 0)
     THROWERR(res);
   if (res == 0) {
@@ -2202,7 +2210,7 @@ void FileSystemFListXAttr(const FunctionCallbackInfo<Value>& args) {
     self->GetInternalField(0).As<External>()->Value()
   );
   int val = Val<int>(args[0]);
-  ssize_t res = fs->FListXAttr(val, NULL, 0);
+  fs_ssize_t res = fs->FListXAttr(val, NULL, 0);
   if (res < 0)
     THROWERR(res);
   if (res == 0) {
@@ -2575,7 +2583,7 @@ void DefineConstants(Isolate* isolate, Local<FunctionTemplate> func) {
 #undef DefineFlag
 }
 
-template<typename T, fs_size_t N>
+template<typename T, size_t N>
 void DefineFunction(
   Isolate* isolate,
   Local<T> obj,

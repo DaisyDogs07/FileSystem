@@ -1,6 +1,6 @@
 {
   "name": "@daisydogs07/filesystem",
-  "version": "5.2.3",
+  "version": "5.2.4",
   "os": ["linux", "win32"],
   "cpu": ["x64"],
   "main": "./build/Release/module.node",
