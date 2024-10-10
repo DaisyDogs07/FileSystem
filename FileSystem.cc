@@ -49,144 +49,6 @@
 #define FS_IOV_MAX 1024
 
 namespace {
-  template<bool I = false, typename T>
-  bool Alloc(T** ptr, size_t length = 1);
-
-  void* MemCpy(void* dest, const void* src, uint64_t len) {
-    uint8_t* d = (uint8_t*)dest;
-    const uint8_t* s = (const uint8_t*)src;
-    uint64_t i = 0;
-    while (len - i >= sizeof(uint64_t)) {
-      *(uint64_t*)(d + i) = *(uint64_t*)(s + i);
-      i += sizeof(uint64_t);
-    }
-    if (len - i >= sizeof(uint32_t)) {
-      *(uint32_t*)(d + i) = *(uint32_t*)(s + i);
-      i += sizeof(uint32_t);
-    }
-    if (len - i >= sizeof(uint16_t)) {
-      *(uint16_t*)(d + i) = *(uint16_t*)(s + i);
-      i += sizeof(uint16_t);
-    }
-    if (len - i >= sizeof(uint8_t)) {
-      *(uint8_t*)(d + i) = *(uint8_t*)(s + i);
-      i += sizeof(uint8_t);
-    }
-    return dest;
-  }
-  void* MemMove(void* dest, const void* src, uint64_t len) {
-    if (dest < src)
-      return MemCpy(dest, src, len);
-    uint8_t* d = (uint8_t*)dest;
-    const uint8_t* s = (const uint8_t*)src;
-    while (len >= sizeof(uint64_t)) {
-      *(uint64_t*)(d + (len - sizeof(uint64_t))) = *(uint64_t*)(s + (len - sizeof(uint64_t)));
-      len -= sizeof(uint64_t);
-    }
-    if (len >= sizeof(uint32_t)) {
-      *(uint32_t*)(d + (len - sizeof(uint32_t))) = *(uint32_t*)(s + (len - sizeof(uint32_t)));
-      len -= sizeof(uint32_t);
-    }
-    if (len >= sizeof(uint16_t)) {
-      *(uint16_t*)(d + (len - sizeof(uint16_t))) = *(uint16_t*)(s + (len - sizeof(uint16_t)));
-      len -= sizeof(uint16_t);
-    }
-    if (len >= sizeof(uint8_t)) {
-      *(uint8_t*)(d + (len - sizeof(uint8_t))) = *(uint8_t*)(s + (len - sizeof(uint8_t)));
-      len -= sizeof(uint8_t);
-    }
-    return dest;
-  }
-  void* MemSet(void* dest, uint8_t c, uint64_t len) {
-    uint8_t* p = (uint8_t*)dest;
-    uint64_t i = 0;
-    {
-      uint64_t cpatt = 0x0101010101010101 * c;
-      while (len - i >= sizeof(uint64_t)) {
-        *(uint64_t*)(p + i) = cpatt;
-        i += sizeof(uint64_t);
-      }
-    }
-    {
-      uint32_t cpatt = 0x01010101 * c;
-      if (len - i >= sizeof(uint32_t)) {
-        *(uint32_t*)(p + i) = cpatt;
-        i += sizeof(uint32_t);
-      }
-    }
-    {
-      uint16_t cpatt = 0x0101 * c;
-      if (len - i >= sizeof(uint16_t)) {
-        *(uint16_t*)(p + i) = cpatt;
-        i += sizeof(uint16_t);
-      }
-    }
-    if (len - i >= sizeof(uint8_t)) {
-      *(p + i) = c;
-      i += sizeof(uint8_t);
-    }
-    return dest;
-  }
-  int MemCmp(const void* s1, const void* s2, uint64_t len) {
-    const uint8_t* str1 = (uint8_t*)s1;
-    const uint8_t* str2 = (uint8_t*)s2;
-    uint64_t i = 0;
-    while (len - i >= sizeof(uint64_t)) {
-      uint64_t c1 = *(uint64_t*)(str1 + i);
-      uint64_t c2 = *(uint64_t*)(str2 + i);
-      if (c1 != c2)
-        break;
-      i += sizeof(uint64_t);
-    }
-    while (len - i >= sizeof(uint32_t)) {
-      uint32_t c1 = *(uint32_t*)(str1 + i);
-      uint32_t c2 = *(uint32_t*)(str2 + i);
-      if (c1 != c2)
-        break;
-      i += sizeof(uint32_t);
-    }
-    while (len - i >= sizeof(uint16_t)) {
-      uint16_t c1 = *(uint16_t*)(str1 + i);
-      uint16_t c2 = *(uint16_t*)(str2 + i);
-      if (c1 != c2)
-        break;
-      i += sizeof(uint16_t);
-    }
-    while (len - i >= sizeof(uint8_t)) {
-      uint8_t c1 = *(uint8_t*)(str1 + i);
-      uint8_t c2 = *(uint8_t*)(str2 + i);
-      if (c1 != c2)
-        return c1 - c2;
-      i += sizeof(uint8_t);
-    }
-    return 0;
-  }
-  uint64_t StrLen(const char* str) {
-    uint64_t len = 0;
-    while (*str++ != '\0')
-      ++len;
-    return len;
-  }
-  int StrCmp(const char* str1, const char* str2) {
-    while (true) {
-      char c1 = *str1++;
-      char c2 = *str2++;
-      if (c1 != c2)
-        return c1 - c2;
-      if (c1 == '\0')
-        break;
-    }
-    return 0;
-  }
-  char* StrDup(const char* str) {
-    uint64_t len = StrLen(str) + 1;
-    char* newStr;
-    if (!Alloc(&newStr, len))
-      return NULL;
-    MemCpy(newStr, str, len);
-    return newStr;
-  }
-
   template<typename R, typename T1, typename T2>
   R Min(T1 a, T2 b) {
     if (a < b)
@@ -194,8 +56,8 @@ namespace {
     return b;
   }
 
-  template<bool I, typename T>
-  bool Alloc(T** ptr, size_t length) {
+  template<bool I = false, typename T>
+  bool Alloc(T** ptr, size_t length = 1) {
     T* newPtr = (T*)malloc(sizeof(T) * length);
     if (!newPtr)
       return false;
@@ -217,7 +79,7 @@ namespace {
     if (!Alloc(&newPtr, sizeof(T) * length))
       return length < ptrLen;
     if (*ptr) {
-      MemCpy(newPtr, *ptr, sizeof(T) * Min<uint64_t>(ptrLen, length));
+      memcpy(newPtr, *ptr, sizeof(T) * Min<uint64_t>(ptrLen, length));
       Delete(*ptr);
     }
     *ptr = newPtr;
@@ -367,7 +229,7 @@ namespace {
       return nlink == 0;
     }
     void FillStat(struct fs_stat* buf) {
-      MemSet(buf, '\0', sizeof(struct fs_stat));
+      memset(buf, '\0', sizeof(struct fs_stat));
       buf->st_ino = id;
       buf->st_mode = mode;
       buf->st_nlink = nlink;
@@ -377,7 +239,7 @@ namespace {
       buf->st_ctim = ctime;
     }
     void FillStatx(struct fs_statx* buf, int mask) {
-      MemSet(buf, '\0', sizeof(struct fs_statx));
+      memset(buf, '\0', sizeof(struct fs_statx));
       buf->stx_mask = mask;
       if (mask & FS_STATX_INO)
         buf->stx_ino = id;
@@ -593,7 +455,7 @@ namespace {
     if (!Realloc(&dataRanges, dataRangeCount, dataRangeCount + 1))
       goto err_after_alloc;
     if (rangeIdx != dataRangeCount)
-      MemMove(
+      memmove(
         &dataRanges[rangeIdx + 1],
         &dataRanges[rangeIdx],
         sizeof(struct DataRange*) * (dataRangeCount - rangeIdx)
@@ -613,7 +475,7 @@ namespace {
   void RegularINode::RemoveRange(fs_off_t index) {
     Delete(dataRanges[index]);
     if (index != dataRangeCount - 1)
-      MemMove(
+      memmove(
         &dataRanges[index],
         &dataRanges[index + 1],
         sizeof(struct DataRange*) * (dataRangeCount - index)
@@ -626,7 +488,7 @@ namespace {
     for (fs_off_t i = index; i != endIdx; ++i)
       Delete(dataRanges[i]);
     if (endIdx != dataRangeCount)
-      MemMove(
+      memmove(
         &dataRanges[index],
         &dataRanges[endIdx],
         sizeof(struct DataRange*) * (dataRangeCount - endIdx)
@@ -656,11 +518,11 @@ namespace {
             fs_off_t newRangeLength = range2->size + (range2->offset - off);
             if (!Realloc(&range3->data, range3->size, newRangeLength))
               return NULL;
-            MemMove(&range3->data[newRangeLength - range2->size], range2->data, range2->size);
+            memmove(&range3->data[newRangeLength - range2->size], range2->data, range2->size);
             range3->size = newRangeLength;
             for (fs_off_t j = rangeIdx + 1; j != i; ++j) {
               struct DataRange* range4 = dataRanges[j];
-              MemMove(&range3->data[range4->offset - off], range4->data, range4->size);
+              memmove(&range3->data[range4->offset - off], range4->data, range4->size);
             }
             RemoveRanges(rangeIdx + 1, i - rangeIdx);
             range3->offset = off;
@@ -669,7 +531,7 @@ namespace {
             fs_off_t newRangeLength = range2->size + (range2->offset - offset);
             if (!Realloc(&range2->data, range2->size, newRangeLength))
               return NULL;
-            MemMove(&range2->data[newRangeLength - range2->size], range2->data, range2->size);
+            memmove(&range2->data[newRangeLength - range2->size], range2->data, range2->size);
             range2->size = newRangeLength;
             range2->offset = offset;
             return range2;
@@ -717,7 +579,7 @@ namespace {
     for (fs_off_t i = rangeIdx + 1; i != dataRangeCount; ++i) {
       struct DataRange* range2 = dataRanges[i];
       if (range2->offset < end) {
-        MemCpy(&range->data[range2->offset - range->offset], range2->data, range2->size);
+        memcpy(&range->data[range2->offset - range->offset], range2->data, range2->size);
         ++n;
       } else break;
     }
@@ -763,19 +625,19 @@ namespace {
     if (!Realloc(&dents, dentCount, dentCount + 1))
       return false;
     dents[dentCount++] = { name, inode };
-    size += StrLen(name);
+    size += strlen(name);
     return true;
   }
   void DirectoryINode::RemoveDent(const char* name) {
     for (fs_off_t i = 2; i != dentCount; ++i) {
       const char* dentName = dents[i].name;
-      if (StrCmp(dentName, name) == 0) {
+      if (strcmp(dentName, name) == 0) {
         Delete(dentName);
         if (i != dentCount - 1)
-          MemMove(&dents[i], &dents[i + 1], sizeof(struct Dent) * (dentCount - i));
+          memmove(&dents[i], &dents[i + 1], sizeof(struct Dent) * (dentCount - i));
         Realloc(&dents, dentCount, dentCount - 1);
         --dentCount;
-        size -= StrLen(name);
+        size -= strlen(name);
         break;
       }
     }
@@ -877,7 +739,7 @@ namespace {
     if (!Realloc(&fs->inodes, fs->inodeCount, fs->inodeCount + 1))
       return false;
     if (id != fs->inodeCount) {
-      MemMove(
+      memmove(
         &fs->inodes[id + 1],
         &fs->inodes[id],
         sizeof(struct BaseINode*) * (fs->inodeCount - id)
@@ -895,7 +757,7 @@ namespace {
     fs_ino_t i = inode->ndx;
     DeleteINode(inode);
     if (i != fs->inodeCount - 1) {
-      MemMove(&fs->inodes[i], &fs->inodes[i + 1], sizeof(struct BaseINode*) * (fs->inodeCount - i));
+      memmove(&fs->inodes[i], &fs->inodes[i + 1], sizeof(struct BaseINode*) * (fs->inodeCount - i));
       do {
         --fs->inodes[i++]->ndx;
       } while (i != fs->inodeCount - 1);
@@ -926,7 +788,7 @@ namespace {
       return -FS_ENOMEM;
     }
     if (fdNum != fs->fdCount)
-      MemMove(&fs->fds[fdNum + 1], &fs->fds[fdNum], sizeof(struct Fd*) * (fs->fdCount - fdNum));
+      memmove(&fs->fds[fdNum + 1], &fs->fds[fdNum], sizeof(struct Fd*) * (fs->fdCount - fdNum));
     fd->inode = inode;
     fd->flags = flags;
     fd->fd = fdNum;
@@ -940,7 +802,7 @@ namespace {
       RemoveINode(fs, inode);
     Delete(fd);
     if (i != fs->fdCount - 1)
-      MemMove(&fs->fds[i], &fs->fds[i + 1], sizeof(struct Fd*) * (fs->fdCount - i));
+      memmove(&fs->fds[i], &fs->fds[i + 1], sizeof(struct Fd*) * (fs->fdCount - i));
     if (fs->fdCount - 1 == 0) {
       Delete(fs->fds);
       fs->fds = NULL;
@@ -992,7 +854,7 @@ namespace {
     bool followResolved = false,
     int follow = 0
   ) {
-    fs_size_t pathLen = StrLen(path);
+    fs_size_t pathLen = strlen(path);
     if (pathLen == 0)
       return -FS_ENOENT;
     if (pathLen >= FS_PATH_MAX)
@@ -1022,7 +884,7 @@ namespace {
           fs_off_t j = 0;
           fs_off_t dentCount = ((struct DirectoryINode*)current)->dentCount;
           for (; j != dentCount; ++j)
-            if (StrCmp(((struct DirectoryINode*)current)->dents[j].name, name) == 0)
+            if (strcmp(((struct DirectoryINode*)current)->dents[j].name, name) == 0)
               break;
           if (j == dentCount) {
             err = -FS_ENOENT;
@@ -1072,7 +934,7 @@ namespace {
         return -FS_EACCES;
       fs_off_t dentCount = ((struct DirectoryINode*)current)->dentCount;
       for (fs_off_t i = 0; i != dentCount; ++i)
-        if (StrCmp(((struct DirectoryINode*)current)->dents[i].name, name) == 0) {
+        if (strcmp(((struct DirectoryINode*)current)->dents[i].name, name) == 0) {
           current = ((struct DirectoryINode*)current)->dents[i].inode;
           goto out;
         }
@@ -1100,7 +962,7 @@ namespace {
     return 0;
   }
   const char* GetLast(const char* path) {
-    int pathLen = StrLen(path);
+    int pathLen = strlen(path);
     char name[FS_NAME_MAX + 1];
     int nameNdx = FS_NAME_MAX;
     name[nameNdx--] = '\0';
@@ -1112,20 +974,20 @@ namespace {
         break;
       name[nameNdx--] = path[i--];
     }
-    return StrDup(name + nameNdx + 1);
+    return strdup(name + nameNdx + 1);
   }
   const char* AbsolutePath(struct FSInternal* fs, const char* path) {
     char absPath[FS_PATH_MAX];
     int absPathLen = 0;
     if (path[0] != '/') {
-      int cwdPathLen = StrLen(fs->cwd.path);
+      int cwdPathLen = strlen(fs->cwd.path);
       if (cwdPathLen != 1) {
-        MemCpy(absPath, fs->cwd.path, cwdPathLen);
+        memcpy(absPath, fs->cwd.path, cwdPathLen);
         absPath[cwdPathLen] = '/';
         absPathLen = cwdPathLen + 1;
       } else absPath[absPathLen++] = '/';
     }
-    int pathLen = StrLen(path);
+    int pathLen = strlen(path);
     for (int i = 0; i != pathLen; ++i) {
       if (path[i] == '/') {
         if (absPathLen != 0 &&
@@ -1149,7 +1011,7 @@ namespace {
     if (absPathLen != 1 && absPath[absPathLen - 1] == '/')
       --absPathLen;
     absPath[absPathLen] = '\0';
-    return StrDup(absPath);
+    return strdup(absPath);
   }
   const char* GetAbsoluteLast(struct FSInternal* fs, const char* path) {
     const char* absPath = AbsolutePath(fs, path);
@@ -1214,7 +1076,7 @@ FileSystem* FileSystem::New() {
   root->dentCount = root->nlink = 2;
   if (!PushINode(data, root))
     goto err3;
-  if (!(data->cwd.path = StrDup("/")))
+  if (!(data->cwd.path = strdup("/")))
     goto err2;
   data->cwd.inode = root;
   data->cwd.parent = root;
@@ -1558,13 +1420,13 @@ int FileSystem::SymLinkAt(const char* oldPath, int newDirFd, const char* newPath
     Delete(name);
     return -FS_ENOMEM;
   }
-  fs_size_t oldPathLen = StrLen(oldPath);
+  fs_size_t oldPathLen = strlen(oldPath);
   if (!Alloc(&x->data, oldPathLen) || !PushINode(fs, x)) {
     Delete(x);
     Delete(name);
     return -FS_ENOMEM;
   }
-  MemCpy(x->data, oldPath, oldPathLen);
+  memcpy(x->data, oldPath, oldPathLen);
   if (!(x->target = AbsolutePath(fs, oldPath)) || !newParent->PushDent(name, x)) {
     RemoveINode(fs, x);
     Delete(name);
@@ -1602,7 +1464,7 @@ int FileSystem::ReadLinkAt(int dirFd, const char* path, char* buf, int bufLen) {
     return -FS_EINVAL;
   if (inode->size < bufLen)
     bufLen = inode->size;
-  MemCpy(buf, ((struct SymLinkINode*)inode)->data, bufLen);
+  memcpy(buf, ((struct SymLinkINode*)inode)->data, bufLen);
   GetTime(&inode->atime);
   return bufLen;
 }
@@ -1624,7 +1486,7 @@ int FileSystem::GetDents(unsigned int fdNum, struct fs_dirent* dirp, unsigned in
   char* dirpData = (char*)dirp;
   do {
     struct Dent d = ((struct DirectoryINode*)inode)->dents[fd->seekOff];
-    fs_size_t nameLen = StrLen(d.name);
+    fs_size_t nameLen = strlen(d.name);
     unsigned short reclen = FS_ALIGN(
       __builtin_offsetof(struct fs_dirent, d_name) + nameLen + 2,
       sizeof(long)
@@ -1635,7 +1497,7 @@ int FileSystem::GetDents(unsigned int fdNum, struct fs_dirent* dirp, unsigned in
     dent->d_ino = d.inode->id;
     dent->d_off = fd->seekOff + 1;
     dent->d_reclen = reclen;
-    MemCpy(dent->d_name, d.name, nameLen + 1);
+    memcpy(dent->d_name, d.name, nameLen + 1);
     dirpData[reclen - 1] = FS_IFTODT(d.inode->mode);
     dirpData += reclen;
     nread += reclen;
@@ -1750,7 +1612,7 @@ int FileSystem::UnlinkAt(int dirFd, const char* path, int flags) {
     const char* last = GetLast(path);
     if (!last)
       return -FS_ENOMEM;
-    bool isDot = StrCmp(last, ".") == 0;
+    bool isDot = strcmp(last, ".") == 0;
     Delete(last);
     if (isDot)
       return -FS_EINVAL;
@@ -1793,7 +1655,7 @@ int FileSystem::RenameAt2(
   if (!last)
     return -FS_ENOMEM;
   {
-    bool isDot = StrCmp(last, ".") == 0 || StrCmp(last, "..") == 0;
+    bool isDot = strcmp(last, ".") == 0 || strcmp(last, "..") == 0;
     Delete(last);
     if (isDot)
       return -FS_EBUSY;
@@ -1860,9 +1722,9 @@ int FileSystem::RenameAt2(
   }
   if (flags & FS_RENAME_EXCHANGE) {
     for (fs_off_t i = 0; i != oldParent->dentCount; ++i)
-      if (StrCmp(oldParent->dents[i].name, oldName) == 0) {
+      if (strcmp(oldParent->dents[i].name, oldName) == 0) {
         for (fs_off_t j = 0; j != newParent->dentCount; ++j)
-          if (StrCmp(newParent->dents[j].name, newName) == 0) {
+          if (strcmp(newParent->dents[j].name, newName) == 0) {
             oldParent->dents[i].inode = newInode;
             newParent->dents[j].inode = oldInode;
             break;
@@ -1976,7 +1838,7 @@ int FileSystem::FAllocate(int fdNum, int mode, fs_off_t offset, fs_off_t len) {
       struct DataRange* range = inode->AllocData(offset, len);
       if (!range)
         return -FS_ENOMEM;
-      MemSet(range->data, '\0', len);
+      memset(range->data, '\0', len);
       break;
     }
     case FS_FALLOC_FL_PUNCH_HOLE: {
@@ -1988,7 +1850,7 @@ int FileSystem::FAllocate(int fdNum, int mode, fs_off_t offset, fs_off_t len) {
           if (end < range->offset + range->size) {
             fs_off_t amountToRemove = len - (range->offset - offset);
             fs_off_t newSize = range->size - amountToRemove;
-            MemMove(range->data, range->data + amountToRemove, newSize);
+            memmove(range->data, range->data + amountToRemove, newSize);
             Realloc(&range->data, range->size, newSize);
             range->offset += amountToRemove;
             range->size = newSize;
@@ -2009,7 +1871,7 @@ int FileSystem::FAllocate(int fdNum, int mode, fs_off_t offset, fs_off_t len) {
             struct DataRange* newRange = inode->AllocData(end, newRangeLength);
             if (!newRange)
               return -FS_ENOMEM;
-            MemCpy(newRange->data, range->data + offsetAfterHole, newRangeLength);
+            memcpy(newRange->data, range->data + offsetAfterHole, newRangeLength);
             Realloc(&range->data, rangeSize, range->size);
             break;
           } else {
@@ -2037,7 +1899,7 @@ int FileSystem::FAllocate(int fdNum, int mode, fs_off_t offset, fs_off_t len) {
               struct DataRange* prevRange = inode->dataRanges[i - 1];
               if (!Realloc(&prevRange->data, prevRange->size, prevRange->size + range->size))
                 return -FS_ENOMEM;
-              MemCpy(prevRange->data + prevRange->size, range->data, range->size);
+              memcpy(prevRange->data + prevRange->size, range->data, range->size);
               prevRange->size += range->size;
               inode->RemoveRange(i);
             } else ++i;
@@ -2046,7 +1908,7 @@ int FileSystem::FAllocate(int fdNum, int mode, fs_off_t offset, fs_off_t len) {
           if (end < range->offset + range->size) {
             fs_off_t amountToRemove = len - (range->offset - offset);
             fs_off_t newSize = range->size - amountToRemove;
-            MemMove(range->data, range->data + amountToRemove, newSize);
+            memmove(range->data, range->data + amountToRemove, newSize);
             Realloc(&range->data, range->size, newSize);
             range->size = newSize;
           } else {
@@ -2062,7 +1924,7 @@ int FileSystem::FAllocate(int fdNum, int mode, fs_off_t offset, fs_off_t len) {
             fs_off_t rangeSize = range->size;
             range->size -= len;
             fs_off_t offsetAfterHole = (offset - range->offset) + len;
-            MemCpy(
+            memcpy(
               range->data + (offset - range->offset),
               range->data + offsetAfterHole,
               rangeSize - offsetAfterHole
@@ -2095,7 +1957,7 @@ int FileSystem::FAllocate(int fdNum, int mode, fs_off_t offset, fs_off_t len) {
           struct DataRange* newRange = inode->AllocData(end, newRangeLength);
           if (!newRange)
             return -FS_ENOMEM;
-          MemCpy(newRange->data, range->data + offsetAfterHole, newRangeLength);
+          memcpy(newRange->data, range->data + offsetAfterHole, newRangeLength);
           Realloc(&range->data, range->size, rangeSize);
           ++i;
         }
@@ -2210,11 +2072,11 @@ fs_ssize_t FileSystem::Read(unsigned int fdNum, char* buf, fs_size_t count) {
     if (it.IsInData()) {
       struct DataRange* range = it.GetRange();
       amount = Min<fs_size_t>((range->offset + range->size) - currEnd, count - amountRead);
-      MemCpy(buf + amountRead, range->data + (currEnd - range->offset), amount);
+      memcpy(buf + amountRead, range->data + (currEnd - range->offset), amount);
     } else {
       struct HoleRange hole = it.GetHole();
       amount = Min<fs_size_t>((hole.offset + hole.size) - currEnd, count - amountRead);
-      MemSet(buf + amountRead, '\0', amount);
+      memset(buf + amountRead, '\0', amount);
     }
     amountRead += amount;
   }
@@ -2273,7 +2135,7 @@ fs_ssize_t FileSystem::Readv(unsigned int fdNum, struct fs_iovec* iov, int iovcn
           iovEnd),
         end
       );
-      MemCpy((char*)curr.iov_base + amountRead, range->data + (currEnd - range->offset), amount);
+      memcpy((char*)curr.iov_base + amountRead, range->data + (currEnd - range->offset), amount);
     } else {
       struct HoleRange hole = it.GetHole();
       amount = Min<fs_size_t>(
@@ -2282,7 +2144,7 @@ fs_ssize_t FileSystem::Readv(unsigned int fdNum, struct fs_iovec* iov, int iovcn
           iovEnd),
         end
       );
-      MemSet((char*)curr.iov_base + amountRead, '\0', amount);
+      memset((char*)curr.iov_base + amountRead, '\0', amount);
     }
     amountRead += amount;
     count += amount;
@@ -2323,11 +2185,11 @@ fs_ssize_t FileSystem::PRead(unsigned int fdNum, char* buf, fs_size_t count, fs_
     if (it.IsInData()) {
       struct DataRange* range = it.GetRange();
       amount = Min<fs_size_t>((range->offset + range->size) - currEnd, count - amountRead);
-      MemCpy(buf + amountRead, range->data + (currEnd - range->offset), amount);
+      memcpy(buf + amountRead, range->data + (currEnd - range->offset), amount);
     } else {
       struct HoleRange hole = it.GetHole();
       amount = Min<fs_size_t>((hole.offset + hole.size) - currEnd, count - amountRead);
-      MemSet(buf + amountRead, '\0', amount);
+      memset(buf + amountRead, '\0', amount);
     }
     amountRead += amount;
   }
@@ -2391,7 +2253,7 @@ fs_ssize_t FileSystem::PReadv(
           iovEnd),
         end
       );
-      MemCpy((char*)curr.iov_base + amountRead, range->data + (currEnd - range->offset), amount);
+      memcpy((char*)curr.iov_base + amountRead, range->data + (currEnd - range->offset), amount);
     } else {
       struct HoleRange hole = it.GetHole();
       amount = Min<fs_size_t>(
@@ -2400,7 +2262,7 @@ fs_ssize_t FileSystem::PReadv(
           iovEnd),
         end
       );
-      MemSet((char*)curr.iov_base + amountRead, '\0', amount);
+      memset((char*)curr.iov_base + amountRead, '\0', amount);
     }
     amountRead += amount;
     count += amount;
@@ -2433,7 +2295,7 @@ fs_ssize_t FileSystem::Write(unsigned int fdNum, const char* buf, fs_size_t coun
   struct DataRange* range = ((struct RegularINode*)inode)->AllocData(seekOff, count);
   if (!range)
     return -FS_ENOMEM;
-  MemCpy(range->data + (seekOff - range->offset), buf, count);
+  memcpy(range->data + (seekOff - range->offset), buf, count);
   fd->seekOff = seekEnd;
   struct fs_timespec ts;
   GetTime(&ts);
@@ -2481,7 +2343,7 @@ fs_ssize_t FileSystem::Writev(unsigned int fdNum, struct fs_iovec* iov, int iovc
     fs_ssize_t len = iov[i].iov_len;
     if (len == 0)
       continue;
-    MemCpy(range->data + (seekOff - range->offset) + count, iov[i].iov_base, len);
+    memcpy(range->data + (seekOff - range->offset) + count, iov[i].iov_base, len);
     count += len;
     if (count == totalLen)
       break;
@@ -2518,7 +2380,7 @@ fs_ssize_t FileSystem::PWrite(
   struct DataRange* range = ((struct RegularINode*)inode)->AllocData(offset, count);
   if (!range)
     return -FS_ENOMEM;
-  MemCpy(range->data + (offset - range->offset), buf, count);
+  memcpy(range->data + (offset - range->offset), buf, count);
   struct fs_timespec ts;
   GetTime(&ts);
   inode->mtime = inode->ctime = ts;
@@ -2571,7 +2433,7 @@ fs_ssize_t FileSystem::PWritev(
     fs_ssize_t len = iov[i].iov_len;
     if (len == 0)
       continue;
-    MemCpy(range->data + (offset - range->offset) + count, iov[i].iov_base, len);
+    memcpy(range->data + (offset - range->offset) + count, iov[i].iov_base, len);
     count += len;
     if (count == totalLen)
       break;
@@ -2666,7 +2528,7 @@ fs_ssize_t FileSystem::SendFile(
     struct DataRange* rangeOut = ((struct RegularINode*)inodeOut)->AllocData(currEndOut, amount);
     if (!rangeOut)
       return -FS_ENOMEM;
-    MemCpy(
+    memcpy(
       rangeOut->data + (currEndOut - rangeOut->offset),
       rangeIn->data + (currEndIn - rangeIn->offset),
       amount
@@ -2786,11 +2648,11 @@ int FileSystem::GetCwd(char* buf, fs_size_t size) {
     if (res != 0)
       return res;
   }
-  fs_size_t cwdLen = StrLen(fs->cwd.path);
+  fs_size_t cwdLen = strlen(fs->cwd.path);
   if (size <= cwdLen)
     return -FS_ERANGE;
   if (buf)
-    MemCpy(buf, fs->cwd.path, cwdLen + 1);
+    memcpy(buf, fs->cwd.path, cwdLen + 1);
   return cwdLen;
 }
 int FileSystem::Stat(const char* path, struct fs_stat* buf) {
@@ -2849,7 +2711,7 @@ int FileSystem::Statx(int dirFd, const char* path, int flags, int mask, struct f
   return 0;
 }
 int FileSystem::GetXAttr(const char* path, const char* name, void* value, fs_size_t size) {
-  if (size != 0 && (StrLen(name) > FS_XATTR_NAME_MAX || size > FS_XATTR_SIZE_MAX))
+  if (size != 0 && (strlen(name) > FS_XATTR_NAME_MAX || size > FS_XATTR_SIZE_MAX))
     return -FS_ERANGE;
   struct FSInternal* fs = (struct FSInternal*)data;
   ScopedLock lock(fs->mtx);
@@ -2859,12 +2721,12 @@ int FileSystem::GetXAttr(const char* path, const char* name, void* value, fs_siz
     return res;
   for (fs_size_t i = 0; i != inode->attribs.count; ++i) {
     struct Attribute* attrib = inode->attribs.list[i];
-    if (StrCmp(name, attrib->name) == 0) {
+    if (strcmp(name, attrib->name) == 0) {
       if (size != 0) {
         if (size < attrib->size)
           return -FS_ERANGE;
         if (attrib->data)
-          MemCpy(value, attrib->data, attrib->size);
+          memcpy(value, attrib->data, attrib->size);
       }
       return 0;
     }
@@ -2872,7 +2734,7 @@ int FileSystem::GetXAttr(const char* path, const char* name, void* value, fs_siz
   return -FS_ENODATA;
 }
 int FileSystem::LGetXAttr(const char* path, const char* name, void* value, fs_size_t size) {
-  if (size != 0 && (StrLen(name) > FS_XATTR_NAME_MAX || size > FS_XATTR_SIZE_MAX))
+  if (size != 0 && (strlen(name) > FS_XATTR_NAME_MAX || size > FS_XATTR_SIZE_MAX))
     return -FS_ERANGE;
   struct FSInternal* fs = (struct FSInternal*)data;
   ScopedLock lock(fs->mtx);
@@ -2882,12 +2744,12 @@ int FileSystem::LGetXAttr(const char* path, const char* name, void* value, fs_si
     return res;
   for (fs_size_t i = 0; i != inode->attribs.count; ++i) {
     struct Attribute* attrib = inode->attribs.list[i];
-    if (StrCmp(name, attrib->name) == 0) {
+    if (strcmp(name, attrib->name) == 0) {
       if (size != 0) {
         if (size < attrib->size)
           return -FS_ERANGE;
         if (attrib->data)
-          MemCpy(value, attrib->data, attrib->size);
+          memcpy(value, attrib->data, attrib->size);
       }
       return 0;
     }
@@ -2895,7 +2757,7 @@ int FileSystem::LGetXAttr(const char* path, const char* name, void* value, fs_si
   return -FS_ENODATA;
 }
 int FileSystem::FGetXAttr(int fdNum, const char* name, void* value, fs_size_t size) {
-  if (size != 0 && (StrLen(name) > FS_XATTR_NAME_MAX || size > FS_XATTR_SIZE_MAX))
+  if (size != 0 && (strlen(name) > FS_XATTR_NAME_MAX || size > FS_XATTR_SIZE_MAX))
     return -FS_ERANGE;
   struct FSInternal* fs = (struct FSInternal*)data;
   ScopedLock lock(fs->mtx);
@@ -2905,12 +2767,12 @@ int FileSystem::FGetXAttr(int fdNum, const char* name, void* value, fs_size_t si
   struct BaseINode* inode = fd->inode;
   for (fs_size_t i = 0; i != inode->attribs.count; ++i) {
     struct Attribute* attrib = inode->attribs.list[i];
-    if (StrCmp(name, attrib->name) == 0) {
+    if (strcmp(name, attrib->name) == 0) {
       if (size != 0) {
         if (size < attrib->size)
           return -FS_ERANGE;
         if (attrib->data)
-          MemCpy(value, attrib->data, attrib->size);
+          memcpy(value, attrib->data, attrib->size);
       }
       return 0;
     }
@@ -2924,7 +2786,7 @@ int FileSystem::SetXAttr(
   fs_size_t size,
   int flags
 ) {
-  if (StrLen(name) > FS_XATTR_NAME_MAX || size > FS_XATTR_SIZE_MAX)
+  if (strlen(name) > FS_XATTR_NAME_MAX || size > FS_XATTR_SIZE_MAX)
     return -FS_ERANGE;
   struct FSInternal* fs = (struct FSInternal*)data;
   ScopedLock lock(fs->mtx);
@@ -2935,11 +2797,11 @@ int FileSystem::SetXAttr(
   struct Attributes* attribs = &inode->attribs;
   for (fs_size_t i = 0; i != attribs->count; ++i) {
     struct Attribute* attrib = attribs->list[i];
-    if (StrCmp(name, attrib->name) == 0) {
+    if (strcmp(name, attrib->name) == 0) {
       if (flags & FS_XATTR_CREATE)
         return -FS_EEXIST;
       const char* kname;
-      if (!(kname = StrDup(name)))
+      if (!(kname = strdup(name)))
         return -FS_ENOMEM;
       char* data = NULL;
       if (size != 0) {
@@ -2947,7 +2809,7 @@ int FileSystem::SetXAttr(
           Delete(kname);
           return -FS_ENOMEM;
         }
-        MemCpy(data, value, size);
+        memcpy(data, value, size);
       }
       *attrib = {
         kname,
@@ -2963,7 +2825,7 @@ int FileSystem::SetXAttr(
   if (!Alloc<true>(&attrib))
     return -FS_ENOMEM;
   attrib->size = size;
-  if (!(attrib->name = StrDup(name))) {
+  if (!(attrib->name = strdup(name))) {
     Delete(attrib);
     return -FS_ENOMEM;
   }
@@ -2972,7 +2834,7 @@ int FileSystem::SetXAttr(
       Delete(attrib);
       return -FS_ENOMEM;
     }
-    MemCpy(attrib->data, value, size);
+    memcpy(attrib->data, value, size);
   }
   if (!Realloc(&attribs->list, attribs->count, attribs->count + 1)) {
     Delete(attrib);
@@ -2989,7 +2851,7 @@ int FileSystem::LSetXAttr(
   fs_size_t size,
   int flags
 ) {
-  if (StrLen(name) > FS_XATTR_NAME_MAX || size > FS_XATTR_SIZE_MAX)
+  if (strlen(name) > FS_XATTR_NAME_MAX || size > FS_XATTR_SIZE_MAX)
     return -FS_ERANGE;
   struct FSInternal* fs = (struct FSInternal*)data;
   ScopedLock lock(fs->mtx);
@@ -3000,11 +2862,11 @@ int FileSystem::LSetXAttr(
   struct Attributes* attribs = &inode->attribs;
   for (fs_size_t i = 0; i != attribs->count; ++i) {
     struct Attribute* attrib = attribs->list[i];
-    if (StrCmp(name, attrib->name) == 0) {
+    if (strcmp(name, attrib->name) == 0) {
       if (flags & FS_XATTR_CREATE)
         return -FS_EEXIST;
       const char* kname;
-      if (!(kname = StrDup(name)))
+      if (!(kname = strdup(name)))
         return -FS_ENOMEM;
       char* data = NULL;
       if (size != 0) {
@@ -3012,7 +2874,7 @@ int FileSystem::LSetXAttr(
           Delete(kname);
           return -FS_ENOMEM;
         }
-        MemCpy(data, value, size);
+        memcpy(data, value, size);
       }
       *attrib = {
         kname,
@@ -3028,7 +2890,7 @@ int FileSystem::LSetXAttr(
   if (!Alloc<true>(&attrib))
     return -FS_ENOMEM;
   attrib->size = size;
-  if (!(attrib->name = StrDup(name))) {
+  if (!(attrib->name = strdup(name))) {
     Delete(attrib);
     return -FS_ENOMEM;
   }
@@ -3037,7 +2899,7 @@ int FileSystem::LSetXAttr(
       Delete(attrib);
       return -FS_ENOMEM;
     }
-    MemCpy(attrib->data, value, size);
+    memcpy(attrib->data, value, size);
   }
   if (!Realloc(&attribs->list, attribs->count, attribs->count + 1)) {
     Delete(attrib);
@@ -3048,7 +2910,7 @@ int FileSystem::LSetXAttr(
   return 0;
 }
 int FileSystem::FSetXAttr(int fdNum, const char* name, void* value, fs_size_t size, int flags) {
-  if (StrLen(name) > FS_XATTR_NAME_MAX || size > FS_XATTR_SIZE_MAX)
+  if (strlen(name) > FS_XATTR_NAME_MAX || size > FS_XATTR_SIZE_MAX)
     return -FS_ERANGE;
   struct FSInternal* fs = (struct FSInternal*)data;
   ScopedLock lock(fs->mtx);
@@ -3059,11 +2921,11 @@ int FileSystem::FSetXAttr(int fdNum, const char* name, void* value, fs_size_t si
   struct Attributes* attribs = &inode->attribs;
   for (fs_size_t i = 0; i != attribs->count; ++i) {
     struct Attribute* attrib = attribs->list[i];
-    if (StrCmp(name, attrib->name) == 0) {
+    if (strcmp(name, attrib->name) == 0) {
       if (flags & FS_XATTR_CREATE)
         return -FS_EEXIST;
       const char* kname;
-      if (!(kname = StrDup(name)))
+      if (!(kname = strdup(name)))
         return -FS_ENOMEM;
       char* data = NULL;
       if (size != 0) {
@@ -3071,7 +2933,7 @@ int FileSystem::FSetXAttr(int fdNum, const char* name, void* value, fs_size_t si
           Delete(kname);
           return -FS_ENOMEM;
         }
-        MemCpy(data, value, size);
+        memcpy(data, value, size);
       }
       *attrib = {
         kname,
@@ -3087,7 +2949,7 @@ int FileSystem::FSetXAttr(int fdNum, const char* name, void* value, fs_size_t si
   if (!Alloc<true>(&attrib))
     return -FS_ENOMEM;
   attrib->size = size;
-  if (!(attrib->name = StrDup(name))) {
+  if (!(attrib->name = strdup(name))) {
     Delete(attrib);
     return -FS_ENOMEM;
   }
@@ -3096,7 +2958,7 @@ int FileSystem::FSetXAttr(int fdNum, const char* name, void* value, fs_size_t si
       Delete(attrib);
       return -FS_ENOMEM;
     }
-    MemCpy(attrib->data, value, size);
+    memcpy(attrib->data, value, size);
   }
   if (!Realloc(&attribs->list, attribs->count, attribs->count + 1)) {
     Delete(attrib);
@@ -3107,7 +2969,7 @@ int FileSystem::FSetXAttr(int fdNum, const char* name, void* value, fs_size_t si
   return 0;
 }
 int FileSystem::RemoveXAttr(const char* path, const char* name) {
-  if (StrLen(name) > FS_XATTR_NAME_MAX)
+  if (strlen(name) > FS_XATTR_NAME_MAX)
     return -FS_ERANGE;
   struct FSInternal* fs = (struct FSInternal*)data;
   ScopedLock lock(fs->mtx);
@@ -3118,7 +2980,7 @@ int FileSystem::RemoveXAttr(const char* path, const char* name) {
   struct Attributes* attribs = &inode->attribs;
   for (fs_size_t i = 0; i != attribs->count; ++i) {
     struct Attribute* attrib = attribs->list[i];
-    if (StrCmp(name, attrib->name) == 0) {
+    if (strcmp(name, attrib->name) == 0) {
       Delete(attrib);
       if (attribs->count == 1) {
         Delete(attribs->list);
@@ -3127,7 +2989,7 @@ int FileSystem::RemoveXAttr(const char* path, const char* name) {
         return 0;
       }
       if (i != attribs->count - 1)
-        MemMove(
+        memmove(
           &attribs->list[i],
           &attribs->list[i + 1],
           sizeof(struct Attribute) * (attribs->count - i)
@@ -3140,7 +3002,7 @@ int FileSystem::RemoveXAttr(const char* path, const char* name) {
   return -FS_ENODATA;
 }
 int FileSystem::LRemoveXAttr(const char* path, const char* name) {
-  if (StrLen(name) > FS_XATTR_NAME_MAX)
+  if (strlen(name) > FS_XATTR_NAME_MAX)
     return -FS_ERANGE;
   struct FSInternal* fs = (struct FSInternal*)data;
   ScopedLock lock(fs->mtx);
@@ -3151,7 +3013,7 @@ int FileSystem::LRemoveXAttr(const char* path, const char* name) {
   struct Attributes* attribs = &inode->attribs;
   for (fs_size_t i = 0; i != attribs->count; ++i) {
     struct Attribute* attrib = attribs->list[i];
-    if (StrCmp(name, attrib->name) == 0) {
+    if (strcmp(name, attrib->name) == 0) {
       Delete(attrib);
       if (attribs->count == 1) {
         Delete(attribs->list);
@@ -3160,7 +3022,7 @@ int FileSystem::LRemoveXAttr(const char* path, const char* name) {
         return 0;
       }
       if (i != attribs->count - 1)
-        MemMove(
+        memmove(
           &attribs->list[i],
           &attribs->list[i + 1],
           sizeof(struct Attribute) * (attribs->count - i)
@@ -3173,7 +3035,7 @@ int FileSystem::LRemoveXAttr(const char* path, const char* name) {
   return -FS_ENODATA;
 }
 int FileSystem::FRemoveXAttr(int fdNum, const char* name) {
-  if (StrLen(name) > FS_XATTR_NAME_MAX)
+  if (strlen(name) > FS_XATTR_NAME_MAX)
     return -FS_ERANGE;
   struct FSInternal* fs = (struct FSInternal*)data;
   ScopedLock lock(fs->mtx);
@@ -3184,7 +3046,7 @@ int FileSystem::FRemoveXAttr(int fdNum, const char* name) {
   struct Attributes* attribs = &inode->attribs;
   for (fs_size_t i = 0; i != attribs->count; ++i) {
     struct Attribute* attrib = attribs->list[i];
-    if (StrCmp(name, attrib->name) == 0) {
+    if (strcmp(name, attrib->name) == 0) {
       Delete(attrib);
       if (attribs->count == 1) {
         Delete(attribs->list);
@@ -3193,7 +3055,7 @@ int FileSystem::FRemoveXAttr(int fdNum, const char* name) {
         return 0;
       }
       if (i != attribs->count - 1)
-        MemMove(
+        memmove(
           &attribs->list[i],
           &attribs->list[i + 1],
           sizeof(struct Attribute) * (attribs->count - i)
@@ -3215,7 +3077,7 @@ fs_ssize_t FileSystem::ListXAttr(const char* path, char* list, fs_size_t size) {
   fs_size_t listLen = 0;
   for (fs_size_t i = 0; i != inode->attribs.count; ++i) {
     struct Attribute* attrib = inode->attribs.list[i];
-    listLen += StrLen(attrib->name) + 1;
+    listLen += strlen(attrib->name) + 1;
     if ((size != 0 && listLen > size) || listLen > FS_XATTR_LIST_MAX)
       return -FS_ERANGE;
   }
@@ -3224,8 +3086,8 @@ fs_ssize_t FileSystem::ListXAttr(const char* path, char* list, fs_size_t size) {
   fs_size_t i = 0;
   for (fs_size_t j = 0; j != inode->attribs.count; ++j) {
     struct Attribute* attrib = inode->attribs.list[j];
-    fs_size_t nameLen = StrLen(attrib->name) + 1;
-    MemCpy(&list[i], attrib->name, nameLen);
+    fs_size_t nameLen = strlen(attrib->name) + 1;
+    memcpy(&list[i], attrib->name, nameLen);
     i += nameLen;
   }
   return listLen;
@@ -3240,7 +3102,7 @@ fs_ssize_t FileSystem::LListXAttr(const char* path, char* list, fs_size_t size) 
   fs_size_t listLen = 0;
   for (fs_size_t i = 0; i != inode->attribs.count; ++i) {
     struct Attribute* attrib = inode->attribs.list[i];
-    listLen += StrLen(attrib->name) + 1;
+    listLen += strlen(attrib->name) + 1;
     if (listLen > size || listLen > FS_XATTR_LIST_MAX)
       return -FS_ERANGE;
   }
@@ -3249,8 +3111,8 @@ fs_ssize_t FileSystem::LListXAttr(const char* path, char* list, fs_size_t size) 
   fs_size_t i = 0;
   for (fs_size_t j = 0; j != inode->attribs.count; ++j) {
     struct Attribute* attrib = inode->attribs.list[j];
-    fs_size_t nameLen = StrLen(attrib->name) + 1;
-    MemCpy(&list[i], attrib->name, nameLen);
+    fs_size_t nameLen = strlen(attrib->name) + 1;
+    memcpy(&list[i], attrib->name, nameLen);
     i += nameLen;
   }
   return listLen;
@@ -3265,7 +3127,7 @@ fs_ssize_t FileSystem::FListXAttr(int fdNum, char* list, fs_size_t size) {
   fs_size_t listLen = 0;
   for (fs_size_t i = 0; i != inode->attribs.count; ++i) {
     struct Attribute* attrib = inode->attribs.list[i];
-    listLen += StrLen(attrib->name) + 1;
+    listLen += strlen(attrib->name) + 1;
     if (listLen > size || listLen > FS_XATTR_LIST_MAX)
       return -FS_ERANGE;
   }
@@ -3274,8 +3136,8 @@ fs_ssize_t FileSystem::FListXAttr(int fdNum, char* list, fs_size_t size) {
   fs_size_t i = 0;
   for (fs_size_t j = 0; j != inode->attribs.count; ++j) {
     struct Attribute* attrib = inode->attribs.list[j];
-    fs_size_t nameLen = StrLen(attrib->name) + 1;
-    MemCpy(&list[i], attrib->name, nameLen);
+    fs_size_t nameLen = strlen(attrib->name) + 1;
+    memcpy(&list[i], attrib->name, nameLen);
     i += nameLen;
   }
   return listLen;
@@ -3385,7 +3247,6 @@ int FileSystem::UMask(int mask) {
 /**
  * format:
  *   magic number ("\x7FVFS")
- *   is64Bit
  *   inodeCount
  *   inodes:
  *     id
@@ -3417,7 +3278,6 @@ int FileSystem::UMask(int mask) {
 bool FileSystem::DumpToFile(const char* filename) {
   struct FSInternal* fs = (struct FSInternal*)data;
   ScopedLock lock(fs->mtx);
-  char is64Bit = (sizeof(fs_size_t) / 4) - 1;
   fd_t fd;
 #ifdef __linux__
   fd = creat(filename, 0644);
@@ -3440,7 +3300,6 @@ bool FileSystem::DumpToFile(const char* filename) {
     goto err2;
 #endif
   if (write(fd, (void*)"\x7FVFS", 4) != 4 ||
-      write(fd, &is64Bit, 1) != 1 ||
       write(fd, &fs->inodeCount, sizeof(fs_ino_t)) != sizeof(fs_ino_t))
     goto err2;
   for (fs_ino_t i = 0; i != fs->inodeCount; ++i) {
@@ -3472,14 +3331,14 @@ bool FileSystem::DumpToFile(const char* filename) {
     if (inode->attribs.count != 0)
       for (fs_size_t j = 0; j != inode->attribs.count; ++j) {
         struct Attribute* attrib = inode->attribs.list[j];
-        fs_size_t nameLen = StrLen(attrib->name) + 1;
+        fs_size_t nameLen = strlen(attrib->name) + 1;
         if (write(fd, (void*)attrib->name, nameLen) != nameLen ||
             write(fd, &attrib->size, sizeof(fs_size_t)) != sizeof(fs_size_t) ||
             (attrib->size != 0 && write(fd, attrib->data, attrib->size) != attrib->size))
           goto err2;
       }
     if (FS_S_ISLNK(inode->mode)) {
-      fs_size_t targetLen = StrLen(((struct SymLinkINode*)inode)->target) + 1;
+      fs_size_t targetLen = strlen(((struct SymLinkINode*)inode)->target) + 1;
       fs_off_t dataLen = inode->size;
       if (write(fd, (void*)((struct SymLinkINode*)inode)->target, targetLen) != targetLen ||
           write(fd, ((struct SymLinkINode*)inode)->data, dataLen) != dataLen)
@@ -3499,7 +3358,7 @@ bool FileSystem::DumpToFile(const char* filename) {
         goto err2;
       for (fs_off_t j = 2; j != ((struct DirectoryINode*)inode)->dentCount; ++j) {
         struct Dent* dent = &((struct DirectoryINode*)inode)->dents[j];
-        fs_size_t nameLen = StrLen(dent->name) + 1;
+        fs_size_t nameLen = strlen(dent->name) + 1;
         if (write(fd, &dent->inode->ndx, sizeof(fs_ino_t)) != sizeof(fs_ino_t) ||
             write(fd, (void*)dent->name, nameLen) != nameLen)
           goto err2;
@@ -3555,12 +3414,10 @@ FileSystem* FileSystem::LoadFromFile(const char* filename) {
   if (fd == INVALID_FD)
     goto err_at_open;
   char magic[4];
-  char is64Bit;
   fs_ino_t inodeCount;
   struct BaseINode** inodes;
   if (read(fd, magic, 4) != 4 ||
-      MemCmp(magic, "\x7FVFS", 4) != 0 ||
-      read(fd, &is64Bit, 1) != 1 || (is64Bit + 1) * 4 != sizeof(fs_size_t) ||
+      memcmp(magic, "\x7FVFS", 4) != 0 ||
       read(fd, &inodeCount, sizeof(fs_ino_t)) != sizeof(fs_ino_t))
     goto err_after_open;
   if (!Alloc(&inodes, inodeCount))
@@ -3612,7 +3469,7 @@ FileSystem* FileSystem::LoadFromFile(const char* filename) {
           if (read(fd, &name[nameLen], 1) != 1)
             goto err_after_attrib_init;
         } while (name[nameLen++] != '\0');
-        if (!(attr->name = StrDup(name)))
+        if (!(attr->name = strdup(name)))
           goto err_after_attrib_init;
         if (read(fd, &size, sizeof(fs_size_t)) != sizeof(fs_size_t))
           goto err_after_attrib_init;
@@ -3643,7 +3500,7 @@ FileSystem* FileSystem::LoadFromFile(const char* filename) {
         if (read(fd, &target[targetLen], 1) != 1)
           goto err_after_inode_init;
       } while (target[targetLen++] != '\0');
-      if (!(((struct SymLinkINode*)inode)->target = StrDup(target)))
+      if (!(((struct SymLinkINode*)inode)->target = strdup(target)))
         goto err_after_inode_init;
       char data[FS_PATH_MAX];
       fs_size_t dataLen = 0;
@@ -3653,7 +3510,7 @@ FileSystem* FileSystem::LoadFromFile(const char* filename) {
       } while (data[dataLen++] != '\0');
       if (!Alloc(&((struct SymLinkINode*)inode)->data, dataLen))
         goto err_after_target_alloc;
-      MemCpy(((struct SymLinkINode*)inode)->data, data, dataLen);
+      memcpy(((struct SymLinkINode*)inode)->data, data, dataLen);
       goto success_symlink;
 
      err_after_target_alloc:
@@ -3685,7 +3542,7 @@ FileSystem* FileSystem::LoadFromFile(const char* filename) {
           if (read(fd, &name[nameLen], 1) != 1)
             goto err_after_dent_list_init;
         } while (name[nameLen++] != '\0');
-        if (!(dent->name = StrDup(name)))
+        if (!(dent->name = strdup(name)))
           goto err_after_dent_list_init;
         goto success_dent;
 
@@ -3788,7 +3645,7 @@ FileSystem* FileSystem::LoadFromFile(const char* filename) {
     if (inode->nlink == 0) {
       DeleteINode(inode);
       if (i != inodeCount - 1) {
-        MemMove(inodes + i, inodes + i + 1, sizeof(struct INode*) * (inodeCount - i));
+        memmove(inodes + i, inodes + i + 1, sizeof(struct INode*) * (inodeCount - i));
         for (fs_ino_t j = i; j != inodeCount - 1; ++j)
           --inodes[j]->ndx;
       }
@@ -3805,7 +3662,7 @@ FileSystem* FileSystem::LoadFromFile(const char* filename) {
     goto err_after_fs_init;
   data->inodes = inodes;
   data->inodeCount = inodeCount;
-  if (!(data->cwd.path = StrDup("/")))
+  if (!(data->cwd.path = strdup("/")))
     goto err_after_fsdata_init;
   data->cwd.inode = data->cwd.parent = (struct DirectoryINode*)inodes[0];
   fs->data = data;

@@ -26,10 +26,11 @@ jobs:
       - name: Setup Visual Studio Environment
         uses: egor-tensin/vs-shell@v2.1
 
-      - name: Compile
-        run: |
-          cl -O2 /Oi- /std:c++17 /LD FileSystem.cc
-          npm i
+      - name: Compile Library
+        run: cl /O2 /std:c++17 /LD /Zi FileSystem.cc
+
+      - name: Test Node.js Module
+        run: npm i
 
   build-linux:
     runs-on: ubuntu-latest
@@ -42,7 +43,8 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4.2.1
 
-      - name: Compile
-        run: |
-          g++ -O3 -fno-builtin -fPIC -shared -o FileSystem.so FileSystem.cc
-          npm i
+      - name: Compile Library
+        run: g++ -O3 -g -fPIC -shared -o FileSystem.so FileSystem.cc
+
+      - name: Test Node.js Module
+        run: npm i
