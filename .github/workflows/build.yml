@@ -154,8 +154,8 @@ jobs:
       - name: Setup NPM Release
         if: env.release_exists == 'false'
         run: |
-          unzip -o FileSystem-linux.zip
-          unzip -o FileSystem-windows.zip
+          unzip -n FileSystem-linux.zip
+          unzip -n FileSystem-windows.zip
           rm FileSystem-*.zip
 
       - name: Publish to NPM

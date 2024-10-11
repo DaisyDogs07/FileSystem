@@ -1253,8 +1253,8 @@ int FileSystem::Close(unsigned int fd) {
   ScopedLock lock(fs->mtx);
   return RemoveFd(fs, fd);
 }
-int FileSystem::CloseRange(unsigned int fd, unsigned int maxFd, unsigned int flags) {
-  if (flags != 0 || fd > maxFd)
+int FileSystem::CloseRange(unsigned int fd, unsigned int maxFd) {
+  if (fd > maxFd)
     return -FS_EINVAL;
   struct FSInternal* fs = (struct FSInternal*)data;
   ScopedLock lock(fs->mtx);
@@ -1273,15 +1273,13 @@ int FileSystem::CloseRange(unsigned int fd, unsigned int maxFd, unsigned int fla
   }
   return 0;
 }
-int FileSystem::MkNodAt(int dirFd, const char* path, fs_mode_t mode, fs_dev_t dev) {
+int FileSystem::MkNodAt(int dirFd, const char* path, fs_mode_t mode) {
   if (mode & FS_S_IFMT) {
     if (FS_S_ISDIR(mode))
       return -FS_EPERM;
     if (!FS_S_ISREG(mode))
       return -FS_EINVAL;
   }
-  if (dev != 0)
-    return -FS_EINVAL;
   struct FSInternal* fs = (struct FSInternal*)data;
   ScopedLock lock(fs->mtx);
   struct DirectoryINode* origCwd = fs->cwd.inode;
@@ -1326,8 +1324,8 @@ int FileSystem::MkNodAt(int dirFd, const char* path, fs_mode_t mode, fs_dev_t de
   parent->ctime = parent->mtime = x->btime;
   return 0;
 }
-int FileSystem::MkNod(const char* path, fs_mode_t mode, fs_dev_t dev) {
-  return MkNodAt(FS_AT_FDCWD, path, mode, dev);
+int FileSystem::MkNod(const char* path, fs_mode_t mode) {
+  return MkNodAt(FS_AT_FDCWD, path, mode);
 }
 int FileSystem::MkDirAt(int dirFd, const char* path, fs_mode_t mode) {
   struct FSInternal* fs = (struct FSInternal*)data;

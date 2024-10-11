@@ -149,7 +149,7 @@ declare module "@daisydogs07/filesystem" {
     faccessat(dirFd: NumberLike, path: string, mode: NumberLike): void;
     access(path: string, mode: NumberLike): void;
     openat(dirFd: NumberLike, path: string, flags: NumberLike, mode: NumberLike): number;
-    open(path: string, flags: NumberLike, mode: NumberLike): number;
+    open(path: string, flags: NumberLike, mode?: NumberLike): number;
     creat(path: string, mode: NumberLike): number;
     close(fd: NumberLike): void;
     close_range(fd: NumberLike, maxFd: NumberLike): void;

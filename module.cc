@@ -311,17 +311,18 @@ void FileSystemOpen(const FunctionCallbackInfo<Value>& args) {
   Isolate* isolate = args.GetIsolate();
   Local<Object> self = args.This()->FindInstanceInPrototypeChain(FSConstructorTmpl.Get(isolate));
   THROWIFNOTFS(self, "open");
-  ASSERT(args.Length() == 3);
+  ASSERT(args.Length() == 2 || args.Length() == 3);
   ASSERT(args[0]->IsString());
   ASSERT(IsNumberLike(args[1]));
-  ASSERT(IsNumberLike(args[2]));
+  if (args.Length() == 3)
+    ASSERT(IsNumberLike(args[2]));
   FileSystem* fs = reinterpret_cast<FileSystem*>(
     self->GetInternalField(0).As<External>()->Value()
   );
   int res = fs->Open(
     *String::Utf8Value(isolate, args[0].As<String>()),
     Val<int>(args[1]),
-    Val<fs_mode_t>(args[2])
+    args.Length() == 3 ? Val<fs_mode_t>(args[2]) : 0
   );
   if (res < 0) {
     if (res == -FS_ENOMEM) {
@@ -329,7 +330,7 @@ void FileSystemOpen(const FunctionCallbackInfo<Value>& args) {
       res = fs->Open(
         *String::Utf8Value(isolate, args[0].As<String>()),
         Val<int>(args[1]),
-        Val<fs_mode_t>(args[2])
+        args.Length() == 3 ? Val<fs_mode_t>(args[2]) : 0
       );
       if (res < 0)
         THROWERR(res);
@@ -400,8 +401,7 @@ void FileSystemCloseRange(const FunctionCallbackInfo<Value>& args) {
   THROWIFERR(
     fs->CloseRange(
       Val<unsigned int>(args[0]),
-      Val<unsigned int>(args[1]),
-      0
+      Val<unsigned int>(args[1])
     )
   );
 }
@@ -419,8 +419,7 @@ void FileSystemMkNodAt(const FunctionCallbackInfo<Value>& args) {
   int res = fs->MkNodAt(
     Val<int>(args[0]),
     *String::Utf8Value(isolate, args[1].As<String>()),
-    Val<fs_mode_t>(args[2]),
-    0
+    Val<fs_mode_t>(args[2])
   );
   if (res < 0) {
     if (res == -FS_ENOMEM) {
@@ -428,8 +427,7 @@ void FileSystemMkNodAt(const FunctionCallbackInfo<Value>& args) {
       res = fs->MkNodAt(
         Val<int>(args[0]),
         *String::Utf8Value(isolate, args[1].As<String>()),
-        Val<fs_mode_t>(args[2]),
-        0
+        Val<fs_mode_t>(args[2])
       );
       if (res < 0)
         THROWERR(res);
@@ -448,16 +446,14 @@ void FileSystemMkNod(const FunctionCallbackInfo<Value>& args) {
   );
   int res = fs->MkNod(
     *String::Utf8Value(isolate, args[0].As<String>()),
-    Val<fs_mode_t>(args[1]),
-    0
+    Val<fs_mode_t>(args[1])
   );
   if (res < 0) {
     if (res == -FS_ENOMEM) {
       isolate->LowMemoryNotification();
       res = fs->MkNod(
         *String::Utf8Value(isolate, args[0].As<String>()),
-        Val<fs_mode_t>(args[1]),
-        0
+        Val<fs_mode_t>(args[1])
       );
       if (res < 0)
         THROWERR(res);

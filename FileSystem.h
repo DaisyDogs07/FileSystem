@@ -50,9 +50,9 @@ class FS_EXPORT FileSystem {
   int Open(const char* path, int flags, fs_mode_t mode);
   int Creat(const char* path, fs_mode_t mode);
   int Close(unsigned int fd);
-  int CloseRange(unsigned int fd, unsigned int maxFd, unsigned int flags);
-  int MkNodAt(int dirFd, const char* path, fs_mode_t mode, fs_dev_t dev);
-  int MkNod(const char* path, fs_mode_t mode, fs_dev_t dev);
+  int CloseRange(unsigned int fd, unsigned int maxFd);
+  int MkNodAt(int dirFd, const char* path, fs_mode_t mode);
+  int MkNod(const char* path, fs_mode_t mode);
   int MkDirAt(int dirFd, const char* path, fs_mode_t mode);
   int MkDir(const char* path, fs_mode_t mode);
   int SymLinkAt(const char* oldPath, int newDirFd, const char* newPath);
