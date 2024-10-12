@@ -15,15 +15,15 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Setup Node.js
-        uses: actions/setup-node@v4.0.4
+        uses: actions/setup-node@v4
         with:
           node-version: 20
 
       - name: Checkout Code
-        uses: actions/checkout@v4.2.1
+        uses: actions/checkout@v4
 
       - name: Setup Visual Studio Environment
-        uses: egor-tensin/vs-shell@v2.1
+        uses: egor-tensin/vs-shell@v2
 
       - name: Compile Library
         run: cl /O2 /std:c++17 /LD /Zi FileSystem.cc
@@ -35,7 +35,7 @@ jobs:
         run: powershell Compress-Archive -Path FileSystem.dll,FileSystem.lib,FileSystem.pdb,FileSystem.h,fsdef.h -DestinationPath FileSystem-windows.zip
 
       - name: Upload Library
-        uses: actions/upload-artifact@v4.4.1
+        uses: actions/upload-artifact@v4
         with:
           name: FileSystem-windows.zip
           path: FileSystem-windows.zip
@@ -44,12 +44,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Setup Node.js
-        uses: actions/setup-node@v4.0.4
+        uses: actions/setup-node@v4
         with:
           node-version: 20
 
       - name: Checkout Code
-        uses: actions/checkout@v4.2.1
+        uses: actions/checkout@v4
 
       - name: Compile Library
         run: g++ -O2 -g -fPIC -shared -o FileSystem.so FileSystem.cc
@@ -61,7 +61,7 @@ jobs:
         run: zip FileSystem-linux.zip FileSystem.so FileSystem.h fsdef.h
 
       - name: Upload Library
-        uses: actions/upload-artifact@v4.4.1
+        uses: actions/upload-artifact@v4
         with:
           name: FileSystem-linux.zip
           path: FileSystem-linux.zip
@@ -72,12 +72,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Setup Node.js
-        uses: actions/setup-node@v4.0.4
+        uses: actions/setup-node@v4
         with:
           node-version: 20
 
       - name: Checkout Code
-        uses: actions/checkout@v4.2.1
+        uses: actions/checkout@v4
 
       - name: Get Version
         run: |
@@ -86,12 +86,12 @@ jobs:
           echo "VERSION=$VERSION" >> $GITHUB_ENV
 
       - name: Download Windows Library
-        uses: actions/download-artifact@v4.1.8
+        uses: actions/download-artifact@v4
         with:
           name: FileSystem-windows.zip
 
       - name: Download Linux Library
-        uses: actions/download-artifact@v4.1.8
+        uses: actions/download-artifact@v4
         with:
           name: FileSystem-linux.zip
 
@@ -123,7 +123,7 @@ jobs:
       - name: Create Release
         id: create_release
         if: env.release_exists == 'false'
-        uses: actions/create-release@v1.1.4
+        uses: actions/create-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -132,7 +132,7 @@ jobs:
           body: "Automated Release of Library Builds"
 
       - name: Upload Windows Library
-        uses: actions/upload-release-asset@v1.0.2
+        uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -142,7 +142,7 @@ jobs:
           asset_content_type: application/zip
 
       - name: Upload Linux Library
-        uses: actions/upload-release-asset@v1.0.2
+        uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -160,6 +160,6 @@ jobs:
 
       - name: Publish to NPM
         if: env.release_exists == 'false'
-        uses: JS-DevTools/npm-publish@v3.1.1
+        uses: JS-DevTools/npm-publish@v3
         with:
           token: ${{ secrets.NPM_TOKEN }}
