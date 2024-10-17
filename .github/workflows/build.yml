@@ -156,7 +156,7 @@ jobs:
         run: |
           unzip -n FileSystem-linux.zip
           unzip -n FileSystem-windows.zip
-          rm FileSystem-*.zip
+          rm -rfd FileSystem-*.zip .github FileSystem.cc README.md
 
       - name: Publish to NPM
         if: env.release_exists == 'false'

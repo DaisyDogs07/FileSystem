@@ -16,18 +16,18 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Setup Node.js
-        uses: actions/setup-node@v4.0.4
+        uses: actions/setup-node@v4
         with:
           node-version: 20
 
       - name: Checkout Code
-        uses: actions/checkout@v4.2.1
+        uses: actions/checkout@v4
 
       - name: Setup Visual Studio Environment
-        uses: egor-tensin/vs-shell@v2.1
+        uses: egor-tensin/vs-shell@v2
 
       - name: Compile Library
-        run: cl /O2 /std:c++17 /LD /Zi FileSystem.cc
+        run: cl /O2 /std:c++17 /LD FileSystem.cc
 
       - name: Test Node.js Module
         run: npm i
@@ -36,15 +36,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Setup Node.js
-        uses: actions/setup-node@v4.0.4
+        uses: actions/setup-node@v4
         with:
           node-version: 20
 
       - name: Checkout Code
-        uses: actions/checkout@v4.2.1
+        uses: actions/checkout@v4
 
       - name: Compile Library
-        run: g++ -O3 -g -fPIC -shared -o FileSystem.so FileSystem.cc
+        run: g++ -O2 -fPIC -shared -o FileSystem.so FileSystem.cc
 
       - name: Test Node.js Module
         run: npm i
