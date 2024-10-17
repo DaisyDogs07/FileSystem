@@ -41,7 +41,7 @@
 #define FS_FOLLOW_MAX 40
 #define FS_ALIGN(x, a) (((x) + ((a) - 1)) & ~((a) - 1))
 #define FS_FALLOC_FL_ALLOCATE_RANGE 0x00
-#define FS_FALLOC_FL_MODE_MASK (FS_FALLOC_FL_ALLOCATE_RANGE |	\
+#define FS_FALLOC_FL_MODE_MASK (FS_FALLOC_FL_ALLOCATE_RANGE | \
   FS_FALLOC_FL_ZERO_RANGE | \
   FS_FALLOC_FL_PUNCH_HOLE | \
   FS_FALLOC_FL_COLLAPSE_RANGE | \
@@ -1797,7 +1797,7 @@ int FileSystem::FAllocate(int fdNum, int mode, fs_off_t offset, fs_off_t len) {
   if (!(fd->flags & (FS_O_WRONLY | FS_O_RDWR)))
     return -FS_EBADF;
   if ((mode & ~FS_FALLOC_FL_KEEP_SIZE) && fd->flags & FS_O_APPEND)
-		return -FS_EPERM;
+    return -FS_EPERM;
   struct BaseINode* baseInode = fd->inode;
   if (FS_S_ISDIR(baseInode->mode))
     return -FS_EISDIR;
