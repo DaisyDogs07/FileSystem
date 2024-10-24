@@ -797,7 +797,7 @@ namespace {
     ++fs->fdCount;
     return fdNum;
   }
-  void RemoveFd2(struct FSInternal* fs, struct Fd* fd, int i) {
+  void RemoveFd(struct FSInternal* fs, struct Fd* fd, int i) {
     struct BaseINode* inode = fd->inode;
     if (inode->nlink == 0)
       RemoveINode(fs, inode);
@@ -812,24 +812,6 @@ namespace {
     }
     Realloc(fs->fds, fs->fdCount, fs->fdCount - 1);
     --fs->fdCount;
-  }
-  int RemoveFd(struct FSInternal* fs, unsigned int fd) {
-    if (fs->fdCount == 0)
-      return -FS_EBADF;
-    int low = 0;
-    int high = fs->fdCount - 1;
-    while (low <= high) {
-      int mid = low + ((high - low) / 2);
-      struct Fd* f = fs->fds[mid];
-      if (f->fd == fd) {
-        RemoveFd2(fs, f, mid);
-        return 0;
-      }
-      if (f->fd < fd)
-        low = mid + 1;
-      else high = mid - 1;
-    }
-    return -FS_EBADF;
   }
   struct Fd* GetFd(struct FSInternal* fs, unsigned int fdNum) {
     if (fs->fdCount == 0)
@@ -1251,7 +1233,22 @@ int FileSystem::Creat(const char* path, fs_mode_t mode) {
 int FileSystem::Close(unsigned int fd) {
   struct FSInternal* fs = (struct FSInternal*)data;
   ScopedLock lock(fs->mtx);
-  return RemoveFd(fs, fd);
+  if (fs->fdCount == 0)
+    return -FS_EBADF;
+  int low = 0;
+  int high = fs->fdCount - 1;
+  while (low <= high) {
+    int mid = low + ((high - low) / 2);
+    struct Fd* f = fs->fds[mid];
+    if (f->fd == fd) {
+      RemoveFd(fs, f, mid);
+      return 0;
+    }
+    if (f->fd < fd)
+      low = mid + 1;
+    else high = mid - 1;
+  }
+  return -FS_EBADF;
 }
 int FileSystem::CloseRange(unsigned int fd, unsigned int maxFd) {
   if (fd > maxFd)
@@ -1261,11 +1258,11 @@ int FileSystem::CloseRange(unsigned int fd, unsigned int maxFd) {
   for (int i = 0; i != fs->fdCount; ++i) {
     struct Fd* f = fs->fds[i];
     if (f->fd >= fd) {
-      RemoveFd2(fs, f, i);
+      RemoveFd(fs, f, i);
       while (i != fs->fdCount) {
         f = fs->fds[i];
         if (f->fd < maxFd)
-          RemoveFd2(fs, f, i);
+          RemoveFd(fs, f, i);
         else break;
       }
       break;
@@ -1694,10 +1691,13 @@ int FileSystem::RenameAt2(
     return res;
   if (oldInode == newInode)
     return 0;
-  if (flags & FS_RENAME_NOREPLACE && newInode)
-    return -FS_EEXIST;
-  if (flags & FS_RENAME_EXCHANGE && !newInode)
-    return -FS_ENOENT;
+  if (newInode) {
+    if (flags & FS_RENAME_NOREPLACE)
+      return -FS_EEXIST;
+  } else {
+    if (flags & FS_RENAME_EXCHANGE)
+      return -FS_ENOENT;
+  }
   if (FS_S_ISDIR(oldInode->mode)) {
     if (newInode) {
       if (!FS_S_ISDIR(newInode->mode))
