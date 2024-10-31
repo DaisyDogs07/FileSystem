@@ -9,9 +9,7 @@
           'copies': [{
             'destination': '<(module_root_dir)/build/Release/',
             'files': [
-              '<(module_root_dir)/FileSystem.dll',
-              '<(module_root_dir)/FileSystem.lib',
-              '<(module_root_dir)/FileSystem.pdb'
+              '<(module_root_dir)/FileSystem.dll'
             ]
           }]
         }, {

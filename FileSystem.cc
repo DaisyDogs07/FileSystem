@@ -80,7 +80,7 @@ namespace {
     if (!Alloc(&newPtr, sizeof(T) * length))
       return length < ptrLen;
     if (*ptr) {
-      memcpy(newPtr, *ptr, sizeof(T) * Min<uint64_t>(ptrLen, length));
+      memcpy(newPtr, *ptr, sizeof(T) * Min<size_t>(ptrLen, length));
       Delete(*ptr);
     }
     *ptr = newPtr;
@@ -203,8 +203,9 @@ namespace {
 
   struct BaseINode {
     BaseINode() {
-      GetTime(&btime);
-      ctime = mtime = atime = btime;
+      struct fs_timespec ts;
+      GetTime(&ts);
+      ctime = mtime = atime = btime = ts;
     }
     fs_ino_t ndx;
     fs_ino_t id;
@@ -1035,11 +1036,7 @@ namespace {
       return Alloc((struct DirectoryINode**)inode);
     if (FS_S_ISLNK(mode))
       return Alloc((struct SymLinkINode**)inode);
-#ifdef __linux__
-    __builtin_unreachable();
-#else
-    __assume(0);
-#endif
+    return false;
   }
 }
 
