@@ -105,55 +105,32 @@ namespace {
 #else
     FILETIME ft;
     GetSystemTimeAsFileTime(&ft);
-    LARGE_INTEGER li;
-    li.HighPart = ft.dwHighDateTime;
-    li.LowPart = ft.dwLowDateTime;
-    li.QuadPart -= 116444736000000000;
-    fts->tv_sec = li.QuadPart / 10000000;
-    fts->tv_nsec = (li.QuadPart % 10000000) * 100;
+    fs_time_t time = (((fs_time_t)ft.dwHighDateTime << 32) | ft.dwLowDateTime) - 116444736000000000;
+    fts->tv_sec = time / 10000000;
+    fts->tv_nsec = (time % 10000000) * 100;
 #endif
   }
 
 #ifdef _WIN32
   fs_ssize_t WriteToFile(HANDLE handle, void* data, fs_size_t size) {
     DWORD written = 0;
-    fs_size_t actualWritten = 0;
     BOOL res = WriteFile(handle, data, size, &written, NULL);
     if (!res)
       return -1;
-    actualWritten = written;
-    size -= actualWritten;
-    if (size != 0) {
-      data = (char*)data + actualWritten;
-      res = WriteFile(handle, data, size, &written, NULL);
-      if (!res)
-        return -1;
-      actualWritten += written;
-    }
-    return actualWritten;
+    return written;
   }
   fs_ssize_t ReadFromFile(HANDLE handle, void* data, fs_size_t size) {
-   DWORD read = 0;
-    fs_size_t actualRead = 0;
+    DWORD read = 0;
     BOOL res = ReadFile(handle, data, size, &read, NULL);
     if (!res)
       return -1;
-    actualRead = read;
-    size -= actualRead;
-    if (size != 0) {
-      data = (char*)data + actualRead;
-      res = ReadFile(handle, data, size, &read, NULL);
-      if (!res)
-        return -1;
-      actualRead += read;
-    }
-    return actualRead;
+    return read;
   }
 #endif
 
   class ScopedLock {
-#ifdef __linux__
    public:
+#ifdef __linux__
     ScopedLock(pthread_mutex_t& mtx) {
       mtx_ = &mtx;
       pthread_mutex_lock(&mtx);
@@ -164,7 +141,6 @@ namespace {
    private:
     pthread_mutex_t* mtx_;
 #else
-   public:
     ScopedLock(HANDLE mtx) {
       mtx_ = mtx;
       WaitForSingleObject(mtx, INFINITE);
