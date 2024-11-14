@@ -25,6 +25,12 @@
 #error FileSystem is not available on 32-bit platforms
 #else
 
+#ifdef __linux__
+#define FS_LONG long
+#else
+#define FS_LONG long long
+#endif
+
 #define FS_AT_EMPTY_PATH 0x1000
 #define FS_AT_FDCWD -100
 #define FS_AT_REMOVEDIR 0x200
@@ -92,8 +98,8 @@
 #define FS_S_IRWXU (FS_S_IRUSR | FS_S_IWUSR | FS_S_IXUSR)
 #define FS_S_IRWXG (FS_S_IRWXU >> 3)
 #define FS_S_IRWXO (FS_S_IRWXG >> 3)
-#define FS_UTIME_NOW ((1l << 30) - 1l)
-#define FS_UTIME_OMIT ((1l << 30) - 2l)
+#define FS_UTIME_NOW (((FS_LONG)1 << 30) - (FS_LONG)1)
+#define FS_UTIME_OMIT (((FS_LONG)1 << 30) - (FS_LONG)2)
 #define FS_XATTR_CREATE 0x1
 #define FS_XATTR_LIST_MAX 65536
 #define FS_XATTR_NAME_MAX 255
@@ -125,12 +131,6 @@
 #define FS_S_ISLNK(mode) ((mode & FS_S_IFMT) == FS_S_IFLNK)
 
 #define FS_IFTODT(mode) ((mode & FS_S_IFMT) >> 12)
-
-#ifdef __linux__
-#define FS_LONG long
-#else
-#define FS_LONG long long
-#endif
 
 typedef unsigned FS_LONG fs_dev_t;
 typedef unsigned FS_LONG fs_ino_t;
@@ -189,7 +189,5 @@ struct fs_utimbuf {
   fs_time_t actime;
   fs_time_t modtime;
 };
-
-#undef FS_LONG
 
 #endif

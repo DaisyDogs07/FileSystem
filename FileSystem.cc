@@ -1474,7 +1474,7 @@ int FileSystem::GetDents(unsigned int fdNum, struct fs_dirent* dirp, unsigned in
     fs_size_t nameLen = strlen(d.name);
     unsigned short reclen = FS_ALIGN(
       __builtin_offsetof(struct fs_dirent, d_name) + nameLen + 2,
-      sizeof(long)
+      sizeof(FS_LONG)
     );
     if (nread + reclen > count)
       break;

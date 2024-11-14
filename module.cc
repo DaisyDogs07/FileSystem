@@ -1578,7 +1578,7 @@ void FileSystemGetCwd(const FunctionCallbackInfo<Value>& args) {
   );
 }
 
-void SetTimeProp(Isolate* isolate, Local<Object> obj, const char* prop, fs_time_t sec, long nsec) {
+void SetTimeProp(Isolate* isolate, Local<Object> obj, const char* prop, fs_time_t sec, FS_LONG nsec) {
   Local<Context> context = isolate->GetCurrentContext();
   Local<Object> tim = Object::New(isolate);
   tim->Set(
