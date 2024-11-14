@@ -57,9 +57,30 @@ namespace {
     return b;
   }
 
+  template<typename R, typename T1, typename T2>
+  bool AddOverflow(T1 a, T2 b, R* res) {
+#ifdef __linux__
+    return __builtin_add_overflow(a, b, res);
+#else
+    return (*res = (a + b)) < a;
+#endif
+  }
+
+  template<typename R, typename T1, typename T2>
+  bool MulOverflow(T1 a, T2 b, R* res) {
+#ifdef __linux__
+    return __builtin_mul_overflow(a, b, res);
+#else
+    return ((*res = (a * b)) / b) != a;
+#endif
+  }
+
   template<bool I = false, typename T>
   bool Alloc(T** ptr, size_t length = 1) {
-    T* newPtr = (T*)malloc(sizeof(T) * length);
+    size_t len;
+    if (MulOverflow(sizeof(T), length, &len))
+      return false;
+    T* newPtr = (T*)malloc(len);
     if (!newPtr)
       return false;
     if constexpr (I)
@@ -77,7 +98,7 @@ namespace {
   template<typename T>
   bool Realloc(T** ptr, size_t ptrLen, size_t length) {
     T* newPtr;
-    if (!Alloc(&newPtr, sizeof(T) * length))
+    if (!Alloc(&newPtr, length))
       return length < ptrLen;
     if (*ptr) {
       memcpy(newPtr, *ptr, sizeof(T) * Min<size_t>(ptrLen, length));
@@ -85,15 +106,6 @@ namespace {
     }
     *ptr = newPtr;
     return true;
-  }
-
-  template<typename R, typename T1, typename T2>
-  bool AddOverflow(T1 a, T2 b, R* res) {
-#ifdef __linux__
-    return __builtin_add_overflow(a, b, res);
-#else
-    return (*res = (a + b)) < a;
-#endif
   }
 
   void GetTime(struct fs_timespec* fts) {
@@ -412,7 +424,12 @@ namespace {
     }
   }
   struct DataRange* RegularINode::InsertRange(fs_off_t offset, fs_off_t length, fs_off_t* index) {
+    struct DataRange* range;
     fs_off_t rangeIdx = dataRangeCount;
+    if (!Alloc<true>(&range))
+      goto err_alloc_failed;
+    if (!Realloc(&dataRanges, dataRangeCount, dataRangeCount + 1))
+      goto err_after_alloc;
     if (dataRangeCount != 0) {
       fs_off_t low = 0;
       fs_off_t high = dataRangeCount - 1;
@@ -427,11 +444,6 @@ namespace {
         }
       }
     }
-    struct DataRange* range;
-    if (!Alloc<true>(&range))
-      goto err_alloc_failed;
-    if (!Realloc(&dataRanges, dataRangeCount, dataRangeCount + 1))
-      goto err_after_alloc;
     if (rangeIdx != dataRangeCount)
       memmove(
         &dataRanges[rangeIdx + 1],
@@ -472,6 +484,7 @@ namespace {
         sizeof(struct DataRange*) * (dataRangeCount - endIdx)
       );
     Realloc(dataRanges, dataRangeCount, dataRangeCount - count);
+    dataRangeCount -= count;
   }
   struct DataRange* RegularINode::AllocData(fs_off_t offset, fs_off_t length) {
     fs_off_t rangeIdx;
@@ -668,7 +681,7 @@ namespace {
 #ifdef __linux__
       pthread_mutex_init(&mtx, NULL);
 #else
-    mtx = CreateMutex(NULL, FALSE, NULL);
+      mtx = CreateMutex(NULL, FALSE, NULL);
 #endif
     }
     ~FSInternal() {
@@ -700,6 +713,8 @@ namespace {
   };
 
   bool PushINode(struct FSInternal* fs, struct BaseINode* inode) {
+    if (!Realloc(&fs->inodes, fs->inodeCount, fs->inodeCount + 1))
+      return false;
     fs_ino_t id = fs->inodeCount;
     if (fs->inodeCount != 0) {
       fs_ino_t low = 0;
@@ -714,8 +729,6 @@ namespace {
         }
       }
     }
-    if (!Realloc(&fs->inodes, fs->inodeCount, fs->inodeCount + 1))
-      return false;
     if (id != fs->inodeCount) {
       memmove(
         &fs->inodes[id + 1],
@@ -760,11 +773,9 @@ namespace {
     }
     struct Fd* fd;
     if (!Alloc<true>(&fd))
-      return -FS_ENOMEM;
-    if (!Realloc(&fs->fds, fs->fdCount, fs->fdCount + 1)) {
-      Delete(fd);
-      return -FS_ENOMEM;
-    }
+      goto err_alloc;
+    if (!Realloc(&fs->fds, fs->fdCount, fs->fdCount + 1))
+      goto err_realloc;
     if (fdNum != fs->fdCount)
       memmove(&fs->fds[fdNum + 1], &fs->fds[fdNum], sizeof(struct Fd*) * (fs->fdCount - fdNum));
     fd->inode = inode;
@@ -773,6 +784,11 @@ namespace {
     fs->fds[fdNum] = fd;
     ++fs->fdCount;
     return fdNum;
+
+   err_realloc:
+    Delete(fd);
+   err_alloc:
+    return -FS_ENOMEM;
   }
   void RemoveFd(struct FSInternal* fs, struct Fd* fd, int i) {
     struct BaseINode* inode = fd->inode;
@@ -1019,34 +1035,34 @@ namespace {
 FileSystem* FileSystem::New() {
   struct FSInternal* data;
   if (!Alloc<true>(&data))
-    goto err1;
+    goto err_data_alloc;
   struct DirectoryINode* root;
   if (!Alloc(&data->inodes) ||
       !Alloc<true>(&root))
-    goto err2;
+    goto err_data_setup;
   if (!Alloc(&root->dents, 2))
-    goto err3;
+    goto err_root_setup;
   root->mode = 0755 | FS_S_IFDIR;
   root->dents[0] = { ".", root };
   root->dents[1] = { "..", root };
   root->dentCount = root->nlink = 2;
   if (!PushINode(data, root))
-    goto err3;
+    goto err_root_setup;
   if (!(data->cwd.path = strdup("/")))
-    goto err2;
+    goto err_data_setup;
   data->cwd.inode = root;
   data->cwd.parent = root;
   FileSystem* fs;
   if (!Alloc(&fs))
-    goto err2;
+    goto err_data_setup;
   fs->data = data;
   return fs;
 
- err3:
+ err_root_setup:
   Delete(root);
- err2:
+ err_data_setup:
   Delete(data);
- err1:
+ err_data_alloc:
   return NULL;
 }
 FileSystem::~FileSystem() {
@@ -3371,7 +3387,7 @@ bool FileSystem::DumpToFile(const char* filename) {
 FileSystem* FileSystem::LoadFromFile(const char* filename) {
   fd_t fd;
 #ifdef __linux__
-  fd = open(filename, FS_O_RDONLY);
+  fd = open(filename, O_RDONLY);
 #else
   fd = CreateFileA(
     filename,

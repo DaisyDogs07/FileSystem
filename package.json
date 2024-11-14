@@ -1,6 +1,6 @@
 {
   "name": "@daisydogs07/filesystem",
-  "version": "5.2.12",
+  "version": "5.2.13",
   "os": ["linux", "win32"],
   "cpu": ["x64"],
   "keywords": [
