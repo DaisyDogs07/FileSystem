@@ -32,8 +32,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+
+#define FS_LONG long
 #else
 #include <Windows.h>
+
+#define FS_LONG long long
 #endif
 
 #undef FS_O_TMPFILE

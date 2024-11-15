@@ -190,4 +190,6 @@ struct fs_utimbuf {
   fs_time_t modtime;
 };
 
+#undef FS_LONG
+
 #endif

@@ -28,8 +28,12 @@
 #include "node_buffer.h"
 #include <type_traits>
 
-#ifdef _WIN32
+#ifdef __linux__
+#define FS_LONG long
+#else
 #include <Windows.h>
+
+#define FS_LONG long long
 #endif
 
 using namespace node;
