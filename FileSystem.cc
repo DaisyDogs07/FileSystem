@@ -154,6 +154,7 @@ namespace {
     ~ScopedLock() {
       pthread_mutex_unlock(mtx_);
     }
+
    private:
     pthread_mutex_t* mtx_;
 #else
@@ -164,6 +165,7 @@ namespace {
     ~ScopedLock() {
       ReleaseMutex(mtx_);
     }
+
    private:
     HANDLE mtx_;
 #endif
@@ -211,16 +213,10 @@ namespace {
     struct Attributes attribs = {};
 
     bool CanUse(int perms) {
-      if ((mode & perms) != perms &&
-          (mode & (perms << 3)) != (perms << 3) &&
-          (mode & (perms << 6)) != (perms << 6))
-        return false;
-      return true;
+      return (mode & (perms | (perms << 3) | (perms << 6))) != 0;
     }
     bool IsUnused() {
-      if (FS_S_ISDIR(mode))
-        return nlink == 1;
-      return nlink == 0;
+      return nlink == (FS_S_ISDIR(mode) ? 1 : 0);
     }
     void FillStat(struct fs_stat* buf) {
       memset(buf, '\0', sizeof(struct fs_stat));
@@ -408,6 +404,7 @@ namespace {
           break;
       } while (Next());
     }
+
    private:
     struct RegularINode* inode_;
     fs_off_t rangeIdx_;
@@ -810,7 +807,7 @@ namespace {
     Realloc(fs->fds, fs->fdCount, fs->fdCount - 1);
     --fs->fdCount;
   }
-  struct Fd* GetFd(struct FSInternal* fs, unsigned int fdNum) {
+  struct Fd* GetFd(struct FSInternal* fs, int fdNum) {
     if (fs->fdCount == 0)
       return NULL;
     int low = 0;
@@ -942,11 +939,11 @@ namespace {
     return 0;
   }
   const char* GetLast(const char* path) {
-    int pathLen = strlen(path);
+    size_t pathLen = strlen(path);
     char name[FS_NAME_MAX + 1];
-    int nameNdx = FS_NAME_MAX;
+    uint8_t nameNdx = FS_NAME_MAX;
     name[nameNdx--] = '\0';
-    int i = pathLen;
+    size_t i = pathLen;
     while (path[i] == '/')
       --i;
     while (i >= 0) {
@@ -958,17 +955,17 @@ namespace {
   }
   const char* AbsolutePath(struct FSInternal* fs, const char* path) {
     char absPath[FS_PATH_MAX];
-    int absPathLen = 0;
+    size_t absPathLen = 0;
     if (path[0] != '/') {
-      int cwdPathLen = strlen(fs->cwd.path);
+      size_t cwdPathLen = strlen(fs->cwd.path);
       if (cwdPathLen != 1) {
         memcpy(absPath, fs->cwd.path, cwdPathLen);
         absPath[cwdPathLen] = '/';
         absPathLen = cwdPathLen + 1;
       } else absPath[absPathLen++] = '/';
     }
-    int pathLen = strlen(path);
-    for (int i = 0; i != pathLen; ++i) {
+    size_t pathLen = strlen(path);
+    for (size_t i = 0; i != pathLen; ++i) {
       if (path[i] == '/') {
         if (absPathLen != 0 &&
             absPath[absPathLen - 1] != '/')
