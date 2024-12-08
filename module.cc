@@ -2480,7 +2480,47 @@ void FileSystemLoadFrom(const FunctionCallbackInfo<Value>& args) {
   args.GetReturnValue().Set(fsObj);
 }
 
-void DefineConstants(Isolate* isolate, Local<FunctionTemplate> func) {
+void MacroISDIR(const FunctionCallbackInfo<Value>& args) {
+  args.GetReturnValue().Set(FS_S_ISDIR(Val<uint64_t>(args[0])));
+}
+
+void MacroISREG(const FunctionCallbackInfo<Value>& args) {
+  args.GetReturnValue().Set(FS_S_ISREG(Val<uint64_t>(args[0])));
+}
+
+void MacroISLNK(const FunctionCallbackInfo<Value>& args) {
+  args.GetReturnValue().Set(FS_S_ISLNK(Val<uint64_t>(args[0])));
+}
+
+void MacroIFTODT(const FunctionCallbackInfo<Value>& args) {
+  args.GetReturnValue().Set(BigInt::NewFromUnsigned(args.GetIsolate(), Val<uint64_t>(args[0])));
+}
+
+template<typename T, size_t N>
+void DefineFunction(
+  Isolate* isolate,
+  Local<T> obj,
+  const char (&prop)[N],
+  FunctionCallback fn,
+  int argc,
+  PropertyAttribute attr = PropertyAttribute::DontEnum
+) {
+  obj->Set(
+    String::NewFromUtf8Literal(isolate, prop, NewStringType::kInternalized),
+    FunctionTemplate::New(
+      isolate,
+      fn,
+      Local<Value>(),
+      Local<Signature>(),
+      argc,
+      ConstructorBehavior::kThrow,
+      SideEffectType::kHasSideEffect
+    ),
+    attr
+  );
+}
+
+void DefineMacros(Isolate* isolate, Local<FunctionTemplate> func) {
 #define DefineFlag(v) \
   do { \
     func->Set( \
@@ -2541,18 +2581,10 @@ void DefineConstants(Isolate* isolate, Local<FunctionTemplate> func) {
   DefineFlag(S_IFLNK);
   DefineFlag(S_IFMT);
   DefineFlag(S_IFREG);
-  DefineFlag(S_IRUSR);
-  DefineFlag(S_IRGRP);
-  DefineFlag(S_IROTH);
-  DefineFlag(S_IWUSR);
-  DefineFlag(S_IWGRP);
-  DefineFlag(S_IWOTH);
-  DefineFlag(S_IXUSR);
-  DefineFlag(S_IXGRP);
-  DefineFlag(S_IXOTH);
-  DefineFlag(S_IRWXU);
-  DefineFlag(S_IRWXG);
-  DefineFlag(S_IRWXO);
+  DefineFunction(isolate, func, "S_IFTODT", MacroIFTODT, 1, PropertyAttribute::None);
+  DefineFunction(isolate, func, "S_ISDIR", MacroISDIR, 1, PropertyAttribute::None);
+  DefineFunction(isolate, func, "S_ISLNK", MacroISLNK, 1, PropertyAttribute::None);
+  DefineFunction(isolate, func, "S_ISREG", MacroISREG, 1, PropertyAttribute::None);
   DefineFlag(UTIME_NOW);
   DefineFlag(UTIME_OMIT);
   DefineFlag(XATTR_CREATE);
@@ -2583,29 +2615,6 @@ void DefineConstants(Isolate* isolate, Local<FunctionTemplate> func) {
 #undef DefineFlag
 }
 
-template<typename T, size_t N>
-void DefineFunction(
-  Isolate* isolate,
-  Local<T> obj,
-  const char (&prop)[N],
-  FunctionCallback fn,
-  int argc,
-  PropertyAttribute attr = PropertyAttribute::DontEnum
-) {
-  obj->Set(
-    String::NewFromUtf8Literal(isolate, prop, NewStringType::kInternalized),
-    FunctionTemplate::New(
-      isolate,
-      fn,
-      Local<Value>(),
-      Local<Signature>(),
-      argc,
-      ConstructorBehavior::kThrow,
-      SideEffectType::kHasSideEffect
-    ),
-    attr
-  );
-}
 void DefineTemplateFunctions(Isolate* isolate, Local<ObjectTemplate> tmpl) {
   DefineFunction(isolate, tmpl, "faccessat2",   FileSystemFAccessAt2,   4);
   DefineFunction(isolate, tmpl, "faccessat",    FileSystemFAccessAt,    3);
@@ -2680,7 +2689,7 @@ NODE_MODULE_INIT() {
     isolate,
     FileSystemConstructor
   );
-  DefineConstants(isolate, FSTmpl);
+  DefineMacros(isolate, FSTmpl);
   DefineFunction(isolate, FSTmpl, "loadFrom", FileSystemLoadFrom, 1, PropertyAttribute::None);
   FSConstructorTmpl.Reset(isolate, FSTmpl);
   Local<ObjectTemplate> instTmpl = FSTmpl->InstanceTemplate();

@@ -86,18 +86,6 @@
 #define FS_S_IFLNK 0120000
 #define FS_S_IFMT 0170000
 #define FS_S_IFREG 0100000
-#define FS_S_IRUSR 0400
-#define FS_S_IRGRP (FS_S_IRUSR >> 3)
-#define FS_S_IROTH (FS_S_IRGRP >> 3)
-#define FS_S_IWUSR 0200
-#define FS_S_IWGRP (FS_S_IWUSR >> 3)
-#define FS_S_IWOTH (FS_S_IWGRP >> 3)
-#define FS_S_IXUSR 0100
-#define FS_S_IXGRP (FS_S_IXUSR >> 3)
-#define FS_S_IXOTH (FS_S_IXGRP >> 3)
-#define FS_S_IRWXU (FS_S_IRUSR | FS_S_IWUSR | FS_S_IXUSR)
-#define FS_S_IRWXG (FS_S_IRWXU >> 3)
-#define FS_S_IRWXO (FS_S_IRWXG >> 3)
 #define FS_UTIME_NOW (((FS_LONG)1 << 30) - (FS_LONG)1)
 #define FS_UTIME_OMIT (((FS_LONG)1 << 30) - (FS_LONG)2)
 #define FS_XATTR_CREATE 0x1

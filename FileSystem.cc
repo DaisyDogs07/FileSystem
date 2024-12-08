@@ -219,7 +219,6 @@ namespace {
       return nlink == (FS_S_ISDIR(mode) ? 1 : 0);
     }
     void FillStat(struct fs_stat* buf) {
-      memset(buf, '\0', sizeof(struct fs_stat));
       buf->st_ino = id;
       buf->st_mode = mode;
       buf->st_nlink = nlink;
@@ -233,10 +232,12 @@ namespace {
       buf->stx_mask = mask;
       if (mask & FS_STATX_INO)
         buf->stx_ino = id;
-      if (mask & FS_STATX_TYPE)
-        buf->stx_mode |= mode & FS_S_IFMT;
-      if (mask & FS_STATX_MODE)
-        buf->stx_mode |= mode & ~FS_S_IFMT;
+      if (mask & FS_STATX_TYPE) {
+        buf->stx_mode = mode & FS_S_IFMT;
+        if (mask & FS_STATX_MODE)
+          buf->stx_mode |= mode & ~FS_S_IFMT;
+      } else if (mask & FS_STATX_MODE)
+        buf->stx_mode = mode & ~FS_S_IFMT;
       if (mask & FS_STATX_NLINK)
         buf->stx_nlink = nlink;
       if (mask & FS_STATX_SIZE)
